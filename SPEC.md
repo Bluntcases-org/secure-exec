@@ -130,7 +130,7 @@ pnpm add isolated-vm
 
 **wasm-js bridging** - how WasixInstance delegates `node` commands to NodeProcess. see TEST_WASM_JS_BRIDGE.md for research.
 
-**custom WASM shell with bridge imports** (test 9 approach):
+**custom WASM shell with bridge imports** ([test 9](scratch/wasmer-test/test9-wasi-plus-custom.ts)):
 - use Node.js native WASI (not @wasmer/sdk) with custom `bridge.*` imports
 - WASM shell calls `bridge.spawn_node("script.js")` → JS handler → NodeProcess
 - requires building a custom WASM binary in Rust that imports both WASI and bridge functions
