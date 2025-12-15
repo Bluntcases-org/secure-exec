@@ -47,22 +47,33 @@ node script.js
 `;
 
 const jsCode = `
-const fs = require("fs");  // imports native node package
-// TODO: do some basic fs operations
+const fs = require("fs");
+const path = require("path");
 
-const ms = require("ms");  // imports npm package that doesn't have external deps
-// TODO: do smth basic with ms
+// test ms package (simple, no deps)
+const ms = require("ms");
+console.log("1 hour in ms:", ms("1h"));
 
+// test jsonfile package (uses fs internally)
 const jsonfile = require("jsonfile");
-// TODO: do somethign basic with this, use `fs` to check it worked
+const testFile = path.join(__dirname, "test.json");
+jsonfile.writeFileSync(testFile, { hello: "world" });
+const data = jsonfile.readFileSync(testFile);
+console.log("read back:", data);
+
+// verify with fs
+const raw = fs.readFileSync(testFile, "utf8");
+console.log("raw file contents:", raw);
 `;
 
 const vm = new VirtualMachine("/path/to/local/fs");
 
-// TODO: run `npm install jsonfile ms` on the HOST so the node_modules files live there
-// TODO: write shCode -> test.sh, jsCode to script.js
+// write scripts to the vm filesystem
+await vm.writeFile("/test.sh", shCode);
+await vm.writeFile("/script.js", jsCode);
 
-const output = await vm.spawn("sh", ["-c", "test.sh"]);  // TODO: this command might be wrong
+// run the shell script (assumes npm install jsonfile ms was run on host)
+const output = await vm.spawn("sh", ["/test.sh"]);
 console.log('output', output.stdout, output.stderr, output.code)
 ```
 
