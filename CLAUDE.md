@@ -1,1 +1,2 @@
 - commit your work along the way. do not push it. use branches as needed.
+- use pnpm, vitest, and tsc for type checks

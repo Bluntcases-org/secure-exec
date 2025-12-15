@@ -69,7 +69,7 @@ const vm = new VirtualMachine("/path/to/local/fs");
 vm.writeFile("/test.sh", shCode);
 vm.writeFile("/script.js", jsCode);
 
-// run the shell script (assumes npm install jsonfile ms was run on host)
+// run the shell script (assumes pnpm add jsonfile ms was run on host)
 const output = await vm.spawn("sh", ["/test.sh"]);
 console.log('output', output.stdout, output.stderr, output.code)
 
@@ -98,10 +98,10 @@ uses WebAssembly.sh to emulate a Linux shell environment. provides shell command
 
 ### dependencies
 
-**@wasmer/sdk** - Wasmer's JavaScript SDK for running WASI/WASIX modules in Node.js.
+**@wasmer/sdk** - Wasmer's JavaScript SDK for running WASI/WASIX modules in Node.js. docs: https://wasmerio.github.io/wasmer-js/index.html
 
 ```bash
-npm install @wasmer/sdk
+pnpm add @wasmer/sdk
 ```
 
 - Node.js 22+: `import { init, Wasmer, Directory } from "@wasmer/sdk"`
@@ -115,7 +115,7 @@ provides:
 **node-stdlib-browser** - pure JavaScript polyfills for Node.js stdlib modules. works in isolated-vm because it has no native bindings and doesn't require browser APIs (despite the name, it's just pure JS implementations).
 
 ```bash
-npm install node-stdlib-browser
+pnpm add node-stdlib-browser
 ```
 
 provides polyfills for: `buffer`, `events`, `stream`, `util`, `path`, `process`, `crypto` (partial), `assert`, `timers`, `url`, `querystring`, `os`, `console`, `vm`, `zlib`, etc.
@@ -125,7 +125,7 @@ modules that still need bridging to main isolate (real I/O): `fs`, `net`, `http`
 **isolated-vm** - runs JavaScript in a separate V8 isolate for sandboxing.
 
 ```bash
-npm install isolated-vm
+pnpm add isolated-vm
 ```
 
 **wasm-js bridging** - how WasixInstance delegates `node` commands to NodeProcess is TBD. see TEST_WASM_JS_BRIDGE.md for research. potential approaches:
@@ -210,7 +210,7 @@ import { VirtualMachine } from "./vm";
 import { NodeProcess } from "./node-process";
 
 const vm = new VirtualMachine(tmpDir);
-// assume `npm install ms` was run in tmpDir on host
+// assume `pnpm add ms` was run in tmpDir on host
 const proc = new NodeProcess(vm);
 const result = await proc.run(`
   const ms = require("ms");

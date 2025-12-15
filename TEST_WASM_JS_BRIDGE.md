@@ -8,8 +8,8 @@ first, confirm we have the right package and it works in Node.js.
 
 ```bash
 mkdir wasmer-test && cd wasmer-test
-npm init -y
-npm install @wasmer/sdk
+pnpm init
+pnpm add @wasmer/sdk
 ```
 
 create `test-basic.mjs`:
@@ -57,7 +57,7 @@ stderr:
 
 check package version:
 ```bash
-npm list @wasmer/sdk
+pnpm list @wasmer/sdk
 ```
 
 ## 2. test Directory filesystem
@@ -155,7 +155,7 @@ main().catch(console.error);
 test if the older wasm-terminal package provides command interception.
 
 ```bash
-npm install @wasmer/wasm-terminal @wasmer/wasmfs
+pnpm add @wasmer/wasm-terminal @wasmer/wasmfs
 ```
 
 create `test-terminal.mjs`:
