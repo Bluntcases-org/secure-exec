@@ -2,9 +2,9 @@
 
 ## overview
 
-goal: design an emulated linux machine using WebAssembly.sh for Linux emulation and isolated-vm for the node emulation. thses are both bound to the same core "virtual machine" for filesystem & network & etc. this allows for emulating a linux environment without sacrificing performance (mostly, polyfills have some overhead) on the NodeJS app since it's in an isoalte.
+goal: design an emulated linux machine for Node.js (not browser) using WebAssembly.sh for Linux emulation and isolated-vm for the node emulation. these are both bound to the same core "virtual machine" for filesystem & network & etc. this allows for emulating a linux environment without sacrificing performance (mostly, polyfills have some overhead) on the NodeJS app since it's in an isolate.
 
-the closest prior art is WebContainers, OpenWebContainers, and Nodebox. however, these all use web or WASM.
+the closest prior art is WebContainers, OpenWebContainers, and Nodebox. however, these all target the browser or use pure WASM. this project targets Node.js as the host runtime.
 
 ## project structure
 
@@ -18,16 +18,18 @@ loosely follow this structure, keep things simple:
 ```
 src/
     vm/
-        index.ts  # class VirtualMachine
-        fs.ts  # class FileSystemManager
+        index.ts  # class VirtualMachine - orchestrates WasixInstance and NodeProcess
+        ...etc...
+    system-bridge/
+        index.ts  # class SystemBridge - shared filesystem, network, etc
+        fs.ts     # filesystem implementation
         ...etc...
     node-process/
         index.ts  # class NodeProcess (using isolated-vm)
         ...etc...
     wasix/
         index.ts  # class WasixInstance
-        node-shim.ts  # handles shim between wasix <-> node-process (using isolated-vm)
-    ...etc...
+        ...etc...
 ```
 
 the end user api looks like:
@@ -83,15 +85,19 @@ console.log("read back:", JSON.parse(raw));
 
 ### virtual machine
 
-this vm will be bound to BOTH the node shim. we only care about the file system for now, nothing else.
+orchestrates WasixInstance and NodeProcess. provides the main `spawn()` API that routes commands to the appropriate runtime. owns the SystemBridge instance that both runtimes share.
 
-### node shim
+### system bridge
 
-runs Node.js code in an isolated-vm isolate. provides polyfilled node stdlib (fs, path, etc) and supports requiring packages from node_modules.
+shared layer for filesystem, network, and other system resources. both WasixInstance and NodeProcess use this to access the same underlying state. forwards filesystem operations to a dedicated folder on the host.
+
+### node process
+
+runs Node.js code in an isolated-vm isolate. provides polyfilled node stdlib (fs, path, etc) that routes through SystemBridge. supports requiring packages from node_modules.
 
 ### wasix instance
 
-uses WebAssembly.sh to emulate a Linux shell environment. provides shell commands (ls, cd, etc) and hooks into the node shim when running `node` commands.
+uses WebAssembly.sh to emulate a Linux shell environment. provides shell commands (ls, cd, etc) via SystemBridge. when running `node` commands, delegates to NodeProcess.
 
 ## steps
 
@@ -150,13 +156,11 @@ expect(result.stdout).toBe("hello\n");
 
 ```ts
 import { VirtualMachine } from "./vm";
-import { WasixInstance } from "./wasix";
 
 const vm = new VirtualMachine(tmpDir);
-const wasix = new WasixInstance(vm);
-
 vm.writeFile("/test.txt", "content");
-const result = await wasix.exec("ls /");
+
+const result = await vm.spawn("ls", ["/"]);
 expect(result.stdout).toContain("test.txt");
 ```
 
@@ -180,13 +184,11 @@ expect(result).toBe(3600000);
 
 ```ts
 import { VirtualMachine } from "./vm";
-import { WasixInstance } from "./wasix";
 
 const vm = new VirtualMachine(tmpDir);
-const wasix = new WasixInstance(vm);
-
 vm.writeFile("/script.js", `console.log("hello from node")`);
-const result = await wasix.exec("node /script.js");
+
+const result = await vm.spawn("node", ["/script.js"]);
 expect(result.stdout).toBe("hello from node\n");
 ```
 
