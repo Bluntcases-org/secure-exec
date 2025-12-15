@@ -1,2 +1,5 @@
 - commit your work along the way. do not push it. use branches as needed.
 - use pnpm, vitest, and tsc for type checks
+- do not use timeouts more than 10s
+- use tsx to execute typescript code as needed
+- wasmer sdk docs at https://wasmerio.github.io/wasmer-js/

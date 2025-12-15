@@ -313,3 +313,231 @@ if bridging proves too difficult, consider:
 - VirtualMachine.spawn() checks command name and routes accordingly
 
 this would simplify the architecture but lose the ability to run arbitrary shell scripts that call node.
+
+---
+
+## 7. test Node.js native WASI
+
+test if Node.js built-in WASI can intercept syscalls.
+
+create `test7-nodejs-wasi.ts`:
+
+```typescript
+import { WASI } from "node:wasi";
+
+async function main(): Promise<void> {
+  const wasi = new WASI({
+    version: "preview1",
+    args: ["test"],
+    env: {},
+  });
+
+  console.log("WASI.wasiImport keys:", Object.keys(wasi.wasiImport));
+
+  // Check for spawn-related syscalls
+  console.log("proc_spawn in wasiImport:", "proc_spawn" in wasi.wasiImport);
+  console.log("proc_exec in wasiImport:", "proc_exec" in wasi.wasiImport);
+}
+
+main().catch(console.error);
+```
+
+**result**: FAIL - Node.js WASI preview1 only has `proc_exit` and `proc_raise`. No `proc_spawn` or `proc_exec` - those are WASIX extensions, not standard WASI.
+
+## 8. test raw WebAssembly with JS imports
+
+test if we can create WASM modules that call JavaScript functions.
+
+create `test8b-raw-wasm.ts`:
+
+```typescript
+import { init, wat2wasm } from "@wasmer/sdk/node";
+
+async function main(): Promise<void> {
+  await init();
+
+  const wat = `
+    (module
+      (import "env" "js_callback" (func $js_callback (param i32)))
+      (memory (export "memory") 1)
+      (func (export "_start")
+        i32.const 42
+        call $js_callback
+      )
+    )
+  `;
+
+  const wasmBytes = wat2wasm(wat);
+
+  let callbackValue = 0;
+  const imports = {
+    env: {
+      js_callback: (value: number) => {
+        console.log(`[JS CALLBACK] value = ${value}`);
+        callbackValue = value;
+      },
+    },
+  };
+
+  const { instance } = await WebAssembly.instantiate(wasmBytes, imports);
+  const start = instance.exports._start as () => void;
+  start();
+
+  console.log(`Callback received: ${callbackValue}`);
+}
+
+main().catch(console.error);
+```
+
+**result**: PASS - WASM can call JavaScript functions using raw WebAssembly.instantiate()!
+
+## 9. test WASI + custom imports combined
+
+test if we can combine Node.js WASI with custom bridge imports.
+
+create `test9-wasi-plus-custom.ts`:
+
+```typescript
+import { WASI } from "node:wasi";
+import { init, wat2wasm } from "@wasmer/sdk/node";
+
+async function main(): Promise<void> {
+  await init();
+
+  const wat = `
+    (module
+      ;; WASI imports
+      (import "wasi_snapshot_preview1" "fd_write"
+        (func $fd_write (param i32 i32 i32 i32) (result i32)))
+
+      ;; Custom bridge import
+      (import "bridge" "spawn_node" (func $spawn_node (param i32 i32) (result i32)))
+
+      (memory (export "memory") 1)
+      (data (i32.const 0) "Hello from WASI!\\n")
+      (data (i32.const 100) "script.js")
+      (data (i32.const 200) "\\00\\00\\00\\00\\11\\00\\00\\00")
+      (data (i32.const 300) "\\00\\00\\00\\00")
+
+      (func (export "_start")
+        i32.const 1
+        i32.const 200
+        i32.const 1
+        i32.const 300
+        call $fd_write
+        drop
+        i32.const 100
+        i32.const 9
+        call $spawn_node
+        drop
+      )
+    )
+  `;
+
+  const wasmBytes = wat2wasm(wat);
+  const wasi = new WASI({ version: "preview1", args: ["test"], env: {} });
+
+  const imports = {
+    wasi_snapshot_preview1: wasi.wasiImport,
+    bridge: {
+      spawn_node: (ptr: number, len: number): number => {
+        const memory = instance.exports.memory as WebAssembly.Memory;
+        const bytes = new Uint8Array(memory.buffer, ptr, len);
+        const scriptPath = new TextDecoder().decode(bytes);
+        console.log(`[BRIDGE] spawn_node called with: "${scriptPath}"`);
+        return 0;
+      },
+    },
+  };
+
+  const result = await WebAssembly.instantiate(wasmBytes, imports);
+  const instance = result.instance;
+  wasi.start(instance);
+}
+
+main().catch(console.error);
+```
+
+**result**: PASS - We can combine WASI syscalls with custom bridge functions! Output:
+```
+Hello from WASI!
+[BRIDGE] spawn_node called with: "script.js"
+```
+
+## 10. test custom Wasmer package
+
+test if we can create custom Wasmer packages with Wasmer.fromWasm().
+
+**result**: PARTIAL - `Wasmer.fromWasm()` accepts custom WASM but `instance.wait()` hangs (same issue as other @wasmer/sdk operations).
+
+---
+
+## updated summary
+
+| test | result | notes |
+|------|--------|-------|
+| 1. basic sdk | PASS | works with `@wasmer/sdk/node` import, requires tsx/pnpm |
+| 2. directory read | PASS | JS writes, WASM reads via cat - works perfectly |
+| 3. directory write (bidirectional) | PARTIAL | touch works (empty files), content-writing commands hang |
+| 4. wasm-terminal | FAIL | browser-only (requires window/xterm), not usable in Node.js |
+| 5. sdk spawn hooks | NONE | no spawn/exec callback mechanism in SDK |
+| 6. custom /bin/node | PARTIAL | `bash -c "source /script"` works; cannot intercept real spawns |
+| 7. Node.js WASI | FAIL | no proc_spawn/proc_exec - WASIX extensions not in preview1 |
+| 8. raw WASM + JS imports | PASS | WebAssembly.instantiate() with custom imports works |
+| 9. WASI + custom imports | **PASS** | can combine Node.js WASI with custom bridge functions |
+| 10. custom Wasmer package | PARTIAL | fromWasm() works but wait() hangs |
+
+### new key findings
+
+1. **@wasmer/sdk is locked down**: no way to inject custom imports, override syscalls, or intercept spawns
+2. **Node.js WASI preview1 lacks spawn syscalls**: `proc_spawn` is a WASIX extension, not part of standard WASI
+3. **raw WebAssembly + custom imports WORKS**: we can create WASM that calls back to JavaScript
+4. **WASI + custom bridge imports WORKS**: we can combine standard WASI syscalls with custom bridge functions using Node.js native WASI
+
+### new approach: custom WASM shell binary
+
+based on test 9, a viable approach is:
+
+1. **create a custom WASM binary in Rust/C** that:
+   - imports standard WASI functions (fd_write, fd_read, etc)
+   - imports custom `bridge.*` functions (spawn_node, spawn_process, etc)
+   - acts as a minimal shell that routes commands
+
+2. **use Node.js native WASI** instead of @wasmer/sdk:
+   - combine `wasi.wasiImport` with custom bridge imports
+   - intercept bridge.spawn_node calls → route to NodeProcess
+   - intercept bridge.spawn_process calls → route to Wasmer or system
+
+3. **architecture**:
+   ```
+   User Code → VirtualMachine.spawn("node script.js")
+                    ↓
+            Custom WASM Shell Binary
+            (imports: WASI + bridge.*)
+                    ↓
+            bridge.spawn_node("script.js")
+                    ↓
+            JavaScript Handler
+                    ↓
+            NodeProcess.spawn()
+   ```
+
+### tradeoffs
+
+| approach | pros | cons |
+|----------|------|------|
+| @wasmer/sdk only | simple, uses existing packages | no spawn interception, can't bridge to JS |
+| hybrid routing | simpler JS code | can't run shell scripts that call node |
+| custom WASM shell | full control, true bridging | requires building custom WASM binary |
+
+### recommendation
+
+the **custom WASM shell** approach (based on test 9) provides the best long-term solution:
+- true process interception at the WASM level
+- can run arbitrary shell scripts that spawn node
+- full control over syscall handling
+
+for MVP, the **hybrid routing** approach remains viable:
+- route linux commands → @wasmer/sdk
+- route node commands → NodeProcess directly
+- skip shell script support initially
