@@ -13,5 +13,5 @@
     "allowSyntheticDefaultImports": true
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "scratch"]
+  "exclude": ["node_modules", "dist"]
 }

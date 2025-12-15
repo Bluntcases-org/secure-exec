@@ -1,0 +1,33 @@
+{
+  "name": "@rivetkit/nano-sandbox",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/vm/index.js",
+  "types": "./dist/vm/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/vm/index.js",
+      "types": "./dist/vm/index.d.ts"
+    }
+  },
+  "scripts": {
+    "check-types": "tsc --noEmit",
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@rivetkit/nano-sandbox-fs-polyfill": "workspace:*",
+    "@wasmer/sdk": "^0.9.0",
+    "esbuild": "^0.27.1",
+    "isolated-vm": "^5.0.1",
+    "node-stdlib-browser": "^1.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "ms": "^2.1.3",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

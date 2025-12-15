@@ -35,3 +35,12 @@
 - bubblewrap/etc
     - wasm is battle tested for security (a zero day would affect all browsers), bubblewrap is more likely to be prone to zero days
 
+
+---
+
+Feature,Docker Container,WebAssembly (WASI),V8 Isolate (isolated-vm),Proposed Solution
+Startup Time,500ms - 2s,< 50ms,< 5ms,< 100ms
+Memory Overhead,High (OS libs),Low (Binary only),Very Low (Shared Engine),Low
+Language Support,Any,Any compiled to Wasm,JS/Wasm only,JS + Wasm
+Filesystem,Layered FS (OverlayFS),Virtual / Mapped,None (Host Provided),Unified System Bridge
+Security,Kernel Namespaces,Memory Sandboxing,Heap Isolation,Hybrid (Memory + Logic)
