@@ -96,6 +96,44 @@ runs Node.js code in an isolated-vm isolate. provides polyfilled node stdlib (fs
 
 uses WebAssembly.sh to emulate a Linux shell environment. provides shell commands (ls, cd, etc) via SystemBridge. when running `node` commands, delegates to NodeProcess.
 
+### dependencies
+
+**@wasmer/sdk** - Wasmer's JavaScript SDK for running WASI/WASIX modules in Node.js.
+
+```bash
+npm install @wasmer/sdk
+```
+
+- Node.js 22+: `import { init, Wasmer, Directory } from "@wasmer/sdk"`
+- Node.js < 22: `import { init, Wasmer, Directory } from "@wasmer/sdk/node"`
+
+provides:
+- `Directory` class for virtual filesystem (writeFile, readFile, readDir, mount into WASM)
+- stdout/stderr capture via `instance.wait()` or streaming
+- run packages from Wasmer registry
+
+**node-stdlib-browser** - pure JavaScript polyfills for Node.js stdlib modules. works in isolated-vm because it has no native bindings and doesn't require browser APIs (despite the name, it's just pure JS implementations).
+
+```bash
+npm install node-stdlib-browser
+```
+
+provides polyfills for: `buffer`, `events`, `stream`, `util`, `path`, `process`, `crypto` (partial), `assert`, `timers`, `url`, `querystring`, `os`, `console`, `vm`, `zlib`, etc.
+
+modules that still need bridging to main isolate (real I/O): `fs`, `net`, `http`, `child_process`
+
+**isolated-vm** - runs JavaScript in a separate V8 isolate for sandboxing.
+
+```bash
+npm install isolated-vm
+```
+
+**wasm-js bridging** - how WasixInstance delegates `node` commands to NodeProcess is TBD. see TEST_WASM_JS_BRIDGE.md for research. potential approaches:
+- `@wasmer/wasm-terminal` fetchCommand callback (older package, may not work with newer SDK)
+- custom WASI imports / host functions
+- filesystem hooks (intercept `/bin/node`)
+- component model (WIT interfaces, still evolving)
+
 ## steps
 
 1. implement VirtualMachine and SystemBridge with basic filesystem. VirtualMachine owns a SystemBridge that forwards to a dedicated folder on the host.
@@ -199,4 +237,8 @@ expect(result.stdout).toBe("hello from node\n");
 - get claude code cli working in this emulator
 - emulate npm
 - use node_modules instead of pulling packages from cdn
+
+### known issues
+
+- **wasm-js filesystem bridging**: Wasmer SDK may not provide an easy way to share filesystem state between the WASM runtime and JavaScript. the `Directory` class is one-way (JS writes, WASM reads) but bidirectional sync (WASM writes, JS reads back) may require polling or custom solutions.
 
