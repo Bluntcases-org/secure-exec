@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { init, Directory } from "@wasmer/sdk/node";
 import { WasixInstance } from "./index";
+import { NodeProcess } from "../node-process/index";
+import { SystemBridge } from "../system-bridge/index";
 
 describe("WasixInstance", () => {
   beforeAll(async () => {
@@ -45,6 +47,55 @@ describe("WasixInstance", () => {
       const dir = new Directory();
       const wasix = new WasixInstance({ directory: dir });
       expect(wasix.getDirectory()).toBe(dir);
+    });
+  });
+
+  describe("Step 7: IPC polling for node shim", () => {
+    it("should run node command via IPC with real node", async () => {
+      const wasix = new WasixInstance();
+
+      // Run node directly via IPC polling (uses real node as fallback)
+      const result = await wasix.runWithIpc("node", [
+        "-e",
+        "console.log(2+2)",
+      ]);
+
+      expect(result.stdout).toContain("4");
+    });
+
+    it("should run node command via IPC with NodeProcess", async () => {
+      const nodeProcess = new NodeProcess();
+      const systemBridge = new SystemBridge();
+
+      try {
+        const wasix = new WasixInstance({
+          nodeProcess,
+          systemBridge,
+        });
+
+        const result = await wasix.runWithIpc("node", [
+          "-e",
+          "console.log('Hello from NodeProcess')",
+        ]);
+
+        expect(result.stdout).toContain("Hello from NodeProcess");
+      } finally {
+        nodeProcess.dispose();
+      }
+    });
+
+    it("should run bash script that calls node via IPC", async () => {
+      const wasix = new WasixInstance();
+
+      // Run bash that calls node
+      const result = await wasix.runWithIpc("bash", [
+        "-c",
+        "echo 'Before node' && node -e \"console.log('From node')\" && echo 'After node'",
+      ]);
+
+      expect(result.stdout).toContain("Before node");
+      expect(result.stdout).toContain("From node");
+      expect(result.stdout).toContain("After node");
     });
   });
 });
