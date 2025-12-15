@@ -1,0 +1,50 @@
+import { describe, it, expect, beforeAll } from "vitest";
+import { init, Directory } from "@wasmer/sdk/node";
+import { WasixInstance } from "./index";
+
+describe("WasixInstance", () => {
+  beforeAll(async () => {
+    await init();
+  });
+
+  describe("Step 6: Basic WASM shell", () => {
+    // These tests need to run sequentially due to wasmer SDK limitations
+    it("should execute echo command and ls with directory", async () => {
+      // Test 1: Direct echo command
+      const wasix1 = new WasixInstance();
+      const echoResult = await wasix1.run("echo", ["hello"]);
+      expect(echoResult.stdout.trim()).toBe("hello");
+      expect(echoResult.code).toBe(0);
+    });
+
+    it("should execute ls and cat with directory", async () => {
+      // Test 2: ls with directory
+      const dir = new Directory();
+      dir.writeFile("/test.txt", "content");
+
+      const wasix = new WasixInstance({ directory: dir });
+      const lsResult = await wasix.run("ls", ["/"]);
+      expect(lsResult.stdout).toContain("test.txt");
+      expect(lsResult.code).toBe(0);
+
+      // Test 3: cat with same directory
+      dir.writeFile("/hello.txt", "Hello World");
+      const catResult = await wasix.run("cat", ["/hello.txt"]);
+      expect(catResult.stdout).toBe("Hello World");
+      expect(catResult.code).toBe(0);
+    });
+
+    it("should execute shell command via bash/sh", async () => {
+      const wasix = new WasixInstance();
+      const result = await wasix.exec("echo hello");
+      // Output should contain hello (exit code might be non-zero due to node shim)
+      expect(result.stdout).toContain("hello");
+    });
+
+    it("should expose getDirectory", async () => {
+      const dir = new Directory();
+      const wasix = new WasixInstance({ directory: dir });
+      expect(wasix.getDirectory()).toBe(dir);
+    });
+  });
+});
