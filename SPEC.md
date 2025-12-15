@@ -168,12 +168,6 @@ pnpm add isolated-vm
 
 this enables shell scripts to call `node` since bash can spawn our custom node shim. latency is ~200-500ms per call due to polling.
 
-**alternative: custom WASM shell with native bridge imports** ([test 9](scratch/wasmer-test/test9-wasi-plus-custom.ts)):
-lower latency approach using direct WASM imports (not currently used):
-- use Node.js native WASI (not @wasmer/sdk) with custom `bridge.*` imports
-- WASM shell calls `bridge.spawn_node("script.js")` → JS handler → NodeProcess
-- requires building a custom WASM binary in Rust that imports both WASI and bridge functions
-
 ## steps
 
 1. get basic isolates & bindings working using isolated-vm
