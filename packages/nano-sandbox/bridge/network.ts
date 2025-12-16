@@ -328,6 +328,7 @@ export class IncomingMessage {
   statusCode: number | undefined;
   statusMessage: string | undefined;
   private _body: string;
+  private _isBinary: boolean;
   private _listeners: Record<string, EventListener[]>;
   complete: boolean;
   aborted: boolean;
@@ -358,7 +359,15 @@ export class IncomingMessage {
     this.url = response?.url || "";
     this.statusCode = response?.status;
     this.statusMessage = response?.statusText;
-    this._body = response?.body || "";
+    // Decode base64 body if x-body-encoding header is set
+    const bodyEncoding = this.headers['x-body-encoding'];
+    if (bodyEncoding === 'base64' && response?.body && typeof Buffer !== 'undefined') {
+      this._body = Buffer.from(response.body, 'base64').toString('binary');
+      this._isBinary = true;
+    } else {
+      this._body = response?.body || "";
+      this._isBinary = false;
+    }
     this._listeners = {};
     this.complete = false;
     this.aborted = false;
@@ -377,16 +386,27 @@ export class IncomingMessage {
     this._listeners[event].push(listener);
 
     // When 'data' listener is added, start flowing mode
-    if (event === "data" && !this._bodyConsumed && this._body) {
+    // Note: We check for non-empty body (this._body.length > 0) because we need to
+    // emit 'end' even for empty responses, but only emit 'data' if there's actual data
+    if (event === "data" && !this._bodyConsumed) {
       this._flowing = true;
       this.readableFlowing = true;
       // Emit data in next microtask
       Promise.resolve().then(() => {
         if (!this._bodyConsumed) {
           this._bodyConsumed = true;
-          const buf = typeof Buffer !== "undefined" ? Buffer.from(this._body) : this._body;
-          this.emit("data", buf);
-          // Emit end after data
+          // Only emit data if there's actual content
+          if (this._body && this._body.length > 0) {
+            let buf: Buffer | string;
+            if (typeof Buffer !== "undefined") {
+              // For binary data, use 'binary' encoding to preserve bytes
+              buf = this._isBinary ? Buffer.from(this._body, 'binary') : Buffer.from(this._body);
+            } else {
+              buf = this._body;
+            }
+            this.emit("data", buf);
+          }
+          // Always emit end after data (even if no data was emitted)
           Promise.resolve().then(() => {
             if (!this._ended) {
               this._ended = true;
@@ -464,7 +484,12 @@ export class IncomingMessage {
   read(_size?: number): string | Buffer | null {
     if (this._bodyConsumed) return null;
     this._bodyConsumed = true;
-    const buf = typeof Buffer !== "undefined" ? Buffer.from(this._body) : this._body;
+    let buf: Buffer | string;
+    if (typeof Buffer !== "undefined") {
+      buf = this._isBinary ? Buffer.from(this._body, 'binary') : Buffer.from(this._body);
+    } else {
+      buf = this._body;
+    }
     // Schedule end event
     Promise.resolve().then(() => {
       if (!this._ended) {
@@ -479,7 +504,12 @@ export class IncomingMessage {
   }
 
   pipe<T extends NodeJS.WritableStream>(dest: T): T {
-    const buf = typeof Buffer !== "undefined" ? Buffer.from(this._body || "") : (this._body || "");
+    let buf: Buffer | string;
+    if (typeof Buffer !== "undefined") {
+      buf = this._isBinary ? Buffer.from(this._body || "", 'binary') : Buffer.from(this._body || "");
+    } else {
+      buf = this._body || "";
+    }
     if (typeof dest.write === "function" && (typeof buf === "string" ? buf.length : buf.length) > 0) {
       dest.write(buf as unknown as string);
     }
@@ -507,7 +537,12 @@ export class IncomingMessage {
       Promise.resolve().then(() => {
         if (!this._bodyConsumed) {
           this._bodyConsumed = true;
-          const buf = typeof Buffer !== "undefined" ? Buffer.from(this._body) : this._body;
+          let buf: Buffer | string;
+          if (typeof Buffer !== "undefined") {
+            buf = this._isBinary ? Buffer.from(this._body, 'binary') : Buffer.from(this._body);
+          } else {
+            buf = this._body;
+          }
           this.emit("data", buf);
           Promise.resolve().then(() => {
             if (!this._ended) {
@@ -550,7 +585,12 @@ export class IncomingMessage {
         if (!dataEmitted && !self._bodyConsumed) {
           dataEmitted = true;
           self._bodyConsumed = true;
-          const buf = typeof Buffer !== "undefined" ? Buffer.from(self._body || "") : (self._body || "");
+          let buf: Buffer | string;
+          if (typeof Buffer !== "undefined") {
+            buf = self._isBinary ? Buffer.from(self._body || "", 'binary') : Buffer.from(self._body || "");
+          } else {
+            buf = self._body || "";
+          }
           return { done: false, value: buf };
         }
 

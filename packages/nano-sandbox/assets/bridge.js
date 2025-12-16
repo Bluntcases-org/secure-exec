@@ -8152,6 +8152,7 @@ var bridge = (() => {
     statusCode;
     statusMessage;
     _body;
+    _isBinary;
     _listeners;
     complete;
     aborted;
@@ -8181,7 +8182,14 @@ var bridge = (() => {
       this.url = response?.url || "";
       this.statusCode = response?.status;
       this.statusMessage = response?.statusText;
-      this._body = response?.body || "";
+      const bodyEncoding = this.headers["x-body-encoding"];
+      if (bodyEncoding === "base64" && response?.body && typeof Buffer !== "undefined") {
+        this._body = Buffer.from(response.body, "base64").toString("binary");
+        this._isBinary = true;
+      } else {
+        this._body = response?.body || "";
+        this._isBinary = false;
+      }
       this._listeners = {};
       this.complete = false;
       this.aborted = false;
@@ -8197,14 +8205,21 @@ var bridge = (() => {
     on(event, listener) {
       if (!this._listeners[event]) this._listeners[event] = [];
       this._listeners[event].push(listener);
-      if (event === "data" && !this._bodyConsumed && this._body) {
+      if (event === "data" && !this._bodyConsumed) {
         this._flowing = true;
         this.readableFlowing = true;
         Promise.resolve().then(() => {
           if (!this._bodyConsumed) {
             this._bodyConsumed = true;
-            const buf = typeof Buffer !== "undefined" ? Buffer.from(this._body) : this._body;
-            this.emit("data", buf);
+            if (this._body && this._body.length > 0) {
+              let buf;
+              if (typeof Buffer !== "undefined") {
+                buf = this._isBinary ? Buffer.from(this._body, "binary") : Buffer.from(this._body);
+              } else {
+                buf = this._body;
+              }
+              this.emit("data", buf);
+            }
             Promise.resolve().then(() => {
               if (!this._ended) {
                 this._ended = true;
@@ -8272,7 +8287,12 @@ var bridge = (() => {
     read(_size) {
       if (this._bodyConsumed) return null;
       this._bodyConsumed = true;
-      const buf = typeof Buffer !== "undefined" ? Buffer.from(this._body) : this._body;
+      let buf;
+      if (typeof Buffer !== "undefined") {
+        buf = this._isBinary ? Buffer.from(this._body, "binary") : Buffer.from(this._body);
+      } else {
+        buf = this._body;
+      }
       Promise.resolve().then(() => {
         if (!this._ended) {
           this._ended = true;
@@ -8285,7 +8305,12 @@ var bridge = (() => {
       return buf;
     }
     pipe(dest) {
-      const buf = typeof Buffer !== "undefined" ? Buffer.from(this._body || "") : this._body || "";
+      let buf;
+      if (typeof Buffer !== "undefined") {
+        buf = this._isBinary ? Buffer.from(this._body || "", "binary") : Buffer.from(this._body || "");
+      } else {
+        buf = this._body || "";
+      }
       if (typeof dest.write === "function" && (typeof buf === "string" ? buf.length : buf.length) > 0) {
         dest.write(buf);
       }
@@ -8311,7 +8336,12 @@ var bridge = (() => {
         Promise.resolve().then(() => {
           if (!this._bodyConsumed) {
             this._bodyConsumed = true;
-            const buf = typeof Buffer !== "undefined" ? Buffer.from(this._body) : this._body;
+            let buf;
+            if (typeof Buffer !== "undefined") {
+              buf = this._isBinary ? Buffer.from(this._body, "binary") : Buffer.from(this._body);
+            } else {
+              buf = this._body;
+            }
             this.emit("data", buf);
             Promise.resolve().then(() => {
               if (!this._ended) {
@@ -8349,7 +8379,12 @@ var bridge = (() => {
           if (!dataEmitted && !self._bodyConsumed) {
             dataEmitted = true;
             self._bodyConsumed = true;
-            const buf = typeof Buffer !== "undefined" ? Buffer.from(self._body || "") : self._body || "";
+            let buf;
+            if (typeof Buffer !== "undefined") {
+              buf = self._isBinary ? Buffer.from(self._body || "", "binary") : Buffer.from(self._body || "");
+            } else {
+              buf = self._body || "";
+            }
             return { done: false, value: buf };
           }
           ended = true;
