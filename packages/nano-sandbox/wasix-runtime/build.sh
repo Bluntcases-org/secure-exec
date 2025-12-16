@@ -3,11 +3,72 @@ set -e
 
 cd "$(dirname "$0")"
 
+NPM_VERSION="${NPM_VERSION:-11.7.0}"
+
+echo "==> Preparing npm@${NPM_VERSION} for bundling..."
+
+# Clean up previous build artifacts
+rm -rf npm usr etc
+
+# Download and extract npm
+echo "    Downloading npm@${NPM_VERSION}..."
+npm pack "npm@${NPM_VERSION}" --pack-destination /tmp --silent
+tar -xzf "/tmp/npm-${NPM_VERSION}.tgz"
+mv package npm
+
+# Prune unnecessary files to reduce package size
+echo "    Pruning unnecessary files..."
+rm -rf npm/man npm/docs npm/test npm/changelogs
+find npm -name "*.md" -type f -delete 2>/dev/null || true
+find npm -name "LICENSE*" -type f -delete 2>/dev/null || true
+find npm -name "CHANGELOG*" -type f -delete 2>/dev/null || true
+find npm -name "*.txt" -type f -delete 2>/dev/null || true
+find npm -name ".npmignore" -type f -delete 2>/dev/null || true
+find npm -name ".eslint*" -type f -delete 2>/dev/null || true
+
+# Create directory structure
+echo "    Setting up filesystem structure..."
+mkdir -p usr/lib/node_modules
+mkdir -p usr/bin
+mkdir -p etc
+
+# Move npm to proper location
+mv npm usr/lib/node_modules/npm
+
+# Create bin symlinks (these will be shell scripts that invoke node)
+cat > usr/bin/npm << 'EOF'
+#!/usr/bin/env node
+require('/usr/lib/node_modules/npm/lib/cli.js')(process)
+EOF
+
+cat > usr/bin/npx << 'EOF'
+#!/usr/bin/env node
+require('/usr/lib/node_modules/npm/lib/cli.js')(process, 'npx')
+EOF
+
+chmod +x usr/bin/npm usr/bin/npx
+
+# Create default npmrc
+cat > etc/npmrc << 'EOF'
+; Default npm configuration
+prefix=/usr/local
+cache=/tmp/.npm
+EOF
+
+# Clean up downloaded tarball
+rm -f "/tmp/npm-${NPM_VERSION}.tgz"
+
+echo "    npm@${NPM_VERSION} prepared successfully"
+echo ""
+
 # Build Rust to WASM
+echo "==> Building WASM module..."
 cargo build --target wasm32-wasip1 --release
 
-# Package into .webc (remove existing first)
+# Package into .webc
+echo "==> Packaging .webc..."
 rm -f ../assets/runtime.webc
 wasmer package build -o ../assets/runtime.webc
 
-echo "Built runtime.webc"
+echo ""
+echo "==> Built runtime.webc with npm@${NPM_VERSION}"
