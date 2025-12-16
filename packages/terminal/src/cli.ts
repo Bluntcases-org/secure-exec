@@ -20,9 +20,9 @@ async function main() {
       debug = true;
     } else if (arg === "--help" || arg === "-h") {
       console.log(`
-nano-sandbox - Interactive terminal for nano-sandbox VM
+nanosandbox - Interactive terminal for nanosandbox VM
 
-Usage: nano-sandbox [options]
+Usage: nanosandbox [options]
 
 Options:
   -p, --path <dir>     Load files from host directory into VM
@@ -31,16 +31,16 @@ Options:
   -h, --help           Show this help message
 
 Examples:
-  nano-sandbox                    # Start bash shell
-  nano-sandbox -p ./project       # Start with project files loaded
-  nano-sandbox -c sh              # Start sh instead of bash
+  nanosandbox                    # Start bash shell
+  nanosandbox -p ./project       # Start with project files loaded
+  nanosandbox -c sh              # Start sh instead of bash
 `);
       process.exit(0);
     }
   }
 
   try {
-    console.log("Starting nano-sandbox terminal...");
+    console.log("Starting nanosandbox terminal...");
     console.log("Press Ctrl+C to exit, Ctrl+D to send EOF\n");
 
     const exitCode = await startTerminal({

@@ -1,4 +1,4 @@
-import { VirtualMachine, InteractiveSession } from "nano-sandbox";
+import { VirtualMachine, InteractiveSession } from "nanosandbox";
 
 export interface TerminalOptions {
   /** Path to load files from host filesystem */

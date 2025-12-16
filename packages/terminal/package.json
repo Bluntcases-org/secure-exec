@@ -20,7 +20,7 @@
     "start": "node dist/cli.js"
   },
   "dependencies": {
-    "nano-sandbox": "workspace:*"
+    "nanosandbox": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
