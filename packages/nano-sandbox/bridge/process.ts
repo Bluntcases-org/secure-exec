@@ -22,6 +22,14 @@ declare const _log: {
 declare const _error: {
   applySync(ctx: undefined, args: [string]): void;
 };
+// Timer reference for actual delays using host's event loop
+declare const _scheduleTimer: {
+  apply(
+    ctx: undefined,
+    args: [number],
+    options?: { result: { promise: true } }
+  ): Promise<void>;
+} | undefined;
 
 // Get config with defaults
 const config = {
@@ -675,22 +683,46 @@ class TimerHandle {
 
 export function setTimeout(
   callback: (...args: unknown[]) => void,
-  _delay?: number,
+  delay?: number,
   ...args: unknown[]
 ): TimerHandle {
   const id = ++_timerId;
   const handle = new TimerHandle(id);
-  _queueMicrotask(() => {
-    if (_timers.has(id)) {
-      _timers.delete(id);
-      try {
-        callback(...args);
-      } catch (_e) {
-        // Ignore timer callback errors
-      }
-    }
-  });
   _timers.set(id, handle);
+
+  const actualDelay = delay ?? 0;
+
+  // Use host timer for actual delays if available and delay > 0
+  if (typeof _scheduleTimer !== "undefined" && actualDelay > 0) {
+    // _scheduleTimer.apply() returns a Promise that resolves after the delay
+    // Using { result: { promise: true } } tells isolated-vm to wait for the
+    // host Promise to resolve before resolving the apply() Promise
+    _scheduleTimer
+      .apply(undefined, [actualDelay], { result: { promise: true } })
+      .then(() => {
+        if (_timers.has(id)) {
+          _timers.delete(id);
+          try {
+            callback(...args);
+          } catch (_e) {
+            // Ignore timer callback errors
+          }
+        }
+      });
+  } else {
+    // Use microtask for zero delay or when host timer is unavailable
+    _queueMicrotask(() => {
+      if (_timers.has(id)) {
+        _timers.delete(id);
+        try {
+          callback(...args);
+        } catch (_e) {
+          // Ignore timer callback errors
+        }
+      }
+    });
+  }
+
   return handle;
 }
 
@@ -704,21 +736,53 @@ export function clearTimeout(timer: TimerHandle | number | undefined): void {
 
 export function setInterval(
   callback: (...args: unknown[]) => void,
-  _delay?: number,
+  delay?: number,
   ...args: unknown[]
 ): TimerHandle {
   const id = ++_timerId;
   const handle = new TimerHandle(id);
   _intervals.set(id, handle);
-  _queueMicrotask(() => {
-    if (_intervals.has(id)) {
-      try {
-        callback(...args);
-      } catch (_e) {
-        // Ignore timer callback errors
-      }
+
+  const actualDelay = delay ?? 0;
+
+  // Schedule interval execution
+  const scheduleNext = () => {
+    if (!_intervals.has(id)) return; // Interval was cleared
+
+    if (typeof _scheduleTimer !== "undefined" && actualDelay > 0) {
+      // Use host timer for actual delays
+      _scheduleTimer
+        .apply(undefined, [actualDelay], { result: { promise: true } })
+        .then(() => {
+          if (_intervals.has(id)) {
+            try {
+              callback(...args);
+            } catch (_e) {
+              // Ignore timer callback errors
+            }
+            // Schedule next iteration
+            scheduleNext();
+          }
+        });
+    } else {
+      // Use microtask for zero delay or when host timer unavailable
+      _queueMicrotask(() => {
+        if (_intervals.has(id)) {
+          try {
+            callback(...args);
+          } catch (_e) {
+            // Ignore timer callback errors
+          }
+          // Schedule next iteration
+          scheduleNext();
+        }
+      });
     }
-  });
+  };
+
+  // Start the interval
+  scheduleNext();
+
   return handle;
 }
 

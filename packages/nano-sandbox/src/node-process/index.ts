@@ -83,9 +83,14 @@ function isESM(code: string, filePath?: string): boolean {
 
   // Check for ESM syntax patterns
   // import declarations (but not dynamic import())
-  const hasImport = /^\s*import\s+(?:[\w{},*\s]+\s+from\s+)?['"][^'"]+['"]/m.test(code);
-  // export declarations
-  const hasExport = /^\s*export\s+(?:default|const|let|var|function|class|{)/m.test(code);
+  // Note: Use \s* (not \s+) to handle minified code like "import{...}from"
+  const hasImport =
+    /^\s*import\s*(?:[\w{},*\s]+\s*from\s*)?['"][^'"]+['"]/m.test(code) ||
+    /^\s*import\s*\{[^}]*\}\s*from\s*['"][^'"]+['"]/m.test(code);
+  // export declarations (also handle minified export{...})
+  const hasExport =
+    /^\s*export\s+(?:default|const|let|var|function|class|{)/m.test(code) ||
+    /^\s*export\s*\{/m.test(code);
 
   return hasImport || hasExport;
 }
@@ -194,7 +199,9 @@ export class NodeProcess {
 
     // Handle bare module names that are polyfills (events, path, etc.)
     const moduleName = specifier.replace(/^node:/, "");
-    if (hasPolyfill(moduleName) || moduleName === "fs") {
+    // Special modules we provide via bridge (fs, module, os)
+    const bridgeModules = ["fs", "module", "os"];
+    if (hasPolyfill(moduleName) || bridgeModules.includes(moduleName)) {
       return specifier; // Return as-is, compileESMModule will handle it
     }
 
@@ -250,10 +257,45 @@ export class NodeProcess {
 
     // Handle built-in modules (node: prefix or known polyfills)
     const moduleName = filePath.replace(/^node:/, "");
-    if (filePath.startsWith("node:") || hasPolyfill(moduleName)) {
+
+    // Special handling for modules we provide via bridge
+    const specialModules = ["fs", "module", "os"];
+    const isSpecialModule = specialModules.includes(moduleName);
+
+    if (
+      filePath.startsWith("node:") ||
+      hasPolyfill(moduleName) ||
+      isSpecialModule
+    ) {
       // Special case for fs
       if (moduleName === "fs") {
         code = wrapCJSForESM(FS_MODULE_CODE);
+      } else if (moduleName === "module") {
+        // Module polyfill from bridge - provides createRequire, Module class, etc.
+        code = `
+          const _modulePolyfill = globalThis.bridge?.module || {
+            createRequire: globalThis._createRequire || function(f) {
+              const dir = f.replace(/\\/[^\\/]*$/, '') || '/';
+              return function(m) { return globalThis._requireFrom(m, dir); };
+            },
+            Module: { builtinModules: [] },
+            isBuiltin: () => false,
+            builtinModules: []
+          };
+          export default _modulePolyfill;
+          export const createRequire = _modulePolyfill.createRequire;
+          export const Module = _modulePolyfill.Module;
+          export const isBuiltin = _modulePolyfill.isBuiltin;
+          export const builtinModules = _modulePolyfill.builtinModules;
+          export const SourceMap = _modulePolyfill.SourceMap;
+          export const syncBuiltinESMExports = _modulePolyfill.syncBuiltinESMExports || (() => {});
+        `;
+      } else if (moduleName === "os" && !hasPolyfill(moduleName)) {
+        // OS polyfill from bridge
+        code = `
+          const _osPolyfill = globalThis.bridge?.os || {};
+          export default _osPolyfill;
+        `;
       } else {
         // Get polyfill code and wrap for ESM
         let polyfillCode = polyfillCodeCache.get(moduleName);
@@ -547,6 +589,16 @@ export class NodeProcess {
     await jail.set("_loadPolyfill", loadPolyfillRef);
     await jail.set("_resolveModule", resolveModuleRef);
     await jail.set("_loadFile", loadFileRef);
+
+    // Set up timer Reference for actual delays (not just microtasks)
+    // This allows setTimeout/setInterval to use real host-side timers
+    const scheduleTimerRef = new ivm.Reference((delayMs: number) => {
+      return new Promise<void>((resolve) => {
+        // Use real host setTimeout with actual delay
+        globalThis.setTimeout(resolve, delayMs);
+      });
+    });
+    await jail.set("_scheduleTimer", scheduleTimerRef);
 
     // Set up fs References if we have a SystemBridge
     if (this.systemBridge) {

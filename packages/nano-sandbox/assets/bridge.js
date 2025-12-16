@@ -4938,37 +4938,68 @@ var bridge = (() => {
       return this._id;
     }
   };
-  function setTimeout(callback, _delay, ...args) {
+  function setTimeout(callback, delay, ...args) {
     const id = ++_timerId;
     const handle = new TimerHandle(id);
-    _queueMicrotask(() => {
-      if (_timers.has(id)) {
-        _timers.delete(id);
-        try {
-          callback(...args);
-        } catch (_e) {
-        }
-      }
-    });
     _timers.set(id, handle);
+    const actualDelay = delay ?? 0;
+    if (typeof _scheduleTimer !== "undefined" && actualDelay > 0) {
+      _scheduleTimer.apply(void 0, [actualDelay], { result: { promise: true } }).then(() => {
+        if (_timers.has(id)) {
+          _timers.delete(id);
+          try {
+            callback(...args);
+          } catch (_e) {
+          }
+        }
+      });
+    } else {
+      _queueMicrotask(() => {
+        if (_timers.has(id)) {
+          _timers.delete(id);
+          try {
+            callback(...args);
+          } catch (_e) {
+          }
+        }
+      });
+    }
     return handle;
   }
   function clearTimeout(timer) {
     const id = timer && typeof timer === "object" && timer._id !== void 0 ? timer._id : timer;
     _timers.delete(id);
   }
-  function setInterval(callback, _delay, ...args) {
+  function setInterval(callback, delay, ...args) {
     const id = ++_timerId;
     const handle = new TimerHandle(id);
     _intervals.set(id, handle);
-    _queueMicrotask(() => {
-      if (_intervals.has(id)) {
-        try {
-          callback(...args);
-        } catch (_e) {
-        }
+    const actualDelay = delay ?? 0;
+    const scheduleNext = () => {
+      if (!_intervals.has(id)) return;
+      if (typeof _scheduleTimer !== "undefined" && actualDelay > 0) {
+        _scheduleTimer.apply(void 0, [actualDelay], { result: { promise: true } }).then(() => {
+          if (_intervals.has(id)) {
+            try {
+              callback(...args);
+            } catch (_e) {
+            }
+            scheduleNext();
+          }
+        });
+      } else {
+        _queueMicrotask(() => {
+          if (_intervals.has(id)) {
+            try {
+              callback(...args);
+            } catch (_e) {
+            }
+            scheduleNext();
+          }
+        });
       }
-    });
+    };
+    scheduleNext();
     return handle;
   }
   function clearInterval(timer) {
