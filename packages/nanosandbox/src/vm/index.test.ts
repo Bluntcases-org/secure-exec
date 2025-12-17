@@ -240,8 +240,9 @@ describe("VirtualMachine", () => {
       const vm = new VirtualMachine();
       try {
         await vm.init();
-        // Load real node_modules from the project
-        await vm.loadFromHost(process.cwd());
+        // Load only the ms package (not the entire project - that's too slow)
+        const msPath = path.join(process.cwd(), "node_modules/ms");
+        await vm.loadFromHost(msPath, "/node_modules/ms");
 
         // Write a script that uses ms
         vm.writeFile(

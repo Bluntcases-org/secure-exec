@@ -92,6 +92,7 @@ export class VirtualMachine {
     await loadHostDirectory(npmAssetsPath, "/opt/npm", this.bridge);
 
     // Create default /etc/npmrc
+    // Note: mkdir is needed even if /etc exists - it signals the fs layer
     this.bridge.mkdir("/etc");
     this.bridge.writeFile(
       "/etc/npmrc",
@@ -100,6 +101,11 @@ prefix=/usr/local
 cache=/tmp/.npm
 `
     );
+
+    // Note: npm is NOT accessible as a shell command in bash because the
+    // wasmer-sdk Directory mounts don't properly integrate with the webc
+    // filesystem. Files written via Directory API are not visible to wasix.
+    // Use vm.npm() method instead which runs npm via NodeProcess directly.
   }
 
   /**

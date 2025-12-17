@@ -1,6 +1,7 @@
 import * as fs from "fs/promises";
 import * as path from "path";
 import { SystemBridge } from "../system-bridge/index.js";
+import type { Directory } from "@wasmer/sdk";
 
 /**
  * Recursively load files from host filesystem into virtual filesystem
@@ -16,24 +17,37 @@ export async function loadHostDirectory(
     throw new Error(`hostPath must be a directory: ${hostPath}`);
   }
 
+  const dir = bridge.getDirectory();
+
   // Create base directory if not root
   if (virtualBasePath !== "/" && virtualBasePath !== "") {
-    // Create directory path by writing a placeholder file
-    // This is a workaround since wasmer Directory needs parent dirs to exist
-    try {
-      bridge.mkdir(virtualBasePath);
-    } catch {
-      // Ignore if it already exists or can't be created
-    }
+    await mkdirp(dir, virtualBasePath);
   }
 
-  await copyDirectory(hostPath, virtualBasePath, bridge);
+  await copyDirectory(hostPath, virtualBasePath, dir);
+}
+
+/**
+ * Create directory and all parent directories
+ */
+async function mkdirp(dir: Directory, dirPath: string): Promise<void> {
+  const parts = dirPath.split("/").filter(Boolean);
+  let currentPath = "";
+  for (const part of parts) {
+    currentPath += "/" + part;
+    try {
+      await dir.createDir(currentPath);
+    } catch {
+      // Directory may already exist
+    }
+  }
 }
 
 async function copyDirectory(
   hostDir: string,
   virtualDir: string,
-  bridge: SystemBridge
+  dir: Directory,
+  onFile?: (count: number) => void
 ): Promise<void> {
   const entries = await fs.readdir(hostDir, { withFileTypes: true });
 
@@ -48,24 +62,26 @@ async function copyDirectory(
         const realStats = await fs.stat(realPath);
 
         if (realStats.isDirectory()) {
-          bridge.mkdir(virtualEntryPath);
-          await copyDirectory(realPath, virtualEntryPath, bridge);
+          try { await dir.createDir(virtualEntryPath); } catch { /* may exist */ }
+          await copyDirectory(realPath, virtualEntryPath, dir, onFile);
         } else if (realStats.isFile()) {
           const content = await fs.readFile(realPath);
-          bridge.writeFile(virtualEntryPath, content);
+          await dir.writeFile(virtualEntryPath, content);
+          onFile?.(1);
         }
       } catch {
         // Skip broken symlinks
       }
     } else if (entry.isDirectory()) {
       // Create directory in virtual fs
-      bridge.mkdir(virtualEntryPath);
+      try { await dir.createDir(virtualEntryPath); } catch { /* may exist */ }
       // Recursively copy contents
-      await copyDirectory(hostEntryPath, virtualEntryPath, bridge);
+      await copyDirectory(hostEntryPath, virtualEntryPath, dir, onFile);
     } else if (entry.isFile()) {
       // Copy file contents
       const content = await fs.readFile(hostEntryPath);
-      bridge.writeFile(virtualEntryPath, content);
+      await dir.writeFile(virtualEntryPath, content);
+      onFile?.(1);
     }
     // Skip sockets, etc.
   }
@@ -80,6 +96,8 @@ export async function loadHostPaths(
   virtualBasePath: string,
   bridge: SystemBridge
 ): Promise<void> {
+  const dir = bridge.getDirectory();
+
   for (const relativePath of paths) {
     const hostPath = path.join(hostBasePath, relativePath);
     const virtualPath = path.posix.join(virtualBasePath, relativePath);
@@ -87,11 +105,11 @@ export async function loadHostPaths(
     try {
       const stats = await fs.stat(hostPath);
       if (stats.isDirectory()) {
-        bridge.mkdir(virtualPath);
-        await copyDirectory(hostPath, virtualPath, bridge);
+        await mkdirp(dir, virtualPath);
+        await copyDirectory(hostPath, virtualPath, dir);
       } else if (stats.isFile()) {
         const content = await fs.readFile(hostPath);
-        bridge.writeFile(virtualPath, content);
+        await dir.writeFile(virtualPath, content);
       }
     } catch {
       // Skip if path doesn't exist

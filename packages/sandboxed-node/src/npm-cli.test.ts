@@ -5,8 +5,11 @@ import { exists as fsExists } from "./fs-helpers.js";
 import * as fs from "fs";
 import * as path from "path";
 
-// Find npm installation path - use standalone npm (no symlinks)
-const NPM_PATH = path.resolve(__dirname, "../../scratch/npm-standalone/node_modules/npm");
+// Find npm installation path - use the archived npm from nanosandbox assets
+const NPM_PATH = path.resolve(__dirname, "../../nanosandbox/assets/npm");
+
+// Check if npm assets are available (built by nanosandbox build:npm)
+const npmAssetsAvailable = fs.existsSync(NPM_PATH) && fs.existsSync(path.join(NPM_PATH, "lib/cli.js"));
 
 /**
  * Recursively copy a directory from host filesystem to virtual filesystem
@@ -59,7 +62,7 @@ async function copyDirToVirtual(
   return fileCount;
 }
 
-describe("NPM CLI Integration", () => {
+describe.skipIf(!npmAssetsAvailable)("NPM CLI Integration", () => {
   let proc: NodeProcess;
 
   beforeAll(async () => {
