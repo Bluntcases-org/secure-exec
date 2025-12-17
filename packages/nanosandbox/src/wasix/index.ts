@@ -4,6 +4,11 @@ import { fileURLToPath } from "node:url";
 import { Directory, init, Wasmer } from "@wasmer/sdk/node";
 import type { NodeProcess } from "sandboxed-node";
 
+/** Type for a wasmer command from a loaded package */
+type WasmerCommand = Awaited<
+	ReturnType<typeof Wasmer.fromFile>
+>["commands"][string];
+
 export interface ExecResult {
 	stdout: string;
 	stderr: string;
@@ -144,8 +149,10 @@ export class WasixInstance {
 	/**
 	 * Internal method to run a command
 	 */
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	private async runCommand(cmd: any, args: string[]): Promise<ExecResult> {
+	private async runCommand(
+		cmd: WasmerCommand,
+		args: string[],
+	): Promise<ExecResult> {
 		try {
 			const instance = await cmd.run({
 				args,

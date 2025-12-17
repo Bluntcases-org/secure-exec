@@ -2,7 +2,8 @@
 
 ## short term
 
-- remove use of runCOmmand, make it all run with ipc
+- get npm working in terminal
+- remove use of runCommand, make it all run with ipc
 
 ## fs-polyfill
 - inline compiled code at build time instead of runtime fs.readFileSync()
@@ -44,3 +45,4 @@
      - write to host fs
 - replace isolated-vm with our own rust implementation that's integrated with WASIX
 - why does chmod not work
+- integrate pino

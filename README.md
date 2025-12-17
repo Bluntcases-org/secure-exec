@@ -21,6 +21,10 @@ TODO: After diagram
 - Interactive terminal with TTY
 - Automatic fallback to microVMs without API changes (see Limitations below)
 
+## Demo
+
+Try an interactive terminal.
+
 ## Getting Started
 
 ### MCP Server

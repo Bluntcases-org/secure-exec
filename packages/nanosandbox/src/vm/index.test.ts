@@ -257,10 +257,12 @@ describe("VirtualMachine", () => {
 				await vm.loadFromHost(msPath, "/node_modules/ms");
 
 				// Write a script that uses ms
-				vm.writeFile(
+				// Note: require() uses VFS which routes /data/* to Directory.
+				// So we need to use /data prefix for the module path.
+				await vm.writeFile(
 					"/test-ms.js",
 					`
-          const ms = require('ms');
+          const ms = require('/data/node_modules/ms');
           console.log(ms('1h'));
           console.log(ms('2d'));
           console.log(ms(3600000));
@@ -283,12 +285,14 @@ describe("VirtualMachine", () => {
 				await vm.init();
 
 				// Write a script that uses fs
-				vm.writeFile(
+				// Note: fs operations use VFS which routes /data/* to Directory.
+				// So we need to use /data prefix for file paths.
+				await vm.writeFile(
 					"/test-fs.js",
 					`
           const fs = require('fs');
-          fs.writeFileSync('/output.json', JSON.stringify({ hello: 'world' }));
-          const content = fs.readFileSync('/output.json', 'utf8');
+          fs.writeFileSync('/data/output.json', JSON.stringify({ hello: 'world' }));
+          const content = fs.readFileSync('/data/output.json', 'utf8');
           console.log(content);
         `,
 				);

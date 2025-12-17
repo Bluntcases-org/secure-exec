@@ -762,26 +762,8 @@ function toPathString(path: PathLike): string {
   return String(path);
 }
 
-// Data mount path constant - must match wasix/index.ts DATA_MOUNT_PATH
-const DATA_MOUNT_PATH = "/data";
-
-/**
- * Normalize a filesystem path for Directory access.
- *
- * In WASM, the Directory is mounted at /data, so files appear at /data/foo.txt.
- * But the Directory API stores them at /foo.txt (without the /data prefix).
- *
- * This function strips the /data prefix when accessing the Directory.
- */
-function normalizePathForDirectory(path: string): string {
-  if (path.startsWith(DATA_MOUNT_PATH + "/")) {
-    return path.slice(DATA_MOUNT_PATH.length);
-  }
-  if (path === DATA_MOUNT_PATH) {
-    return "/";
-  }
-  return path;
-}
+// Note: Path normalization is handled by VirtualFileSystem, not here.
+// The VFS expects /data/* paths for Directory access, so we pass paths through unchanged.
 
 // The fs module implementation
 const fs = {
@@ -846,7 +828,7 @@ const fs = {
   readFileSync(path: PathOrFileDescriptor, options?: ReadFileOptions): string | Buffer {
     const rawPath = typeof path === "number" ? fdTable.get(path)?.path : toPathString(path);
     if (!rawPath) throw createFsError("EBADF", "EBADF: bad file descriptor", "read");
-    const pathStr = normalizePathForDirectory(rawPath);
+    const pathStr = rawPath;
     const encoding =
       typeof options === "string" ? options : (options as { encoding?: BufferEncoding | null })?.encoding;
 
@@ -882,7 +864,7 @@ const fs = {
   ): void {
     const rawPath = typeof file === "number" ? fdTable.get(file)?.path : toPathString(file);
     if (!rawPath) throw createFsError("EBADF", "EBADF: bad file descriptor", "write");
-    const pathStr = normalizePathForDirectory(rawPath);
+    const pathStr = rawPath;
 
     if (typeof data === "string") {
       // Text mode - use text write
@@ -912,7 +894,7 @@ const fs = {
 
   readdirSync(path: PathLike, options?: nodeFs.ObjectEncodingOptions & { withFileTypes?: boolean; recursive?: boolean }): string[] | Dirent[] {
     const rawPath = toPathString(path);
-    const pathStr = normalizePathForDirectory(rawPath);
+    const pathStr = rawPath;
     let entriesJson: string;
     try {
       entriesJson = _fs.readDir.applySyncPromise(undefined, [pathStr]);
@@ -941,14 +923,14 @@ const fs = {
 
   mkdirSync(path: PathLike, options?: MakeDirectoryOptions | Mode): string | undefined {
     const rawPath = toPathString(path);
-    const pathStr = normalizePathForDirectory(rawPath);
+    const pathStr = rawPath;
     const recursive = typeof options === "object" ? options?.recursive ?? false : false;
     _fs.mkdir.applySync(undefined, [pathStr, recursive]);
     return recursive ? rawPath : undefined;
   },
 
   rmdirSync(path: PathLike, _options?: RmDirOptions): void {
-    const pathStr = normalizePathForDirectory(toPathString(path));
+    const pathStr = toPathString(path);
     _fs.rmdir.applySyncPromise(undefined, [pathStr]);
   },
 
@@ -986,13 +968,13 @@ const fs = {
   },
 
   existsSync(path: PathLike): boolean {
-    const pathStr = normalizePathForDirectory(toPathString(path));
+    const pathStr = toPathString(path);
     return _fs.exists.applySyncPromise(undefined, [pathStr]);
   },
 
   statSync(path: PathLike, _options?: nodeFs.StatSyncOptions): Stats {
     const rawPath = toPathString(path);
-    const pathStr = normalizePathForDirectory(rawPath);
+    const pathStr = rawPath;
     let statJson: string;
     try {
       statJson = _fs.stat.applySyncPromise(undefined, [pathStr]);
@@ -1031,13 +1013,13 @@ const fs = {
   },
 
   unlinkSync(path: PathLike): void {
-    const pathStr = normalizePathForDirectory(toPathString(path));
+    const pathStr = toPathString(path);
     _fs.unlink.applySyncPromise(undefined, [pathStr]);
   },
 
   renameSync(oldPath: PathLike, newPath: PathLike): void {
-    const oldPathStr = normalizePathForDirectory(toPathString(oldPath));
-    const newPathStr = normalizePathForDirectory(toPathString(newPath));
+    const oldPathStr = toPathString(oldPath);
+    const newPathStr = toPathString(newPath);
     _fs.rename.applySyncPromise(undefined, [oldPathStr, newPathStr]);
   },
 
@@ -1051,7 +1033,7 @@ const fs = {
 
   openSync(path: PathLike, flags: OpenMode, _mode?: Mode | null): number {
     const rawPath = toPathString(path);
-    const pathStr = normalizePathForDirectory(rawPath);
+    const pathStr = rawPath;
     const numFlags = parseFlags(flags);
     const fd = nextFd++;
 

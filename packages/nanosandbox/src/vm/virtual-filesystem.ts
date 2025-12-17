@@ -25,8 +25,9 @@ export interface ShellResult {
 }
 
 /**
- * Check if a path is in the Directory mount (starts with /data or is a direct path)
- * Paths NOT starting with /data that also don't exist in Directory need shell fallback
+ * Check if a path is in the Directory mount (starts with /data)
+ * Only /data/* paths are read from Directory.
+ * All other paths should be read via shell commands.
  */
 function isDataPath(path: string): boolean {
 	return path.startsWith(DATA_MOUNT_PATH + "/") || path === DATA_MOUNT_PATH;
@@ -66,82 +67,55 @@ export function createVirtualFileSystem(
 	) => Promise<ShellResult>,
 ): VirtualFileSystem {
 	/**
-	 * Try to read a file from Directory, falling back to shell if not found
+	 * Read a file - /data/* from Directory, everything else via shell
 	 */
 	async function readFileWithFallback(
 		path: string,
 		binary: boolean,
 	): Promise<Uint8Array | string> {
-		const normalizedPath = normalizePathForDirectory(path);
-
-		// First, try to read from Directory
-		try {
+		// /data/* paths are read from Directory
+		if (isDataPath(path)) {
+			const normalizedPath = normalizePathForDirectory(path);
 			if (binary) {
 				return await directory.readFile(normalizedPath);
 			}
 			return await directory.readTextFile(normalizedPath);
-		} catch (directoryError) {
-			// If path is explicitly a /data path, don't fall back
-			if (isDataPath(path)) {
-				throw directoryError;
-			}
-
-			// Try shell fallback for non-/data paths
-			try {
-				// Use cat to read the file via shell
-				const result = await runShellCommand("cat", [path]);
-				if (result.code === 0) {
-					if (binary) {
-						// Convert stdout string to Uint8Array
-						return new TextEncoder().encode(result.stdout);
-					}
-					return result.stdout;
-				}
-			} catch {
-				// Shell fallback failed, throw original error
-			}
-
-			// Shell failed - throw original error
-			throw directoryError;
 		}
+
+		// All other paths are read via shell command
+		const result = await runShellCommand("cat", [path]);
+		if (result.code !== 0) {
+			throw new Error(`Failed to read file: ${path}`);
+		}
+		if (binary) {
+			return new TextEncoder().encode(result.stdout);
+		}
+		return result.stdout;
 	}
 
 	/**
-	 * Try to read directory from Directory, falling back to shell if not found
+	 * Read directory - /data/* from Directory, everything else via shell
 	 */
 	async function readDirWithFallback(path: string): Promise<string[]> {
-		const normalizedPath = normalizePathForDirectory(path);
-
-		// First, try to read from Directory
-		try {
+		// /data/* paths are read from Directory
+		if (isDataPath(path)) {
+			const normalizedPath = normalizePathForDirectory(path);
 			const entries = await directory.readDir(normalizedPath);
 			return entries.map((entry) =>
 				typeof entry === "string"
 					? entry
 					: (entry as { name: string }).name,
 			);
-		} catch (directoryError) {
-			// If path is explicitly a /data path, don't fall back
-			if (isDataPath(path)) {
-				throw directoryError;
-			}
-
-			// Try shell fallback for non-/data paths
-			try {
-				// Use ls to list directory via shell
-				const result = await runShellCommand("ls", ["-1", path]);
-				if (result.code === 0) {
-					return result.stdout
-						.split("\n")
-						.filter((line) => line.trim() !== "");
-				}
-			} catch {
-				// Shell fallback failed, throw original error
-			}
-
-			// Shell failed - throw original error
-			throw directoryError;
 		}
+
+		// All other paths are read via shell command
+		const result = await runShellCommand("ls", ["-1", path]);
+		if (result.code !== 0) {
+			throw new Error(`Failed to read directory: ${path}`);
+		}
+		return result.stdout
+			.split("\n")
+			.filter((line) => line.trim() !== "");
 	}
 
 	return {

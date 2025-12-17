@@ -6245,16 +6245,6 @@ var bridge = (() => {
     if (path instanceof URL) return path.pathname;
     return String(path);
   }
-  var DATA_MOUNT_PATH = "/data";
-  function normalizePathForDirectory(path) {
-    if (path.startsWith(DATA_MOUNT_PATH + "/")) {
-      return path.slice(DATA_MOUNT_PATH.length);
-    }
-    if (path === DATA_MOUNT_PATH) {
-      return "/";
-    }
-    return path;
-  }
   var fs = {
     // Constants
     constants: {
@@ -6314,7 +6304,7 @@ var bridge = (() => {
     readFileSync(path, options) {
       const rawPath = typeof path === "number" ? fdTable.get(path)?.path : toPathString(path);
       if (!rawPath) throw createFsError("EBADF", "EBADF: bad file descriptor", "read");
-      const pathStr = normalizePathForDirectory(rawPath);
+      const pathStr = rawPath;
       const encoding = typeof options === "string" ? options : options?.encoding;
       try {
         if (encoding) {
@@ -6340,7 +6330,7 @@ var bridge = (() => {
     writeFileSync(file, data, _options) {
       const rawPath = typeof file === "number" ? fdTable.get(file)?.path : toPathString(file);
       if (!rawPath) throw createFsError("EBADF", "EBADF: bad file descriptor", "write");
-      const pathStr = normalizePathForDirectory(rawPath);
+      const pathStr = rawPath;
       if (typeof data === "string") {
         _fs.writeFile.applySync(void 0, [pathStr, data]);
       } else if (ArrayBuffer.isView(data)) {
@@ -6358,7 +6348,7 @@ var bridge = (() => {
     },
     readdirSync(path, options) {
       const rawPath = toPathString(path);
-      const pathStr = normalizePathForDirectory(rawPath);
+      const pathStr = rawPath;
       let entriesJson;
       try {
         entriesJson = _fs.readDir.applySyncPromise(void 0, [pathStr]);
@@ -6382,13 +6372,13 @@ var bridge = (() => {
     },
     mkdirSync(path, options) {
       const rawPath = toPathString(path);
-      const pathStr = normalizePathForDirectory(rawPath);
+      const pathStr = rawPath;
       const recursive = typeof options === "object" ? options?.recursive ?? false : false;
       _fs.mkdir.applySync(void 0, [pathStr, recursive]);
       return recursive ? rawPath : void 0;
     },
     rmdirSync(path, _options) {
-      const pathStr = normalizePathForDirectory(toPathString(path));
+      const pathStr = toPathString(path);
       _fs.rmdir.applySyncPromise(void 0, [pathStr]);
     },
     rmSync(path, options) {
@@ -6423,12 +6413,12 @@ var bridge = (() => {
       }
     },
     existsSync(path) {
-      const pathStr = normalizePathForDirectory(toPathString(path));
+      const pathStr = toPathString(path);
       return _fs.exists.applySyncPromise(void 0, [pathStr]);
     },
     statSync(path, _options) {
       const rawPath = toPathString(path);
-      const pathStr = normalizePathForDirectory(rawPath);
+      const pathStr = rawPath;
       let statJson;
       try {
         statJson = _fs.stat.applySyncPromise(void 0, [pathStr]);
@@ -6451,12 +6441,12 @@ var bridge = (() => {
       return fs.statSync(path);
     },
     unlinkSync(path) {
-      const pathStr = normalizePathForDirectory(toPathString(path));
+      const pathStr = toPathString(path);
       _fs.unlink.applySyncPromise(void 0, [pathStr]);
     },
     renameSync(oldPath, newPath) {
-      const oldPathStr = normalizePathForDirectory(toPathString(oldPath));
-      const newPathStr = normalizePathForDirectory(toPathString(newPath));
+      const oldPathStr = toPathString(oldPath);
+      const newPathStr = toPathString(newPath);
       _fs.rename.applySyncPromise(void 0, [oldPathStr, newPathStr]);
     },
     copyFileSync(src, dest, _mode) {
@@ -6466,7 +6456,7 @@ var bridge = (() => {
     // File descriptor methods
     openSync(path, flags, _mode) {
       const rawPath = toPathString(path);
-      const pathStr = normalizePathForDirectory(rawPath);
+      const pathStr = rawPath;
       const numFlags = parseFlags(flags);
       const fd = nextFd++;
       const exists = fs.existsSync(path);
