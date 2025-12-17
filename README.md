@@ -8,10 +8,14 @@ NanoSandbox provides a resource efficient alternative by providing a hybrid virt
 
 The end result is a vaslty more efficient Linux sandbox with nearly identical performance that can run anywhere.
 
+TODO: Before diagram
+
+TODO: After diagram
+
 ## Features
 
 - No microVMs, just V8 isolates & WASM
-- Runs anywhere Node.js can run
+- Runs anywhere Node.js can run (Vercel Fluid Compute, Railway, Fly.io, Lambda, Cloud Run, etc)
 - Available as a library or MCP server
 - High-performance JS, no watered down JS runtime
 - Interactive terminal with TTY
@@ -67,7 +71,9 @@ TODO
 
 ## Comparison to Existing Sandbox Technologies
 
-|       | microVM                      | Isolates & WASM                              | cgroup/bubblewarp/nsjail/etc | Full VMs |
+TODO: Architecture diagrams for each, and sort by light -> heavy
+
+|       | microVM                      | Isolates & WASM                              | Docker/cgroup/bubblewarp/nsjail/etc | Full VMs |
 | Cost  | Expensive           
 | Self-hostable | No | Yes | Yes | No |
 | Users | Daytona, E2B, Fly.io, Lambda | NanoSandbox, Chromium, Cloudflare Workers, Deno Deploy | TBD                   | EC2      |

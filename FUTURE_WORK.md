@@ -34,3 +34,8 @@
 - set nano as $EDITOR
 - improve default shell/bashrc
 - switch to zsh instead of bash
+- replace use of wasmer sdk with direct use of wasmer rust lib so we can:
+     - have better fs interop
+     - write to host fs
+- replace isolated-vm with our own rust implementation that's integrated with WASIX
+- why does chmod not work
