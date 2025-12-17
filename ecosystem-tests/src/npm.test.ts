@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { VirtualMachine } from "nanosandbox";
+import { VirtualMachine, DATA_MOUNT_PATH } from "nanosandbox";
 
 // npm CLI tests - some skipped due to @wasmer/sdk bugs when running complex operations
 // Errors include: "Cannot read properties of undefined (reading 'data')",
@@ -55,11 +55,10 @@ describe("NPM CLI Integration", () => {
 })();
 `;
 		// Ensure /tmp directory exists and write script there
-		// vm.spawn reads script directly from Directory, so use Directory path
-		// But require() inside script goes through VFS, so npm path uses /data prefix
-		await vm.mkdir("/tmp");
-		await vm.writeFile("/tmp/npm-runner.js", script);
-		return vm.spawn("node", ["/tmp/npm-runner.js"]);
+		// All paths now require /data prefix
+		await vm.mkdir("/data/tmp");
+		await vm.writeFile("/data/tmp/npm-runner.js", script);
+		return vm.spawn("node", ["/data/tmp/npm-runner.js"]);
 	}
 
 	/**
@@ -67,11 +66,11 @@ describe("NPM CLI Integration", () => {
 	 */
 	async function setupNpmEnvironment(vm: VirtualMachine): Promise<void> {
 		// Create app directory structure
-		await vm.mkdir("/app");
+		await vm.mkdir("/data/app");
 
 		// Create home directory for npm
-		await vm.mkdir("/app/.npm");
-		await vm.writeFile("/app/.npmrc", "");
+		await vm.mkdir("/data/app/.npm");
+		await vm.writeFile("/data/app/.npmrc", "");
 	}
 
 	describe.skip("Step 1: npm --version", () => {
@@ -83,7 +82,7 @@ describe("NPM CLI Integration", () => {
 
 				await setupNpmEnvironment(vm);
 				await vm.writeFile(
-					"/app/package.json",
+					"/data/app/package.json",
 					JSON.stringify({ name: "test-app", version: "1.0.0" }),
 				);
 
@@ -109,7 +108,7 @@ describe("NPM CLI Integration", () => {
 
 				await setupNpmEnvironment(vm);
 				await vm.writeFile(
-					"/app/package.json",
+					"/data/app/package.json",
 					JSON.stringify({ name: "test-app", version: "1.0.0" }),
 				);
 
@@ -136,10 +135,10 @@ describe("NPM CLI Integration", () => {
 				await setupNpmEnvironment(vm);
 
 				// Create app directory structure with dependencies
-				await vm.mkdir("/app/node_modules");
-				await vm.mkdir("/app/node_modules/lodash");
+				await vm.mkdir("/data/app/node_modules");
+				await vm.mkdir("/data/app/node_modules/lodash");
 				await vm.writeFile(
-					"/app/package.json",
+					"/data/app/package.json",
 					JSON.stringify({
 						name: "test-app",
 						version: "1.0.0",
@@ -149,7 +148,7 @@ describe("NPM CLI Integration", () => {
 					}),
 				);
 				await vm.writeFile(
-					"/app/node_modules/lodash/package.json",
+					"/data/app/node_modules/lodash/package.json",
 					JSON.stringify({
 						name: "lodash",
 						version: "4.17.21",
@@ -178,9 +177,9 @@ describe("NPM CLI Integration", () => {
 				await vm.init();
 
 				// Create app directory (without package.json)
-				await vm.mkdir("/app");
-				await vm.mkdir("/app/.npm");
-				await vm.writeFile("/app/.npmrc", "");
+				await vm.mkdir("/data/app");
+				await vm.mkdir("/data/app/.npm");
+				await vm.writeFile("/data/app/.npmrc", "");
 
 				const result = await runNpm(vm, ["init", "-y"]);
 
@@ -189,11 +188,11 @@ describe("NPM CLI Integration", () => {
 				console.log("code:", result.code);
 
 				// Check that package.json was created
-				const pkgJsonExists = await vm.exists("/app/package.json");
+				const pkgJsonExists = await vm.exists("/data/app/package.json");
 				expect(pkgJsonExists).toBe(true);
 
 				// Read and verify the package.json content
-				const pkgJsonContent = await vm.readFile("/app/package.json");
+				const pkgJsonContent = await vm.readFile("/data/app/package.json");
 				const pkgJson = JSON.parse(pkgJsonContent);
 				expect(pkgJson.name).toBe("app");
 				expect(pkgJson.version).toBe("1.0.0");
@@ -211,7 +210,7 @@ describe("NPM CLI Integration", () => {
 
 				await setupNpmEnvironment(vm);
 				await vm.writeFile(
-					"/app/package.json",
+					"/data/app/package.json",
 					JSON.stringify({ name: "test-app", version: "1.0.0" }),
 				);
 
@@ -237,7 +236,7 @@ describe("NPM CLI Integration", () => {
 
 				await setupNpmEnvironment(vm);
 				await vm.writeFile(
-					"/app/package.json",
+					"/data/app/package.json",
 					JSON.stringify({ name: "test-app", version: "1.0.0" }),
 				);
 
@@ -265,7 +264,7 @@ describe("NPM CLI Integration", () => {
 
 				// Create a simple package to pack
 				await vm.writeFile(
-					"/app/package.json",
+					"/data/app/package.json",
 					JSON.stringify({
 						name: "test-pack-app",
 						version: "1.0.0",
@@ -274,7 +273,7 @@ describe("NPM CLI Integration", () => {
 					}),
 				);
 				await vm.writeFile(
-					"/app/index.js",
+					"/data/app/index.js",
 					"module.exports = { hello: 'world' };",
 				);
 
@@ -285,7 +284,9 @@ describe("NPM CLI Integration", () => {
 				console.log("code:", result.code);
 
 				// Check if tarball was created
-				const tarballExists = await vm.exists("/app/test-pack-app-1.0.0.tgz");
+				const tarballExists = await vm.exists(
+					"/data/app/test-pack-app-1.0.0.tgz",
+				);
 				console.log("Tarball exists:", tarballExists);
 
 				// npm pack should complete without error
@@ -307,7 +308,7 @@ describe("NPM CLI Integration", () => {
 
 				// Create a package.json with a simple dependency
 				await vm.writeFile(
-					"/app/package.json",
+					"/data/app/package.json",
 					JSON.stringify(
 						{
 							name: "test-install-app",
@@ -328,15 +329,17 @@ describe("NPM CLI Integration", () => {
 				console.log("code:", result.code);
 
 				// Check if node_modules was created
-				const nodeModulesExists = await vm.exists("/app/node_modules");
+				const nodeModulesExists = await vm.exists("/data/app/node_modules");
 				console.log("node_modules exists:", nodeModulesExists);
 
 				// Check if package was installed
-				const isNumberExists = await vm.exists("/app/node_modules/is-number");
+				const isNumberExists = await vm.exists(
+					"/data/app/node_modules/is-number",
+				);
 				console.log("is-number exists:", isNumberExists);
 
 				// Check if package-lock.json was created
-				const lockfileExists = await vm.exists("/app/package-lock.json");
+				const lockfileExists = await vm.exists("/data/app/package-lock.json");
 				console.log("package-lock.json exists:", lockfileExists);
 
 				// npm install starts and makes network requests
@@ -368,8 +371,8 @@ describe("VirtualMachine basic operations", () => {
 		vm = new VirtualMachine({ loadNpm: false });
 		await vm.init();
 
-		await vm.writeFile("/test.txt", "hello world");
-		const content = await vm.readFile("/test.txt");
+		await vm.writeFile("/data/test.txt", "hello world");
+		const content = await vm.readFile("/data/test.txt");
 		expect(content).toBe("hello world");
 	});
 
@@ -377,10 +380,10 @@ describe("VirtualMachine basic operations", () => {
 		vm = new VirtualMachine({ loadNpm: false });
 		await vm.init();
 
-		await vm.mkdir("/mydir");
-		await vm.writeFile("/mydir/file.txt", "content");
+		await vm.mkdir("/data/mydir");
+		await vm.writeFile("/data/mydir/file.txt", "content");
 
-		const entries = await vm.readDir("/mydir");
+		const entries = await vm.readDir("/data/mydir");
 		expect(entries).toContain("file.txt");
 	});
 

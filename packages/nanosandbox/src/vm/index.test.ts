@@ -11,8 +11,8 @@ describe("VirtualMachine", () => {
 			const vm = new VirtualMachine();
 			await vm.init();
 
-			vm.writeFile("/foo.txt", "bar");
-			expect(await vm.readFile("/foo.txt")).toBe("bar");
+			await vm.writeFile("/data/foo.txt", "bar");
+			expect(await vm.readFile("/data/foo.txt")).toBe("bar");
 		});
 
 		it("should write and read binary files", async () => {
@@ -20,9 +20,9 @@ describe("VirtualMachine", () => {
 			await vm.init();
 
 			const data = new Uint8Array([0xde, 0xad, 0xbe, 0xef]);
-			vm.writeFile("/binary.bin", data);
+			await vm.writeFile("/data/binary.bin", data);
 
-			const result = await vm.readFileBinary("/binary.bin");
+			const result = await vm.readFileBinary("/data/binary.bin");
 			expect(result).toEqual(data);
 		});
 
@@ -30,21 +30,21 @@ describe("VirtualMachine", () => {
 			const vm = new VirtualMachine();
 			await vm.init();
 
-			vm.writeFile("/exists.txt", "yes");
+			await vm.writeFile("/data/exists.txt", "yes");
 
-			expect(await vm.exists("/exists.txt")).toBe(true);
-			expect(await vm.exists("/notexists.txt")).toBe(false);
+			expect(await vm.exists("/data/exists.txt")).toBe(true);
+			expect(await vm.exists("/data/notexists.txt")).toBe(false);
 		});
 
 		it("should list directory contents", async () => {
 			const vm = new VirtualMachine();
 			await vm.init();
 
-			vm.mkdir("/mydir");
-			vm.writeFile("/mydir/a.txt", "a");
-			vm.writeFile("/mydir/b.txt", "b");
+			await vm.mkdir("/data/mydir");
+			await vm.writeFile("/data/mydir/a.txt", "a");
+			await vm.writeFile("/data/mydir/b.txt", "b");
 
-			const entries = await vm.readDir("/mydir");
+			const entries = await vm.readDir("/data/mydir");
 			expect(entries).toContain("a.txt");
 			expect(entries).toContain("b.txt");
 		});
@@ -53,19 +53,25 @@ describe("VirtualMachine", () => {
 			const vm = new VirtualMachine();
 			await vm.init();
 
-			vm.writeFile("/remove.txt", "delete me");
-			expect(await vm.exists("/remove.txt")).toBe(true);
+			await vm.writeFile("/data/remove.txt", "delete me");
+			expect(await vm.exists("/data/remove.txt")).toBe(true);
 
-			await vm.remove("/remove.txt");
-			expect(await vm.exists("/remove.txt")).toBe(false);
+			await vm.remove("/data/remove.txt");
+			expect(await vm.exists("/data/remove.txt")).toBe(false);
 		});
 
-		it("should expose underlying SystemBridge and Directory", async () => {
+		it("should expose underlying Directory", async () => {
 			const vm = new VirtualMachine();
 			await vm.init();
 
-			expect(vm.getSystemBridge()).toBeDefined();
 			expect(vm.getDirectory()).toBeDefined();
+		});
+
+		it("should expose VirtualFileSystem", async () => {
+			const vm = new VirtualMachine();
+			await vm.init();
+
+			expect(vm.getVirtualFileSystem()).toBeDefined();
 		});
 
 		it("should initialize only once", async () => {
@@ -73,8 +79,17 @@ describe("VirtualMachine", () => {
 			await vm.init();
 			await vm.init(); // Should not throw
 
-			vm.writeFile("/test.txt", "ok");
-			expect(await vm.readFile("/test.txt")).toBe("ok");
+			await vm.writeFile("/data/test.txt", "ok");
+			expect(await vm.readFile("/data/test.txt")).toBe("ok");
+		});
+
+		it("should reject writes to non-/data paths", async () => {
+			const vm = new VirtualMachine();
+			await vm.init();
+
+			await expect(vm.writeFile("/foo.txt", "bar")).rejects.toThrow(
+				"Cannot write to path outside /data",
+			);
 		});
 	});
 
@@ -105,9 +120,10 @@ describe("VirtualMachine", () => {
 		it("should load files from host directory", async () => {
 			const vm = new VirtualMachine();
 			await vm.init();
+			// loadFromHost takes path in Directory (without /data), files accessible at /data/*
 			await vm.loadFromHost(tempDir);
 
-			expect(await vm.readFile("/hello.txt")).toBe("Hello World");
+			expect(await vm.readFile("/data/hello.txt")).toBe("Hello World");
 		});
 
 		it("should load nested directories", async () => {
@@ -115,7 +131,9 @@ describe("VirtualMachine", () => {
 			await vm.init();
 			await vm.loadFromHost(tempDir);
 
-			expect(await vm.readFile("/subdir/nested.txt")).toBe("Nested content");
+			expect(await vm.readFile("/data/subdir/nested.txt")).toBe(
+				"Nested content",
+			);
 		});
 
 		it("should load node_modules directory", async () => {
@@ -123,7 +141,7 @@ describe("VirtualMachine", () => {
 			await vm.init();
 			await vm.loadFromHost(tempDir);
 
-			const pkgJson = await vm.readFile("/node_modules/package.json");
+			const pkgJson = await vm.readFile("/data/node_modules/package.json");
 			expect(pkgJson).toContain("test-pkg");
 		});
 
@@ -132,7 +150,7 @@ describe("VirtualMachine", () => {
 			await vm.init();
 			await vm.loadFromHost(tempDir);
 
-			const entries = await vm.readDir("/");
+			const entries = await vm.readDir("/data");
 			expect(entries).toContain("hello.txt");
 			expect(entries).toContain("subdir");
 			expect(entries).toContain("node_modules");
@@ -141,9 +159,10 @@ describe("VirtualMachine", () => {
 		it("should load to custom virtual base path", async () => {
 			const vm = new VirtualMachine();
 			await vm.init();
+			// loadFromHost to /project in Directory, accessible at /data/project
 			await vm.loadFromHost(tempDir, "/project");
 
-			expect(await vm.readFile("/project/hello.txt")).toBe("Hello World");
+			expect(await vm.readFile("/data/project/hello.txt")).toBe("Hello World");
 		});
 	});
 
@@ -166,9 +185,9 @@ describe("VirtualMachine", () => {
 			const vm = new VirtualMachine();
 			try {
 				await vm.init();
-				vm.writeFile("/script.js", 'console.log("script output")');
+				await vm.writeFile("/data/script.js", 'console.log("script output")');
 
-				const result = await vm.spawn("node", ["/script.js"]);
+				const result = await vm.spawn("node", ["/data/script.js"]);
 				expect(result.stdout).toContain("script output");
 				expect(result.code).toBe(0);
 			} finally {
@@ -180,7 +199,7 @@ describe("VirtualMachine", () => {
 			const vm = new VirtualMachine();
 			try {
 				await vm.init();
-				vm.writeFile("/test.txt", "content");
+				await vm.writeFile("/data/test.txt", "content");
 
 				// Files are mounted at DATA_MOUNT_PATH
 				const result = await vm.spawn("ls", [DATA_MOUNT_PATH]);
@@ -205,7 +224,7 @@ describe("VirtualMachine", () => {
 			const vm = new VirtualMachine();
 			try {
 				await vm.init();
-				vm.writeFile("/script.js", 'console.log("from node")');
+				await vm.writeFile("/data/script.js", 'console.log("from node")');
 
 				// bash runs in WASM, node call bridges via IPC to NodeProcess
 				// Script is at DATA_MOUNT_PATH
@@ -238,7 +257,7 @@ describe("VirtualMachine", () => {
 		it("should handle missing script file", async () => {
 			const vm = new VirtualMachine();
 			try {
-				const result = await vm.spawn("node", ["/nonexistent.js"]);
+				const result = await vm.spawn("node", ["/data/nonexistent.js"]);
 				expect(result.code).toBe(1);
 				expect(result.stderr).toContain("Cannot find module");
 			} finally {
@@ -260,7 +279,7 @@ describe("VirtualMachine", () => {
 				// Note: require() uses VFS which routes /data/* to Directory.
 				// So we need to use /data prefix for the module path.
 				await vm.writeFile(
-					"/test-ms.js",
+					"/data/test-ms.js",
 					`
           const ms = require('/data/node_modules/ms');
           console.log(ms('1h'));
@@ -269,7 +288,7 @@ describe("VirtualMachine", () => {
         `,
 				);
 
-				const result = await vm.spawn("node", ["/test-ms.js"]);
+				const result = await vm.spawn("node", ["/data/test-ms.js"]);
 				expect(result.code).toBe(0);
 				expect(result.stdout).toContain("3600000"); // 1h in ms
 				expect(result.stdout).toContain("172800000"); // 2d in ms
@@ -288,7 +307,7 @@ describe("VirtualMachine", () => {
 				// Note: fs operations use VFS which routes /data/* to Directory.
 				// So we need to use /data prefix for file paths.
 				await vm.writeFile(
-					"/test-fs.js",
+					"/data/test-fs.js",
 					`
           const fs = require('fs');
           fs.writeFileSync('/data/output.json', JSON.stringify({ hello: 'world' }));
@@ -297,12 +316,12 @@ describe("VirtualMachine", () => {
         `,
 				);
 
-				const result = await vm.spawn("node", ["/test-fs.js"]);
+				const result = await vm.spawn("node", ["/data/test-fs.js"]);
 				expect(result.code).toBe(0);
 				expect(result.stdout).toContain('{"hello":"world"}');
 
 				// Verify the file was actually written
-				const content = await vm.readFile("/output.json");
+				const content = await vm.readFile("/data/output.json");
 				expect(JSON.parse(content)).toEqual({ hello: "world" });
 			} finally {
 				vm.dispose();
@@ -314,8 +333,8 @@ describe("VirtualMachine", () => {
 			try {
 				await vm.init();
 
-				vm.writeFile(
-					"/test-path.js",
+				await vm.writeFile(
+					"/data/test-path.js",
 					`
           const path = require('path');
           console.log(path.join('/foo', 'bar', 'baz.txt'));
@@ -325,7 +344,7 @@ describe("VirtualMachine", () => {
         `,
 				);
 
-				const result = await vm.spawn("node", ["/test-path.js"]);
+				const result = await vm.spawn("node", ["/data/test-path.js"]);
 				expect(result.code).toBe(0);
 				expect(result.stdout).toContain("/foo/bar/baz.txt");
 				expect(result.stdout).toContain("/foo/bar");

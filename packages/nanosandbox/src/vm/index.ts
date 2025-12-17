@@ -3,7 +3,6 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Directory, init } from "@wasmer/sdk/node";
 import { NodeProcess, type VirtualFileSystem } from "sandboxed-node";
-import { SystemBridge } from "../system-bridge/index.js";
 import {
 	DATA_MOUNT_PATH,
 	InteractiveSession,
@@ -27,8 +26,25 @@ export interface VirtualMachineOptions {
 
 let wasmerInitialized = false;
 
+/**
+ * Helper to create directories recursively on a Directory instance
+ */
+async function mkdirRecursive(directory: Directory, dirPath: string): Promise<void> {
+	const parts = dirPath.split("/").filter(Boolean);
+	let currentPath = "";
+	for (const part of parts) {
+		currentPath += `/${part}`;
+		try {
+			await directory.createDir(currentPath);
+		} catch {
+			// Directory may already exist
+		}
+	}
+}
+
 export class VirtualMachine {
-	private bridge: SystemBridge | null = null;
+	private directory: Directory | null = null;
+	private vfs: VirtualFileSystem | null = null;
 	private options: VirtualMachineOptions;
 	private initialized = false;
 	private nodeProcess: NodeProcess | null = null;
@@ -49,28 +65,37 @@ export class VirtualMachine {
 			wasmerInitialized = true;
 		}
 
-		// Create SystemBridge after wasmer is initialized
-		this.bridge = new SystemBridge();
+		// Create Directory after wasmer is initialized
+		this.directory = new Directory();
 
 		// Load npm into virtual filesystem if enabled (default: true)
+		// This happens before VFS is created since it writes directly to Directory
 		if (this.options.loadNpm !== false) {
 			await this.loadNpm();
 		}
 
-		// Create virtual filesystem wrapper with shell fallback for non-Directory paths.
+		// Create virtual filesystem wrapper with shell fallback for non-/data paths.
 		// The shell callback captures `this` via closure, so it can access wasixInstance
 		// even though it's created after this call.
-		const virtualFileSystem = this.createVirtualFileSystem();
+		this.vfs = createVirtualFileSystem(
+			this.directory,
+			async (command: string, args: string[]) => {
+				if (!this.wasixInstance) {
+					throw new Error("WasixInstance not initialized");
+				}
+				return this.wasixInstance.runWithIpc(command, args);
+			},
+		);
 
 		// Create NodeProcess with access to virtual filesystem
 		this.nodeProcess = new NodeProcess({
 			memoryLimit: this.options.memoryLimit,
-			filesystem: virtualFileSystem,
+			filesystem: this.vfs,
 		});
 
 		// Create WasixInstance sharing the same filesystem
 		this.wasixInstance = new WasixInstance({
-			directory: this.bridge.getDirectory(),
+			directory: this.directory,
 			nodeProcess: this.nodeProcess,
 			memoryLimit: this.options.memoryLimit,
 		});
@@ -79,36 +104,24 @@ export class VirtualMachine {
 	}
 
 	/**
-	 * Create a VirtualFileSystem that wraps the Directory with shell fallback.
-	 *
-	 * The VirtualFileSystem handles:
-	 * - Path normalization for /data mount path
-	 * - Fallback to shell commands (cat, ls) for paths not in Directory
-	 *   (e.g., /usr/bin from webc)
-	 *
-	 * @returns A VirtualFileSystem implementation
+	 * Get the VirtualFileSystem instance.
+	 * All paths must use /data prefix to access files in the Directory.
+	 * Non-/data paths can read from WASM system paths via shell fallback.
 	 */
-	createVirtualFileSystem(): VirtualFileSystem {
-		if (!this.bridge) {
+	getVirtualFileSystem(): VirtualFileSystem {
+		if (!this.vfs) {
 			throw new Error("VirtualMachine not initialized. Call init() first.");
 		}
-
-		return createVirtualFileSystem(
-			this.bridge.getDirectory(),
-			async (command: string, args: string[]) => {
-				if (!this.wasixInstance) {
-					throw new Error("WasixInstance not initialized");
-				}
-				return this.wasixInstance.runWithIpc(command, args);
-			},
-		);
+		return this.vfs;
 	}
 
 	/**
-	 * Load npm and npx into the virtual filesystem
+	 * Load npm and npx into the virtual filesystem.
+	 * Writes directly to Directory (paths without /data prefix).
+	 * These files will appear at /data/* in the WASM filesystem.
 	 */
 	private async loadNpm(): Promise<void> {
-		if (!this.bridge) return;
+		if (!this.directory) return;
 
 		const currentDir = path.dirname(fileURLToPath(import.meta.url));
 		const npmAssetsPath = path.resolve(currentDir, "../../assets/npm");
@@ -126,12 +139,11 @@ export class VirtualMachine {
 		// bundles coreutils and bash under /usr, and writing to /usr via the Directory
 		// API conflicts with the webc's filesystem, breaking IPC-based node execution.
 		const { loadHostDirectory } = await import("./host-loader.js");
-		await loadHostDirectory(npmAssetsPath, "/opt/npm", this.bridge);
+		await loadHostDirectory(npmAssetsPath, "/opt/npm", this.directory);
 
 		// Create default /etc/npmrc
-		// Note: mkdir is needed even if /etc exists - it signals the fs layer
-		await this.bridge.mkdir("/etc");
-		await this.bridge.writeFile(
+		await mkdirRecursive(this.directory, "/etc");
+		await this.directory.writeFile(
 			"/etc/npmrc",
 			`; Default npm configuration
 prefix=/usr/local
@@ -140,30 +152,30 @@ cache=/tmp/.npm
 		);
 
 		// npm is accessible at DATA_MOUNT_PATH + /opt/npm (e.g., /data/opt/npm)
-		// To run npm: node /opt/npm/bin/npm-cli.js (via spawn)
+		// To run npm: node /data/opt/npm/bin/npm-cli.js (via spawn)
 		// Note: PATH lookup doesn't work for mounted directories in wasix,
 		// so npm must be invoked via explicit path or node spawn.
 
 		// Create simple wrapper scripts in /bin for convenience
-		await this.bridge.mkdir("/bin");
-		await this.bridge.writeFile(
+		await mkdirRecursive(this.directory, "/bin");
+		await this.directory.writeFile(
 			"/bin/npm",
 			`#!/bin/bash
-node /opt/npm/bin/npm-cli.js "$@"
+node /data/opt/npm/bin/npm-cli.js "$@"
 `,
 		);
-		await this.bridge.writeFile(
+		await this.directory.writeFile(
 			"/bin/npx",
 			`#!/bin/bash
-node /opt/npm/bin/npx-cli.js "$@"
+node /data/opt/npm/bin/npx-cli.js "$@"
 `,
 		);
 	}
 
 	/**
-	 * Get the path where npm is installed in the WASM virtual filesystem (bash/wasix).
+	 * Get the path where npm is installed in the WASM virtual filesystem.
 	 * Returns the full path including the DATA_MOUNT_PATH prefix.
-	 * Use this path for shell commands like: bash -c "ls ${getNpmPath()}"
+	 * Use this path in scripts: require('/data/opt/npm/...')
 	 * Returns null if npm is not loaded.
 	 */
 	getNpmPath(): string | null {
@@ -174,114 +186,116 @@ node /opt/npm/bin/npx-cli.js "$@"
 	}
 
 	/**
-	 * Get the path where npm is installed in the Directory (node/filesystem API).
-	 * Returns the path without DATA_MOUNT_PATH prefix.
-	 * Use this path for node commands like: node ${getNpmDirectoryPath()}/lib/node_modules/npm/bin/npm-cli.js
-	 * Returns null if npm is not loaded.
+	 * Ensure VM is initialized and return VFS (throws if not)
 	 */
-	getNpmDirectoryPath(): string | null {
-		if (this.options.loadNpm === false) {
-			return null;
-		}
-		return "/opt/npm";
-	}
-
-	/**
-	 * Ensure VM is initialized (throws if not)
-	 */
-	private ensureInitialized(): SystemBridge {
-		if (!this.bridge) {
+	private ensureInitialized(): VirtualFileSystem {
+		if (!this.vfs || !this.directory) {
 			throw new Error("VirtualMachine not initialized. Call init() first.");
 		}
-		return this.bridge;
+		return this.vfs;
 	}
 
 	/**
-	 * Get the underlying SystemBridge
-	 */
-	getSystemBridge(): SystemBridge {
-		return this.ensureInitialized();
-	}
-
-	/**
-	 * Get the underlying Directory instance
+	 * Get the underlying Directory instance.
+	 * Note: For most operations, use the VirtualMachine methods instead.
+	 * Direct Directory access bypasses path validation.
 	 */
 	getDirectory(): Directory {
-		return this.ensureInitialized().getDirectory();
+		if (!this.directory) {
+			throw new Error("VirtualMachine not initialized. Call init() first.");
+		}
+		return this.directory;
 	}
 
 	/**
-	 * Write a file to the virtual filesystem
+	 * Write a file to the virtual filesystem.
+	 * Path must start with /data/ (e.g., /data/app/index.js)
 	 */
-	async writeFile(path: string, content: string | Uint8Array): Promise<void> {
-		await this.ensureInitialized().writeFile(path, content);
+	async writeFile(filePath: string, content: string | Uint8Array): Promise<void> {
+		const vfs = this.ensureInitialized();
+		await vfs.writeFile(filePath, content);
 	}
 
 	/**
-	 * Read a file from the virtual filesystem
+	 * Read a file from the virtual filesystem as text.
+	 * /data/* paths read from Directory, others from WASM system via shell.
 	 */
-	async readFile(path: string): Promise<string> {
-		return this.ensureInitialized().readFile(path);
+	async readFile(filePath: string): Promise<string> {
+		const vfs = this.ensureInitialized();
+		return vfs.readTextFile(filePath);
 	}
 
 	/**
-	 * Read a file as binary
+	 * Read a file as binary.
+	 * /data/* paths read from Directory, others from WASM system via shell.
 	 */
-	async readFileBinary(path: string): Promise<Uint8Array> {
-		return this.ensureInitialized().readFileBinary(path);
+	async readFileBinary(filePath: string): Promise<Uint8Array> {
+		const vfs = this.ensureInitialized();
+		return vfs.readFile(filePath);
 	}
 
 	/**
-	 * Check if a path exists
+	 * Check if a path exists.
+	 * /data/* paths check Directory, others check WASM system via shell.
 	 */
-	async exists(path: string): Promise<boolean> {
-		return this.ensureInitialized().exists(path);
+	async exists(filePath: string): Promise<boolean> {
+		const vfs = this.ensureInitialized();
+		return vfs.exists(filePath);
 	}
 
 	/**
-	 * Read directory contents
+	 * Read directory contents.
+	 * /data/* paths read from Directory, others from WASM system via shell.
 	 */
-	async readDir(path: string): Promise<string[]> {
-		return this.ensureInitialized().readDir(path);
+	async readDir(dirPath: string): Promise<string[]> {
+		const vfs = this.ensureInitialized();
+		return vfs.readDir(dirPath);
 	}
 
 	/**
-	 * Create a directory
+	 * Create a directory (recursively creates parents).
+	 * Path must start with /data/ (e.g., /data/app/lib)
 	 */
-	async mkdir(path: string): Promise<void> {
-		await this.ensureInitialized().mkdir(path);
+	async mkdir(dirPath: string): Promise<void> {
+		const vfs = this.ensureInitialized();
+		await vfs.mkdir(dirPath);
 	}
 
 	/**
-	 * Remove a file
+	 * Remove a file.
+	 * Path must start with /data/
 	 */
-	async remove(path: string): Promise<void> {
-		return this.ensureInitialized().remove(path);
+	async remove(filePath: string): Promise<void> {
+		const vfs = this.ensureInitialized();
+		await vfs.removeFile(filePath);
 	}
 
 	/**
-	 * Load files from host filesystem into the virtual filesystem
-	 * This recursively copies all files from the host path into the virtual fs
+	 * Load files from host filesystem into the virtual filesystem.
+	 * This recursively copies all files from the host path into the virtual fs.
 	 * @param hostPath - Path on the host filesystem to copy from
-	 * @param virtualBasePath - Where to mount in virtual fs (default "/")
+	 * @param virtualBasePath - Where to mount in Directory (without /data prefix)
+	 *                          Files will be accessible at /data/{virtualBasePath}/...
 	 */
 	async loadFromHost(
 		hostPath: string,
 		virtualBasePath: string = "/",
 	): Promise<void> {
+		if (!this.directory) {
+			throw new Error("VirtualMachine not initialized. Call init() first.");
+		}
 		const { loadHostDirectory } = await import("./host-loader.js");
-		const bridge = this.ensureInitialized();
-		await loadHostDirectory(hostPath, virtualBasePath, bridge);
+		await loadHostDirectory(hostPath, virtualBasePath, this.directory);
 	}
 
 	/**
-	 * Spawn a command in the virtual machine
-	 * Routes to appropriate runtime (node -> NodeProcess, linux -> WasixInstance)
+	 * Spawn a command in the virtual machine.
+	 * Routes to appropriate runtime (node -> NodeProcess, others -> WasixInstance)
 	 */
 	async spawn(command: string, args: string[] = []): Promise<SpawnResult> {
 		await this.init();
 
-		if (!this.nodeProcess || !this.wasixInstance || !this.bridge) {
+		if (!this.nodeProcess || !this.wasixInstance || !this.vfs) {
 			throw new Error("VirtualMachine not properly initialized");
 		}
 
@@ -299,7 +313,7 @@ node /opt/npm/bin/npx-cli.js "$@"
 	 * Execute node via NodeProcess
 	 */
 	private async spawnNode(args: string[]): Promise<SpawnResult> {
-		if (!this.nodeProcess || !this.bridge) {
+		if (!this.nodeProcess || !this.vfs) {
 			throw new Error("NodeProcess not initialized");
 		}
 
@@ -312,10 +326,10 @@ node /opt/npm/bin/npx-cli.js "$@"
 				code = args[i + 1] || "";
 				break;
 			} else if (!args[i].startsWith("-")) {
-				// It's a script file path
+				// It's a script file path - should be /data/... path
 				scriptPath = args[i];
 				try {
-					code = await this.bridge.readFile(scriptPath);
+					code = await this.vfs.readTextFile(scriptPath);
 				} catch {
 					return {
 						stdout: "",
@@ -341,8 +355,8 @@ node /opt/npm/bin/npx-cli.js "$@"
 	}
 
 	/**
-	 * Run an interactive command with streaming I/O
-	 * Returns an InteractiveSession for stream access
+	 * Run an interactive command with streaming I/O.
+	 * Returns an InteractiveSession for stream access.
 	 */
 	async runInteractive(
 		command: string,
@@ -366,7 +380,8 @@ node /opt/npm/bin/npx-cli.js "$@"
 			this.nodeProcess = null;
 		}
 		this.wasixInstance = null;
-		this.bridge = null;
+		this.vfs = null;
+		this.directory = null;
 		this.initialized = false;
 	}
 }

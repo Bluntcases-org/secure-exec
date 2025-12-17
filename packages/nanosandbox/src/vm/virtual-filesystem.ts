@@ -118,6 +118,19 @@ export function createVirtualFileSystem(
 			.filter((line) => line.trim() !== "");
 	}
 
+	/**
+	 * Validate that a path is in the /data mount for write operations.
+	 * Write operations can only target the Directory (user files), not WASM system paths.
+	 */
+	function validateWritePath(path: string): string {
+		if (!isDataPath(path)) {
+			throw new Error(
+				`Cannot write to path outside /data: ${path}. Use ${DATA_MOUNT_PATH}${path} instead.`,
+			);
+		}
+		return normalizePathForDirectory(path);
+	}
+
 	return {
 		readFile: async (path: string): Promise<Uint8Array> => {
 			const result = await readFileWithFallback(path, true);
@@ -134,7 +147,7 @@ export function createVirtualFileSystem(
 		},
 
 		writeFile: async (path: string, content: string | Uint8Array): Promise<void> => {
-			const normalizedPath = normalizePathForDirectory(path);
+			const normalizedPath = validateWritePath(path);
 			// HACK: Workaround for wasmer-js Directory.writeFile missing truncate(true)
 			// Bug: wasmer-js src/fs/directory.rs uses .write(true).create(true) but not .truncate(true)
 			// Result: overwriting a file with shorter content leaves old bytes at the end
@@ -148,18 +161,65 @@ export function createVirtualFileSystem(
 		},
 
 		createDir: async (path: string): Promise<void> => {
-			const normalizedPath = normalizePathForDirectory(path);
+			const normalizedPath = validateWritePath(path);
 			await directory.createDir(normalizedPath);
 		},
 
 		removeFile: async (path: string): Promise<void> => {
-			const normalizedPath = normalizePathForDirectory(path);
+			const normalizedPath = validateWritePath(path);
 			await directory.removeFile(normalizedPath);
 		},
 
 		removeDir: async (path: string): Promise<void> => {
-			const normalizedPath = normalizePathForDirectory(path);
+			const normalizedPath = validateWritePath(path);
 			await directory.removeDir(normalizedPath);
+		},
+
+		/**
+		 * Check if a path exists (file or directory).
+		 * For /data/* paths, checks Directory. For others, uses shell.
+		 */
+		exists: async (path: string): Promise<boolean> => {
+			if (isDataPath(path)) {
+				const normalizedPath = normalizePathForDirectory(path);
+				try {
+					await directory.readFile(normalizedPath);
+					return true;
+				} catch {
+					try {
+						await directory.readDir(normalizedPath);
+						return true;
+					} catch {
+						return false;
+					}
+				}
+			}
+			// For non-/data paths, try ls (for directories) then cat (for files)
+			// This is more reliable than `test -e` in WASM shell
+			const lsResult = await runShellCommand("ls", [path]);
+			if (lsResult.code === 0) {
+				return true;
+			}
+			const catResult = await runShellCommand("cat", [path]);
+			return catResult.code === 0;
+		},
+
+		/**
+		 * Create a directory recursively (creates parent directories as needed).
+		 * Only works for /data/* paths.
+		 */
+		mkdir: async (path: string): Promise<void> => {
+			const normalizedPath = validateWritePath(path);
+			const parts = normalizedPath.split("/").filter(Boolean);
+			let currentPath = "";
+			for (const part of parts) {
+				currentPath += `/${part}`;
+				try {
+					await directory.createDir(currentPath);
+				} catch {
+					// Directory may already exist
+				}
+			}
 		},
 	};
 }

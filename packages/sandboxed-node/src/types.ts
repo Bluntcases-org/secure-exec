@@ -31,10 +31,21 @@ export interface VirtualFileSystem {
 	writeFile(path: string, content: string | Uint8Array): Promise<void>;
 
 	/**
-	 * Create a directory (creates parent directories as needed)
-	 * Should not throw if directory already exists
+	 * Create a single directory level
+	 * @throws Error if parent doesn't exist
 	 */
 	createDir(path: string): Promise<void>;
+
+	/**
+	 * Create a directory recursively (creates parent directories as needed)
+	 * Should not throw if directory already exists
+	 */
+	mkdir(path: string): Promise<void>;
+
+	/**
+	 * Check if a path exists (file or directory)
+	 */
+	exists(path: string): Promise<boolean>;
 
 	/**
 	 * Remove a file
