@@ -4,16 +4,18 @@
 
 - 1-line embedded cc working
 - declarative sandbox with git, etc
+- stretch
+    - open code in the browser using local llm
 
 ## short term
 
-- remove use of runCommand, make it all run with ipc
-- see what else needs to be simulated (signals?)
-- potentially move fs to use this system too?
-- implement child process v2 with the host process context
+- clean up where load runtime is (it shoudl be part of runtime.load())
+- impl remaining signals functionality
+- bind all of this functionality to nodejs
+- implement child process with the host process context
 - remove js cruft from npm tests (raw npm should work fine)
 - get npm working in terminal
-- figure out how to be able to spawn commands & mutate fs mid-job
+- get basic ecosystem tests working
 
 ## cleanup
 
@@ -47,6 +49,7 @@
 - WASM memory limits - memoryLimit is plumbed through but not yet enforced on WASM side
 - wasmer-js Directory.writeFile missing truncate(true) - overwriting a file with shorter content leaves old bytes at the end. Bug is in wasmer-js src/fs/directory.rs: open_options uses .write(true).create(true) but not .truncate(true). Workaround: delete file before writing. See virtual-filesystem.ts
 - host_exec poll CPU overhead - current implementation uses 10ms timeout polling (~100 wakes/sec when idle). Implement `host_exec_get_notify_fd` syscall to enable zero-CPU idle waiting via poll_oneoff. See [docs/research/host-exec-notify-fd.md](docs/research/host-exec-notify-fd.md)
+- streaming stdin without TTY echo - spawn() uses wasmer-js TTY mode which echoes stdin to stdout. For true interactive streaming (write→read→repeat), need raw/non-echo mode in wasmer-js. Would require upstream changes to support a "raw" TTY option that disables echo.
 
 ## other
 - get claude code cli working in this emulator
@@ -65,6 +68,8 @@
 - integrate pino
 - snapshots/live migration
 - custom images
+- move incoming and outgoing networking to using the virtual network in wasix
+    - right now, node & vm cannot access each other
 
 ## better isolation
 
