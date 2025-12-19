@@ -264,85 +264,80 @@ function spawn(command: string, args?: string[], options?: SpawnOptions): ChildP
 **File:** `packages/nanosandbox/src/command-executor.ts`
 
 ```typescript
-import { spawn as nodeSpawn } from 'node:child_process';
 import type { CommandExecutor, SpawnedProcess } from 'sandboxed-node';
+import type { HostExecContext } from './vm/index.js';
 
 /**
- * CommandExecutor that spawns real processes on the host.
- * Used when sandboxed code calls child_process.spawn().
+ * CommandExecutor that passes spawn requests through HostExecContext.
+ * This keeps child processes sandboxed by routing them through wasmer-js.
  */
-export function createHostCommandExecutor(): CommandExecutor {
+export function createCommandExecutor(ctx: HostExecContext): CommandExecutor {
   return {
     async exec(command: string) {
-      // Use bash to execute shell command
-      return new Promise((resolve) => {
-        const child = nodeSpawn('bash', ['-c', command]);
-        let stdout = '', stderr = '';
-        child.stdout?.on('data', (d) => stdout += d);
-        child.stderr?.on('data', (d) => stderr += d);
-        child.on('close', (code) => resolve({ stdout, stderr, code: code ?? 0 }));
-      });
+      // Route through HostExecContext to spawn sandboxed bash
+      return ctx.spawnChild('bash', ['-c', command]);
     },
 
     async run(command: string, args?: string[]) {
-      return new Promise((resolve) => {
-        const child = nodeSpawn(command, args || []);
-        let stdout = '', stderr = '';
-        child.stdout?.on('data', (d) => stdout += d);
-        child.stderr?.on('data', (d) => stderr += d);
-        child.on('close', (code) => resolve({ stdout, stderr, code: code ?? 0 }));
-      });
+      return ctx.spawnChild(command, args || []);
     },
 
     spawn(command, args, options): SpawnedProcess {
-      const child = nodeSpawn(command, args, {
+      // Register child spawn with HostExecContext
+      // This adds it to the wasmer-js scheduler's pending spawns
+      return ctx.spawnChildStreaming(command, args, {
         cwd: options.cwd,
-        env: { ...process.env, ...options.env },
-        stdio: ['pipe', 'pipe', 'pipe'],
+        env: options.env,
+        onStdout: options.onStdout,
+        onStderr: options.onStderr,
       });
-
-      child.stdout?.on('data', (data: Buffer) => {
-        options.onStdout?.(new Uint8Array(data));
-      });
-
-      child.stderr?.on('data', (data: Buffer) => {
-        options.onStderr?.(new Uint8Array(data));
-      });
-
-      let exitCode = 0;
-      const exitPromise = new Promise<number>((resolve) => {
-        child.on('close', (code) => {
-          exitCode = code ?? 0;
-          resolve(exitCode);
-        });
-      });
-
-      return {
-        writeStdin(data) {
-          const buf = typeof data === 'string' ? Buffer.from(data) : Buffer.from(data);
-          child.stdin?.write(buf);
-        },
-        closeStdin() {
-          child.stdin?.end();
-        },
-        kill(signal = 15) {
-          child.kill(signal === 9 ? 'SIGKILL' : 'SIGTERM');
-        },
-        wait() {
-          return exitPromise;
-        },
-      };
     },
   };
 }
 ```
 
-### 2.2 Pass CommandExecutor to NodeProcess
+### 2.2 Extend HostExecContext with child spawn support
+
+**File:** `packages/nanosandbox/src/vm/index.ts`
+
+```typescript
+interface HostExecContext {
+  command: string;
+  args: string[];
+  env: Record<string, string>;
+  cwd: string;
+
+  // Existing streaming callbacks
+  onStdout?: (data: Uint8Array) => void;
+  onStderr?: (data: Uint8Array) => void;
+  setStdinWriter?: (writer: (data: Uint8Array) => void, closer: () => void) => void;
+  setKillFunction?: (killFn: (signal: number) => void) => void;
+
+  // NEW: Child process spawning (for nested spawns from sandboxed code)
+  spawnChild(command: string, args: string[]): Promise<{ stdout: string; stderr: string; code: number }>;
+  spawnChildStreaming(
+    command: string,
+    args: string[],
+    options: {
+      cwd?: string;
+      env?: Record<string, string>;
+      onStdout?: (data: Uint8Array) => void;
+      onStderr?: (data: Uint8Array) => void;
+    }
+  ): SpawnedProcess;
+}
+```
+
+### 2.3 wasmer-js scheduler provides spawnChild implementations
+
+The `spawnChild` and `spawnChildStreaming` methods are provided by wasmer-js when it creates the HostExecContext. They route spawn requests back through the wasmer-js scheduler to create new sandboxed WASIX processes.
+
+### 2.4 Pass CommandExecutor to NodeProcess
 
 **File:** `packages/nanosandbox/src/vm/index.ts` (in handleNodeCommand)
 
 ```typescript
-import { createHostCommandExecutor } from '../command-executor.js';
+import { createCommandExecutor } from '../command-executor.js';
 
 async function handleNodeCommand(ctx: HostExecContext): Promise<number> {
   // ... existing code ...
@@ -350,7 +345,7 @@ async function handleNodeCommand(ctx: HostExecContext): Promise<number> {
   const nodeProcess = new NodeProcess({
     memoryLimit: 128,
     processConfig: { /* ... */ },
-    commandExecutor: createHostCommandExecutor(), // NEW
+    commandExecutor: createCommandExecutor(ctx), // Pass ctx for sandboxed spawns
   });
 
   // ... rest of existing code ...
@@ -359,16 +354,34 @@ async function handleNodeCommand(ctx: HostExecContext): Promise<number> {
 
 ---
 
-## Part 3: Sandboxed Spawns (Optional - Full Isolation)
+## Part 3: wasmer-js - HostExecContext child spawn support
 
-For fully sandboxed child processes (where child_process.spawn() creates another WASIX process instead of a real process), the CommandExecutor would need to:
+The HostExecContext needs to be extended in wasmer-js to provide `spawnChild` and `spawnChildStreaming` methods.
 
-1. Add spawn request to a queue in HostExecContext
-2. wasmer-js scheduler picks up the request
-3. Creates a new WASIX instance for the child
-4. Streams stdin/stdout between parent and child
+### 3.1 Update HostExecContext creation in scheduler
 
-This is more complex and requires wasmer-js changes. The simpler approach above spawns real host processes, which is sufficient for most use cases (npm, build tools, etc.).
+**File:** `wasmer-js/src/tasks/scheduler.rs`
+
+When creating the HostExecContext JS object, add:
+
+```rust
+// spawnChild - batch spawn, returns stdout/stderr/code
+let spawn_child = Closure::wrap(Box::new(move |command: String, args_json: String| -> js_sys::Promise {
+    // Parse args, create new host_exec session, wait for completion
+    // Return Promise<{ stdout, stderr, code }>
+}) as Box<dyn Fn(String, String) -> js_sys::Promise>);
+
+// spawnChildStreaming - streaming spawn, returns SpawnedProcess handle
+let spawn_child_streaming = Closure::wrap(Box::new(move |command: String, args_json: String, options: JsValue| -> JsValue {
+    // Parse args/options, create new host_exec session
+    // Return object with writeStdin/closeStdin/kill/wait methods
+}) as Box<dyn Fn(String, String, JsValue) -> JsValue>);
+
+js_sys::Reflect::set(&ctx, &"spawnChild".into(), spawn_child.as_ref())?;
+js_sys::Reflect::set(&ctx, &"spawnChildStreaming".into(), spawn_child_streaming.as_ref())?;
+```
+
+This reuses the existing host_exec infrastructure to spawn nested WASIX processes.
 
 ---
 
