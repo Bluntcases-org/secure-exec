@@ -25,6 +25,8 @@ export interface ProcessConfig {
 	ppid?: number;
 	uid?: number;
 	gid?: number;
+	/** Stdin data to provide to the script */
+	stdin?: string;
 }
 
 export interface OSConfig {
@@ -311,6 +313,8 @@ export interface ExecOptions {
 	filePath?: string;
 	env?: Record<string, string>;
 	cwd?: string;
+	/** Stdin data to pass to the script */
+	stdin?: string;
 }
 
 export interface ExecResult {
@@ -1780,7 +1784,7 @@ export class NodeProcess {
 	 * Supports both CJS and ESM syntax
 	 */
 	async exec(code: string, options?: ExecOptions): Promise<ExecResult> {
-		const { filePath, env, cwd } = options ?? {};
+		const { filePath, env, cwd, stdin } = options ?? {};
 
 		// Clear caches for fresh run
 		this.esmModuleCache.clear();
@@ -1807,6 +1811,11 @@ export class NodeProcess {
 					await this.overrideProcessConfig(context, env, cwd);
 				}
 
+				// Set stdin data if provided
+				if (stdin !== undefined) {
+					await this.setStdinData(context, stdin);
+				}
+
 				// Transform dynamic import() to __dynamicImport()
 				const transformedCode = transformDynamicImport(code);
 
@@ -1825,6 +1834,11 @@ export class NodeProcess {
 				// Override process.env and process.cwd if provided
 				if (env || cwd) {
 					await this.overrideProcessConfig(context, env, cwd);
+				}
+
+				// Set stdin data if provided
+				if (stdin !== undefined) {
+					await this.setStdinData(context, stdin);
 				}
 
 				// Set up __filename and __dirname if a file path is provided
@@ -1925,6 +1939,27 @@ export class NodeProcess {
 				process.cwd = () => ${JSON.stringify(cwd)};
 			`);
 		}
+	}
+
+	/**
+	 * Set stdin data for a specific execution context.
+	 * This injects stdin data that will be emitted when process.stdin listeners are added.
+	 */
+	private async setStdinData(
+		context: ivm.Context,
+		stdin: string,
+	): Promise<void> {
+		// The bridge exposes these variables for stdin management
+		// We need to set them before the script runs so readline can access them
+		await context.eval(`
+			// Reset stdin state for this execution
+			if (typeof _stdinData !== 'undefined') {
+				_stdinData = ${JSON.stringify(stdin)};
+				_stdinPosition = 0;
+				_stdinEnded = false;
+				_stdinFlowMode = false;
+			}
+		`);
 	}
 
 	dispose(): void {

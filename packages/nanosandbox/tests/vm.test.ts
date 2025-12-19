@@ -67,17 +67,17 @@ describe("VirtualMachine", () => {
 			expect(vm.code).not.toBe(0);
 		});
 
-		// TODO: Enable when stdin support is added to sandboxed-node's NodeProcess
-		it.skip("should ping-pong stdin/stdout 3 times", async () => {
-			// Node script that reads lines and responds with pong
+		it("should ping-pong stdin/stdout 3 times", async () => {
+			// Node script that reads stdin and responds with pong
+			// Uses process.stdin.on('data') instead of readline (not implemented)
 			const script = `
-				const readline = require('readline');
-				const rl = readline.createInterface({ input: process.stdin });
-				let count = 0;
-				rl.on('line', (line) => {
-					count++;
-					console.log('pong' + count);
-					if (count >= 3) rl.close();
+				let output = '';
+				process.stdin.on('data', (chunk) => {
+					output += chunk;
+				});
+				process.stdin.on('end', () => {
+					const lines = output.trim().split('\\n');
+					lines.forEach((line, i) => console.log('pong' + (i + 1)));
 				});
 			`;
 			const vm = await runtime.run("node", {

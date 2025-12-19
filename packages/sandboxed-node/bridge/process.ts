@@ -26,6 +26,7 @@ export interface ProcessConfig {
   ppid?: number;
   uid?: number;
   gid?: number;
+  stdin?: string;
 }
 
 // Declare config and host bridge globals
@@ -204,36 +205,140 @@ const _stderr = {
   rows: 24,
 };
 
-// Stdin stream
+// Stdin stream with data support
+// These are exposed as globals so they can be set after bridge initialization
+type StdinListener = (data: unknown) => void;
+const _stdinListeners: Record<string, StdinListener[]> = {};
+const _stdinOnceListeners: Record<string, StdinListener[]> = {};
+
+// Initialize stdin state as globals for external access
+(globalThis as Record<string, unknown>)._stdinData = (typeof _processConfig !== "undefined" && _processConfig.stdin) || "";
+(globalThis as Record<string, unknown>)._stdinPosition = 0;
+(globalThis as Record<string, unknown>)._stdinEnded = false;
+(globalThis as Record<string, unknown>)._stdinFlowMode = false;
+
+// Getters for the globals
+function getStdinData(): string { return (globalThis as Record<string, unknown>)._stdinData as string; }
+function setStdinDataValue(v: string): void { (globalThis as Record<string, unknown>)._stdinData = v; }
+function getStdinPosition(): number { return (globalThis as Record<string, unknown>)._stdinPosition as number; }
+function setStdinPosition(v: number): void { (globalThis as Record<string, unknown>)._stdinPosition = v; }
+function getStdinEnded(): boolean { return (globalThis as Record<string, unknown>)._stdinEnded as boolean; }
+function setStdinEnded(v: boolean): void { (globalThis as Record<string, unknown>)._stdinEnded = v; }
+function getStdinFlowMode(): boolean { return (globalThis as Record<string, unknown>)._stdinFlowMode as boolean; }
+function setStdinFlowMode(v: boolean): void { (globalThis as Record<string, unknown>)._stdinFlowMode = v; }
+
+function _emitStdinData(): void {
+  if (getStdinEnded() || !getStdinData()) return;
+
+  // In flowing mode, emit all remaining data
+  if (getStdinFlowMode() && getStdinPosition() < getStdinData().length) {
+    const chunk = getStdinData().slice(getStdinPosition());
+    setStdinPosition(getStdinData().length);
+
+    // Emit data event
+    const dataListeners = [...(_stdinListeners["data"] || []), ...(_stdinOnceListeners["data"] || [])];
+    _stdinOnceListeners["data"] = [];
+    for (const listener of dataListeners) {
+      listener(chunk);
+    }
+
+    // Emit end after all data
+    setStdinEnded(true);
+    const endListeners = [...(_stdinListeners["end"] || []), ...(_stdinOnceListeners["end"] || [])];
+    _stdinOnceListeners["end"] = [];
+    for (const listener of endListeners) {
+      listener();
+    }
+
+    // Emit close
+    const closeListeners = [...(_stdinListeners["close"] || []), ...(_stdinOnceListeners["close"] || [])];
+    _stdinOnceListeners["close"] = [];
+    for (const listener of closeListeners) {
+      listener();
+    }
+  }
+}
+
 const _stdin = {
   readable: true,
   paused: true,
   encoding: null as string | null,
-  read(): null {
-    return null;
+
+  read(size?: number): string | null {
+    if (getStdinPosition() >= getStdinData().length) return null;
+    const chunk = size ? getStdinData().slice(getStdinPosition(), getStdinPosition() + size) : getStdinData().slice(getStdinPosition());
+    setStdinPosition(getStdinPosition() + chunk.length);
+    return chunk;
   },
-  on(): typeof _stdin {
+
+  on(event: string, listener: StdinListener): typeof _stdin {
+    if (!_stdinListeners[event]) _stdinListeners[event] = [];
+    _stdinListeners[event].push(listener);
+
+    // When 'end' listener is added and we have data, emit everything synchronously
+    // This works because typical patterns register 'data' then 'end' listeners
+    if (event === "end" && getStdinData() && !getStdinEnded()) {
+      setStdinFlowMode(true);
+      // Emit synchronously - all listeners should be registered by now
+      _emitStdinData();
+    }
     return this;
   },
-  once(): typeof _stdin {
+
+  once(event: string, listener: StdinListener): typeof _stdin {
+    if (!_stdinOnceListeners[event]) _stdinOnceListeners[event] = [];
+    _stdinOnceListeners[event].push(listener);
     return this;
   },
-  emit(): boolean {
-    return false;
+
+  off(event: string, listener: StdinListener): typeof _stdin {
+    if (_stdinListeners[event]) {
+      const idx = _stdinListeners[event].indexOf(listener);
+      if (idx !== -1) _stdinListeners[event].splice(idx, 1);
+    }
+    return this;
   },
+
+  removeListener(event: string, listener: StdinListener): typeof _stdin {
+    return this.off(event, listener);
+  },
+
+  emit(event: string, ...args: unknown[]): boolean {
+    const listeners = [...(_stdinListeners[event] || []), ...(_stdinOnceListeners[event] || [])];
+    _stdinOnceListeners[event] = [];
+    for (const listener of listeners) {
+      listener(args[0]);
+    }
+    return listeners.length > 0;
+  },
+
   pause(): typeof _stdin {
     this.paused = true;
+    setStdinFlowMode(false);
     return this;
   },
+
   resume(): typeof _stdin {
     this.paused = false;
+    setStdinFlowMode(true);
+    _emitStdinData();
     return this;
   },
+
   setEncoding(enc: string): typeof _stdin {
     this.encoding = enc;
     return this;
   },
+
   isTTY: false,
+
+  // For readline compatibility
+  [Symbol.asyncIterator]: async function* () {
+    const lines = getStdinData().split("\n");
+    for (const line of lines) {
+      if (line) yield line;
+    }
+  },
 };
 
 // hrtime function with bigint method

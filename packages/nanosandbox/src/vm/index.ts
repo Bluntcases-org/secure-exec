@@ -125,6 +125,9 @@ async function hostExecHandler(ctx: HostExecContext): Promise<number> {
 
 /**
  * Handle node commands using sandboxed-node's NodeProcess (V8 isolate).
+ *
+ * Stdin is buffered until EOF (closer called), then NodeProcess.exec() is called
+ * with the complete stdin data.
  */
 async function handleNodeCommand(ctx: HostExecContext): Promise<number> {
 	const { code, file, evalCode, printResult, nodeArgs } = parseNodeArgs(ctx.args);
@@ -139,6 +142,41 @@ async function handleNodeCommand(ctx: HostExecContext): Promise<number> {
 	} else if (evalCode) {
 		argv.push("-e", code || "");
 	}
+
+	// Buffer stdin data until EOF
+	const stdinChunks: Uint8Array[] = [];
+	let stdinClosed = false;
+	let resolveStdin: () => void = () => {};
+	const stdinPromise = new Promise<void>((resolve) => {
+		resolveStdin = resolve;
+	});
+
+	// Register stdin writer to buffer data
+	if (ctx.setStdinWriter) {
+		ctx.setStdinWriter(
+			(data: Uint8Array) => {
+				stdinChunks.push(data);
+			},
+			() => {
+				stdinClosed = true;
+				resolveStdin();
+			}
+		);
+	} else {
+		// No stdin - resolve immediately
+		stdinClosed = true;
+		resolveStdin();
+	}
+
+	// Wait for stdin to be closed (EOF)
+	// Use a timeout to prevent hanging if stdin is never closed
+	const timeoutPromise = new Promise<void>((resolve) => setTimeout(resolve, 100));
+	await Promise.race([stdinPromise, timeoutPromise]);
+
+	// Combine stdin chunks into a single string
+	const stdinData = stdinChunks.length > 0
+		? new TextDecoder().decode(Buffer.concat(stdinChunks.map(c => Buffer.from(c))))
+		: undefined;
 
 	// Create NodeProcess with context from host_exec
 	const nodeProcess = new NodeProcess({
@@ -163,19 +201,6 @@ async function handleNodeCommand(ctx: HostExecContext): Promise<number> {
 		});
 	}
 
-	// TODO: stdin support - NodeProcess doesn't support streaming stdin yet
-	// For now, just close stdin immediately
-	if (ctx.setStdinWriter) {
-		ctx.setStdinWriter(
-			(_data: Uint8Array) => {
-				// Stdin not supported yet
-			},
-			() => {
-				// Close - no-op
-			}
-		);
-	}
-
 	try {
 		let result: { stdout: string; stderr: string; code: number };
 
@@ -186,7 +211,7 @@ async function handleNodeCommand(ctx: HostExecContext): Promise<number> {
 				// -p flag: wrap code to print the result
 				codeToRun = `console.log(${code})`;
 			}
-			result = await nodeProcess.exec(codeToRun);
+			result = await nodeProcess.exec(codeToRun, { stdin: stdinData });
 		} else if (file) {
 			// TODO: Execute script file - needs VFS access
 			// For now, return error
