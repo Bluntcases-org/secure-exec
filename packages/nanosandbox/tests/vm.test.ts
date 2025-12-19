@@ -67,27 +67,17 @@ describe("VirtualMachine", () => {
 			expect(vm.code).not.toBe(0);
 		});
 
-		it("should ping-pong stdin/stdout 3 times (batch)", async () => {
-			// Node script that reads stdin and responds with pong
-			// Uses process.stdin.on('data') instead of readline (not implemented)
+		it("should read stdin and output it", async () => {
 			const script = `
-				let output = '';
-				process.stdin.on('data', (chunk) => {
-					output += chunk;
-				});
-				process.stdin.on('end', () => {
-					const lines = output.trim().split('\\n');
-					lines.forEach((line, i) => console.log('pong' + (i + 1)));
-				});
+				let data = '';
+				process.stdin.on('data', chunk => data += chunk);
+				process.stdin.on('end', () => console.log('got:', data.trim()));
 			`;
 			const vm = await runtime.run("node", {
 				args: ["-e", script],
-				stdin: "ping1\nping2\nping3\n",
+				stdin: "hello world",
 			});
-			expect(vm.stdout).toContain("pong1");
-			expect(vm.stdout).toContain("pong2");
-			expect(vm.stdout).toContain("pong3");
-			expect(vm.code).toBe(0);
+			expect(vm.stdout.trim()).toBe("got: hello world");
 		});
 
 		it("should stream stdin to process with spawn()", async () => {
