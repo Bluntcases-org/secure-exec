@@ -1,8 +1,8 @@
 import { init } from "@wasmer/sdk/node";
 import { NodeProcess, createDefaultNetworkAdapter } from "sandboxed-node";
 import { beforeAll, describe, expect, it } from "vitest";
-import { WasixInstance } from "./index.js";
-import { createVirtualFileSystem } from "../vm/node-vfs.js";
+import { WasixInstance } from "../src/wasix/index.js";
+import { createVirtualFileSystem } from "../src/vm/node-vfs.js";
 import type { VFS } from "@wasmer/sdk/node";
 
 describe("WasixInstance", () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { VirtualMachine } from "./index";
+import { VirtualMachine } from "../src/vm/index.js";
 
 describe("VirtualMachine", () => {
 	describe("Basic spawn functionality", () => {
