@@ -81,9 +81,9 @@ describe("VirtualMachine", () => {
 		});
 
 		it("should stream stdin to bash with spawn()", async () => {
-			// spawn() provides a Process handle for streaming stdin
-			// LIMITATION: In wasmer-js TTY mode, stdin is echoed to stdout but
-			// the command's actual output is NOT captured - only TTY echo works.
+			// spawn() provides a Process handle for streaming stdin via TTY mode.
+			// BUG: wasmer-js TTY echoes stdin to stdout but does NOT deliver input
+			// to the program. So we can only test that TTY echo streams correctly.
 			const proc = await runtime.spawn("bash", {
 				args: ["-c", "while read line; do echo \"OUT:$line\"; done"],
 			});

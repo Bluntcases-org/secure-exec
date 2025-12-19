@@ -49,7 +49,7 @@
 - WASM memory limits - memoryLimit is plumbed through but not yet enforced on WASM side
 - wasmer-js Directory.writeFile missing truncate(true) - overwriting a file with shorter content leaves old bytes at the end. Bug is in wasmer-js src/fs/directory.rs: open_options uses .write(true).create(true) but not .truncate(true). Workaround: delete file before writing. See virtual-filesystem.ts
 - host_exec poll CPU overhead - current implementation uses 10ms timeout polling (~100 wakes/sec when idle). Implement `host_exec_get_notify_fd` syscall to enable zero-CPU idle waiting via poll_oneoff. See [docs/research/host-exec-notify-fd.md](docs/research/host-exec-notify-fd.md)
-- streaming stdin without TTY echo - spawn() uses wasmer-js TTY mode which echoes stdin to stdout. For true interactive streaming (write→read→repeat), need raw/non-echo mode in wasmer-js. Would require upstream changes to support a "raw" TTY option that disables echo.
+- wasmer-js TTY mode stdin bug - spawn() uses wasmer-js TTY mode which echoes stdin to stdout, but the input is NOT actually delivered to the program's stdin. E.g., bash's `read` command receives empty input even though we see TTY echo. For true interactive streaming, need wasmer-js fix. Workaround: use run() with stdin option for batch input.
 
 ## other
 - get claude code cli working in this emulator
