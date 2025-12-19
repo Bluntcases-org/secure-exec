@@ -1,11 +1,8 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { Directory, Wasmer, createVFS } from "@wasmer/sdk/node";
-import type { VFS } from "@wasmer/sdk/node";
-import { NodeProcess, createDefaultNetworkAdapter } from "sandboxed-node";
-import { createVirtualFileSystem } from "./node-vfs.js";
-import { sleep } from "../utils.js";
+import { Directory, Wasmer, Runtime } from "@wasmer/sdk/node";
 
 export interface VirtualMachineOptions {
 	args?: string[];
@@ -14,18 +11,79 @@ export interface VirtualMachineOptions {
 	memoryLimit?: number;
 }
 
+interface HostExecContext {
+	command: string;
+	args: string[];
+	env: Record<string, string>;
+	cwd: string;
+	stdin: ReadableStream<Uint8Array> | null;
+	stdout: WritableStream<Uint8Array> | null;
+	stderr: WritableStream<Uint8Array> | null;
+	// Streaming callbacks for output
+	onStdout?: (data: Uint8Array) => void;
+	onStderr?: (data: Uint8Array) => void;
+}
+
 const DATA_MOUNT_PATH = "/data";
-const IPC_MOUNT_PATH = "/ipc";
-const POLL_INTERVAL_MS = 20;
 
 let runtimePackage: Awaited<ReturnType<typeof Wasmer.fromFile>> | null = null;
+let wasmerRuntime: Runtime | null = null;
+
+/**
+ * Handle host_exec syscalls from WASM.
+ * Executes the requested command and returns the exit code.
+ * Streams stdout/stderr via the onStdout/onStderr callbacks.
+ */
+async function hostExecHandler(ctx: HostExecContext): Promise<number> {
+	console.error(`[host_exec] command=${ctx.command} args=${JSON.stringify(ctx.args)}`);
+
+	return new Promise((resolve) => {
+		// Merge WASM environment with parent process environment
+		// Parent env provides PATH and other system variables
+		const mergedEnv = { ...process.env, ...ctx.env };
+
+		const child = spawn(ctx.command, ctx.args, {
+			env: mergedEnv,
+			cwd: ctx.cwd !== "/" ? ctx.cwd : undefined,
+			stdio: ["pipe", "pipe", "pipe"],
+		});
+
+		// Stream stdout via callback
+		child.stdout?.on("data", (data: Buffer) => {
+			if (ctx.onStdout) {
+				ctx.onStdout(new Uint8Array(data));
+			}
+		});
+
+		// Stream stderr via callback
+		child.stderr?.on("data", (data: Buffer) => {
+			if (ctx.onStderr) {
+				ctx.onStderr(new Uint8Array(data));
+			}
+		});
+
+		child.on("close", (code) => {
+			console.error(`[host_exec] process exited with code: ${code}`);
+			resolve(code ?? 0);
+		});
+
+		child.on("error", (err) => {
+			console.error(`[host_exec] spawn error: ${err.message}`);
+			resolve(1);
+		});
+	});
+}
 
 async function loadRuntimePackage(): Promise<Awaited<ReturnType<typeof Wasmer.fromFile>>> {
 	if (!runtimePackage) {
+		// Create runtime and set host_exec handler
+		wasmerRuntime = new Runtime();
+		wasmerRuntime.setHostExecHandler(hostExecHandler);
+
 		const currentDir = path.dirname(fileURLToPath(import.meta.url));
 		const webcPath = path.resolve(currentDir, "../../assets/runtime.webc");
 		const webcBytes = await fs.readFile(webcPath);
-		runtimePackage = await Wasmer.fromFile(webcBytes);
+		runtimePackage = await Wasmer.fromFile(webcBytes, wasmerRuntime);
 	}
 	return runtimePackage;
 }
@@ -57,10 +115,9 @@ export class VirtualMachine {
 			throw new Error(`Command not found: ${this.command}`);
 		}
 
-		const { args = [], env, cwd, memoryLimit } = this.options;
+		const { args = [], env, cwd } = this.options;
 
 		const directory = new Directory();
-		const ipcDir = new Directory();
 
 		const instance = await cmd.run({
 			args,
@@ -68,93 +125,13 @@ export class VirtualMachine {
 			cwd,
 			mount: {
 				[DATA_MOUNT_PATH]: directory,
-				[IPC_MOUNT_PATH]: ipcDir,
 			},
 		});
 
-		const vfs = createVFS(instance);
-		const virtualFs = createVirtualFileSystem(vfs);
-		const nodeProcess = new NodeProcess({
-			memoryLimit,
-			filesystem: virtualFs,
-			osConfig: { homedir: "/data/root" },
-			networkAdapter: createDefaultNetworkAdapter(),
-		});
-
-		let pollActive = true;
-		const pollPromise = runIpcPoller(ipcDir, vfs, nodeProcess, () => pollActive);
-
 		const result = await instance.wait();
-
-		pollActive = false;
-		await pollPromise;
-		nodeProcess.dispose();
 
 		this.stdout = result.stdout;
 		this.stderr = result.stderr;
 		this.code = result.code ?? 0;
 	}
 }
-
-async function runIpcPoller(
-	ipcDir: Directory,
-	vfs: VFS,
-	nodeProcess: NodeProcess,
-	isActive: () => boolean,
-): Promise<void> {
-	while (isActive()) {
-		try {
-			const requestContent = await ipcDir.readTextFile("/request.txt");
-			let nodeArgs = requestContent.trim().split("\n").filter(Boolean);
-
-			const ipcScriptIdx = nodeArgs.indexOf("--ipc-script");
-			if (ipcScriptIdx !== -1) {
-				const scriptContent = await ipcDir.readTextFile("/script.js");
-				nodeArgs = ["-e", scriptContent];
-			}
-
-			const nodeResult = await executeNode(nodeArgs, vfs, nodeProcess);
-
-			await ipcDir.writeFile("/response.txt", `${nodeResult.exitCode}\n${nodeResult.stdout}`);
-
-			try {
-				await ipcDir.removeFile("/request.txt");
-				await ipcDir.removeFile("/script.js");
-			} catch {
-				// Ignore
-			}
-		} catch {
-			await sleep(POLL_INTERVAL_MS);
-		}
-	}
-}
-
-async function executeNode(
-	args: string[],
-	vfs: VFS,
-	nodeProcess: NodeProcess,
-): Promise<{ exitCode: number; stdout: string; stderr: string }> {
-	let code = "";
-
-	for (let i = 0; i < args.length; i++) {
-		if (args[i] === "-e" || args[i] === "--eval") {
-			code = args[i + 1] || "";
-			break;
-		} else if (!args[i].startsWith("-")) {
-			try {
-				code = await vfs.readTextFile(args[i]);
-			} catch {
-				return { exitCode: 1, stdout: "", stderr: `Cannot find module '${args[i]}'` };
-			}
-			break;
-		}
-	}
-
-	if (!code) {
-		return { exitCode: 0, stdout: "", stderr: "" };
-	}
-
-	const result = await nodeProcess.exec(code);
-	return { exitCode: result.code, stdout: result.stdout, stderr: result.stderr };
-}
-

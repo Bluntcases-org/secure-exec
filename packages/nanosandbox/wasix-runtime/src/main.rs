@@ -1,121 +1,135 @@
+use std::collections::HashMap;
 use std::env;
-use std::fs;
-use std::thread;
-use std::time::Duration;
+use std::io::{self, Write};
+use std::process::exit;
 
-const IPC_DIR: &str = "/ipc";
-const REQUEST_FILE: &str = "/ipc/request.txt";
-const RESPONSE_FILE: &str = "/ipc/response.txt";
-const SCRIPT_FILE: &str = "/ipc/script.js";
-const MAX_POLLS: u32 = 500;
-const POLL_INTERVAL_MS: u64 = 20;
+// Syscall imports
+#[link(wasm_import_module = "wasix_32v1")]
+extern "C" {
+    fn host_exec_start(
+        request_ptr: *const u8,
+        request_len: usize,
+        session_ptr: *mut u64,
+    ) -> i32;
+
+    fn host_exec_read(
+        session: u64,
+        type_ptr: *mut u32,
+        data_ptr: *mut u8,
+        data_len_ptr: *mut usize,
+    ) -> i32;
+
+    fn host_exec_write(
+        session: u64,
+        data_ptr: *const u8,
+        data_len: usize,
+    ) -> i32;
+
+    fn host_exec_close_stdin(session: u64) -> i32;
+}
+
+// Message type constants
+const HOST_EXEC_STDOUT: u32 = 1;
+const HOST_EXEC_STDERR: u32 = 2;
+const HOST_EXEC_EXIT: u32 = 3;
+
+#[derive(serde::Serialize)]
+struct Request {
+    command: String,
+    args: Vec<String>,
+    env: HashMap<String, String>,
+    cwd: String,
+}
 
 fn main() {
     let args: Vec<String> = env::args().collect();
+    let command = env::var("HOST_EXEC_COMMAND").unwrap_or_else(|_| "node".to_string());
 
-    eprintln!("[wasmer-node-shim] Starting with args: {:?}", &args[1..]);
+    eprintln!("[wasix-shim] Starting with command: {} args: {:?}", command, &args[1..]);
 
-    // Create IPC directory if it doesn't exist
-    let _ = fs::create_dir_all(IPC_DIR);
+    // Build request
+    let request = Request {
+        command,
+        args: args[1..].to_vec(),
+        env: env::vars().collect(),
+        cwd: env::current_dir()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|_| "/".to_string()),
+    };
 
-    // Clean up any old files
-    let _ = fs::remove_file(RESPONSE_FILE);
-    let _ = fs::remove_file(SCRIPT_FILE);
-
-    // Parse arguments
-    let mut request_lines: Vec<String> = Vec::new();
-    let mut i = 1;
-
-    while i < args.len() {
-        let arg = &args[i];
-
-        if arg == "-e" || arg == "--eval" {
-            // Inline code: -e "code"
-            if i + 1 < args.len() {
-                request_lines.push("-e".to_string());
-                request_lines.push(args[i + 1].clone());
-                i += 2;
-            } else {
-                eprintln!("[wasmer-node-shim] -e requires an argument");
-                std::process::exit(1);
-            }
-        } else if !arg.starts_with("-") {
-            // Script file path - read and copy to /ipc/script.js
-            let script_path = arg;
-            match fs::read_to_string(script_path) {
-                Ok(content) => {
-                    eprintln!("[wasmer-node-shim] Read script from {}", script_path);
-                    // Write script content to /ipc/script.js (syncs to JS!)
-                    if let Err(e) = fs::write(SCRIPT_FILE, &content) {
-                        eprintln!("[wasmer-node-shim] Failed to write script to IPC: {}", e);
-                        std::process::exit(1);
-                    }
-                    // Tell JS to read from /ipc/script.js
-                    request_lines.push("--ipc-script".to_string());
-                }
-                Err(e) => {
-                    eprintln!("[wasmer-node-shim] Cannot read '{}': {}", script_path, e);
-                    std::process::exit(1);
-                }
-            }
-            i += 1;
-        } else {
-            // Other flag, pass through
-            request_lines.push(arg.clone());
-            i += 1;
+    let request_json = match serde_json::to_vec(&request) {
+        Ok(j) => j,
+        Err(e) => {
+            eprintln!("[wasix-shim] Failed to serialize request: {}", e);
+            exit(1);
         }
+    };
+
+    // Start host execution
+    let mut session: u64 = 0;
+    let errno = unsafe {
+        host_exec_start(
+            request_json.as_ptr(),
+            request_json.len(),
+            &mut session,
+        )
+    };
+
+    if errno != 0 {
+        eprintln!("[wasix-shim] host_exec_start failed with errno {}", errno);
+        exit(1);
     }
 
-    if request_lines.is_empty() {
-        eprintln!("[wasmer-node-shim] No code or script provided");
-        std::process::exit(1);
-    }
+    eprintln!("[wasix-shim] Session started: {}", session);
 
-    // Write request
-    let request_content = request_lines.join("\n") + "\n";
-    eprintln!("[wasmer-node-shim] Writing request to {}", REQUEST_FILE);
+    // Note: stdin forwarding is skipped for now since WASM doesn't support std::thread::spawn
+    // TODO: Implement non-blocking stdin or use async I/O when available
 
-    if let Err(e) = fs::write(REQUEST_FILE, &request_content) {
-        eprintln!("[wasmer-node-shim] Failed to write request: {}", e);
-        std::process::exit(1);
-    }
-    eprintln!("[wasmer-node-shim] Request written, polling for response...");
+    // Main loop: read output from host and forward to our stdio
+    let mut stdout = io::stdout();
+    let mut stderr = io::stderr();
+    let mut buf = vec![0u8; 64 * 1024]; // 64KB buffer
 
-    // Poll for response
-    let mut polls = 0;
     loop {
-        polls += 1;
+        let mut msg_type: u32 = 0;
+        let mut data_len = buf.len();
 
-        if polls > MAX_POLLS {
-            eprintln!("[wasmer-node-shim] Timeout waiting for response after {} polls", MAX_POLLS);
-            std::process::exit(124);
+        let errno = unsafe {
+            host_exec_read(
+                session,
+                &mut msg_type,
+                buf.as_mut_ptr(),
+                &mut data_len,
+            )
+        };
+
+        if errno != 0 {
+            eprintln!("[wasix-shim] host_exec_read failed with errno {}", errno);
+            exit(1);
         }
 
-        match fs::read_to_string(RESPONSE_FILE) {
-            Ok(content) => {
-                eprintln!("[wasmer-node-shim] Got response after {} polls", polls);
-
-                let mut lines = content.lines();
-                let exit_code: i32 = lines
-                    .next()
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(1);
-
-                let stdout: String = lines.collect::<Vec<_>>().join("\n");
-
-                if !stdout.is_empty() {
-                    println!("{}", stdout);
+        match msg_type {
+            HOST_EXEC_STDOUT => {
+                if let Err(e) = stdout.write_all(&buf[..data_len]) {
+                    eprintln!("[wasix-shim] stdout write error: {}", e);
                 }
-
-                // Clean up
-                let _ = fs::remove_file(REQUEST_FILE);
-                let _ = fs::remove_file(RESPONSE_FILE);
-                let _ = fs::remove_file(SCRIPT_FILE);
-
-                std::process::exit(exit_code);
+                let _ = stdout.flush();
             }
-            Err(_) => {
-                thread::sleep(Duration::from_millis(POLL_INTERVAL_MS));
+            HOST_EXEC_STDERR => {
+                if let Err(e) = stderr.write_all(&buf[..data_len]) {
+                    eprintln!("[wasix-shim] stderr write error: {}", e);
+                }
+                let _ = stderr.flush();
+            }
+            HOST_EXEC_EXIT => {
+                // data_len contains the exit code
+                let exit_code = data_len as i32;
+                eprintln!("[wasix-shim] Exiting with code {}", exit_code);
+                exit(exit_code);
+            }
+            _ => {
+                eprintln!("[wasix-shim] Unknown message type: {}", msg_type);
+                exit(1);
             }
         }
     }

@@ -758,3 +758,370 @@ On native platforms (not in browser), the `wasmer` crate has different backends:
 
 The `js` backend is used when `wasmer` is compiled to `wasm32-unknown-unknown` target.
 
+---
+
+## Virtual Filesystem Architecture
+
+### Filesystem Types
+
+The wasmer ecosystem provides several `FileSystem` trait implementations:
+
+| FileSystem | Persists? | Description |
+|------------|-----------|-------------|
+| `TmpFileSystem` | ❌ | In-memory, ephemeral, supports mounting |
+| `mem_fs::FileSystem` | ❌ | In-memory, ephemeral |
+| `host_fs::FileSystem` | ✅ | Real host filesystem (native only, requires `host-fs` feature) |
+| `OverlayFileSystem` | Depends | Layers: writable primary + read-only secondaries |
+| `UnionFileSystem` | Depends | Multiple mounts at different paths |
+| `StaticFileSystem` | ❌ | Read-only from static bytes |
+| `EmptyFileSystem` | ❌ | Always empty |
+
+### WasiFsRoot Enum
+
+**File: `lib/wasix/src/fs/mod.rs`**
+
+```rust
+pub enum WasiFsRoot {
+    Sandbox(Arc<TmpFileSystem>),      // Default: in-memory temp FS
+    Backing(Arc<Box<dyn FileSystem>>), // Custom backing FS
+}
+```
+
+### Default Filesystem Creation
+
+**File: `lib/wasix/src/state/builder.rs:794-797`**
+
+```rust
+let fs_backing = self
+    .fs
+    .take()
+    .unwrap_or_else(|| WasiFsRoot::Sandbox(Arc::new(TmpFileSystem::new())));
+```
+
+Each WASI execution gets a `TmpFileSystem` by default unless a custom filesystem is provided via `WasiEnvBuilder::set_fs()`.
+
+### Setting Custom Filesystems (Rust API)
+
+**File: `lib/wasix/src/state/builder.rs:614-632`**
+
+```rust
+/// Use any FileSystem implementation (wraps in WasiFsRoot::Backing)
+pub fn set_fs(&mut self, fs: Box<dyn FileSystem + Send + Sync>) {
+    self.fs = Some(WasiFsRoot::Backing(Arc::new(fs)));
+}
+
+/// Use a TmpFileSystem specifically (wraps in WasiFsRoot::Sandbox)
+pub fn sandbox_fs(mut self, fs: TmpFileSystem) -> Self {
+    self.fs = Some(WasiFsRoot::Sandbox(Arc::new(fs)));
+    self
+}
+```
+
+### wasmer-js: Hardcoded to TmpFileSystem
+
+**File: `wasmer-js/src/options.rs:230-244`**
+
+```rust
+pub(crate) fn filesystem(&self) -> Result<TmpFileSystem, Error> {
+    let root = TmpFileSystem::new();  // Always creates TmpFileSystem
+    for (dest, fs) in self.mounted_directories()? {
+        root.mount(dest.as_str().into(), &fs, "/".into())?;
+    }
+    Ok(root)
+}
+```
+
+wasmer-js does not expose a JavaScript API to provide custom `FileSystem` implementations. The only persistence mechanism is through mounted directories.
+
+### Filesystem Layering
+
+```
+┌─────────────────────────────────────────────────┐
+│  WASI Process View                              │
+│  /                                              │
+│  ├── app/        ← Mounted from host           │
+│  ├── tmp/        ← TmpFileSystem (writable)    │
+│  ├── lib/        ← Package contents (read-only)│
+│  └── ...                                        │
+└─────────────────────────────────────────────────┘
+                    │
+                    ▼
+┌─────────────────────────────────────────────────┐
+│  WasiFsRoot (base layer)                        │
+│  TmpFileSystem or custom backing               │
+└───────────────────┬─────────────────────────────┘
+                    │
+      ┌─────────────┼─────────────┐
+      ▼             ▼             ▼
+┌──────────┐  ┌──────────┐  ┌──────────┐
+│  Mount 1 │  │  Mount 2 │  │  Union   │
+│  /app    │  │  /data   │  │ Package  │
+│ (host fs)│  │ (tmpfs)  │  │ contents │
+└──────────┘  └──────────┘  └──────────┘
+```
+
+**Key operations:**
+
+1. **Mount** - Attach a filesystem at a specific path:
+   ```rust
+   fs.mount("/app".into(), &host_dir, "/".into())
+   ```
+
+2. **Union** - Merge two filesystems (for package contents):
+   ```rust
+   fs.union(other);  // Merges package contents into sandbox
+   ```
+
+3. **Overlay** - Layer filesystems with read-through:
+   - Reads check primary (writable) first, then fall back to secondaries
+   - Writes go to primary layer only
+
+### Instance-Specific vs Shared Filesystems in wasmer-js
+
+Each spawned command (`Instance`) in wasmer-js gets its own `TmpFileSystem`:
+
+```
+┌─────────────────────────────────────────────────────┐
+│  Instance 1 (e.g., bash -c "echo hello")            │
+│  ├── TmpFileSystem (instance-specific, ephemeral)   │
+│  └── /data ← Directory mount (SHARED)               │
+└─────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────┐
+│  Instance 2 (e.g., ls /data)                        │
+│  ├── TmpFileSystem (instance-specific, ephemeral)   │
+│  └── /data ← Directory mount (SHARED)               │
+└─────────────────────────────────────────────────────┘
+```
+
+**Implications:**
+- Files written via `instance.vfsWriteFile('/foo')` are NOT visible to other Instances
+- Files written to mounted Directory (`/data/*`) ARE visible to all Instances
+- To test VFS operations with shell commands, use a single Instance with a shell script
+
+### Persistence Options
+
+| Method | How It Works |
+|--------|--------------|
+| **Host mounts** | Mount host directories via `runner.with_mount()` - writes go directly to host FS |
+| **VFS API** | Read files via `instance.vfsReadFile()` before the instance is dropped |
+| **Journal system** | Wasmer tracks syscalls for replay/restore (native only) |
+| **Custom backing FS** | Provide a custom `FileSystem` impl that persists (requires Rust changes) |
+
+### Why No Persistent Root FS in wasmer-js?
+
+1. **`host_fs` requires native access** - Uses `std::fs` and `tokio::fs`, unavailable in WASM
+2. **No browser filesystem API** - No standard persistent "root filesystem" in browsers
+3. **Mounts are the design** - Expected pattern is to mount specific directories for persistence
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `wasmer/lib/virtual-fs/src/tmp_fs.rs` | TmpFileSystem implementation |
+| `wasmer/lib/virtual-fs/src/host_fs.rs` | Host filesystem (native only) |
+| `wasmer/lib/virtual-fs/src/overlay_fs.rs` | OverlayFileSystem for layering |
+| `wasmer/lib/virtual-fs/src/union_fs.rs` | UnionFileSystem for multiple mounts |
+| `wasmer/lib/wasix/src/fs/mod.rs` | WasiFsRoot enum, WasiFs struct |
+| `wasmer/lib/wasix/src/state/builder.rs` | WasiEnvBuilder with set_fs() |
+| `wasmer-js/src/options.rs` | JS options parsing, filesystem() method |
+| `wasmer-js/src/instance.rs` | Instance struct with VFS methods |
+
+---
+
+## Host Execution (host_exec) IPC Architecture
+
+### Overview
+
+The `host_exec` feature allows WASM programs to execute commands on the host system (Node.js or browser). This is implemented via a message-passing IPC system between Web Workers (where WASM runs) and the main thread (where the JavaScript host exec handler runs).
+
+### Message Flow
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  Worker Thread (WASM Execution)                                              │
+│                                                                              │
+│  1. WASM calls host_exec_start(command, args, env, cwd)                     │
+│  2. Rust serializes request to JSON                                          │
+│  3. Sends HostExecStart message via postMessage                             │
+│  4. Returns session_id immediately (non-blocking)                           │
+│                                                                              │
+│  5. WASM calls host_exec_read(session_id) to get result                     │
+│  6. Sends HostExecRead message via postMessage                              │
+│  7. Awaits response... ⚠️ BLOCKS HERE                                       │
+│                                                                              │
+│  ⚠️ PROBLEM: While awaiting, the worker's event loop cannot process         │
+│     incoming postMessage responses!                                          │
+└─────────────────────────────────────────────────────────────────────────────┘
+                              │
+                              │ postMessage
+                              ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  Main Thread (Scheduler)                                                     │
+│                                                                              │
+│  1. Receives HostExecStart message                                           │
+│  2. Calls JS host_exec_handler(ctx) → returns Promise                       │
+│  3. Spawns async task to await Promise                                       │
+│  4. Sends HostExecStartResponse with session_id                             │
+│  5. When Promise resolves, stores result in HOST_EXEC_RESULTS               │
+│                                                                              │
+│  6. Receives HostExecRead message                                            │
+│  7. Looks up result in HOST_EXEC_RESULTS                                     │
+│  8. Sends HostExecReadResponse with exit code                               │
+│                                                                              │
+│  ⚠️ PROBLEM: Steps 6-8 never happen because worker can't send               │
+│     HostExecRead while blocked in step 7 on worker side!                    │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### The Fundamental Limitation
+
+**Web Workers use an event-driven model with postMessage.** The worker's JavaScript event loop processes messages from its message queue. When WASM is executing (including when Rust async code is awaiting), the worker's event loop is blocked and cannot process incoming messages.
+
+This creates a deadlock:
+1. WASM calls `host_exec_read()` which awaits a response
+2. The await blocks the worker's event loop
+3. The main thread sends the response via `postMessage`
+4. The response sits in the worker's message queue
+5. The message cannot be processed because the event loop is blocked
+6. Timeout occurs
+
+**Evidence from test output:**
+```
+[host_exec] command=node args=["-e","console.log('hello from node')"]
+hello from node                                          ← Command executed!
+[host_exec] process exited with code: 0                  ← Promise resolved!
+[scheduler] Promise resolved with exit_code=0 for session 0
+[scheduler] pending read for session 0: None             ← But no pending read!
+```
+
+The command executes successfully, but the result cannot be delivered because the worker never got to call `host_exec_read` (still blocked waiting for `host_exec_start` response).
+
+### Why This Doesn't Affect Other Wasmer Operations
+
+Other Wasmer operations work because:
+1. **Compilation**: Happens synchronously before WASM execution
+2. **Syscalls**: Most WASI syscalls (file I/O, etc.) are handled within the WASM memory space
+3. **spawn_wasm**: Uses dedicated workers that run independently
+4. **Async tasks**: Spawned via `wasm_bindgen_futures::spawn_local` which works because the main thread's event loop is free
+
+The `host_exec` case is unique because it requires:
+1. Sending a request from a worker
+2. **Waiting synchronously** for a response
+3. Getting the response back to the same worker
+
+### Potential Solutions
+
+#### 1. SharedArrayBuffer + Atomics (Recommended)
+
+Use `Atomics.wait()` for true synchronous blocking that doesn't prevent message processing:
+
+```rust
+// Worker side:
+fn host_exec_read_blocking(session: u64) -> i32 {
+    let shared_buffer = /* get SharedArrayBuffer for this session */;
+    let view = Int32Array::new(&shared_buffer);
+
+    // Atomically wait for the result to be written
+    // This blocks the WASM but allows JS event loop to run
+    Atomics::wait(&view, 0, 0);  // Wait until value != 0
+
+    // Read the result
+    Atomics::load(&view, 1) as i32
+}
+```
+
+```javascript
+// Main thread side:
+function sendHostExecResult(sessionId, exitCode) {
+    const view = new Int32Array(sharedBuffers.get(sessionId));
+    Atomics.store(view, 1, exitCode);  // Store result
+    Atomics.store(view, 0, 1);          // Signal ready
+    Atomics.notify(view, 0);            // Wake up worker
+}
+```
+
+**Requirements:**
+- COOP/COEP headers in browser (`Cross-Origin-Opener-Policy: same-origin`, `Cross-Origin-Embedder-Policy: require-corp`)
+- Works in Node.js without headers
+- Requires passing SharedArrayBuffer during worker initialization
+
+#### 2. Asyncify (WASM Transformation)
+
+Use Binaryen's Asyncify to transform WASM to support pause/resume:
+
+```
+WASM execution → pause at host_exec → yield to JS event loop →
+resume when response arrives → continue execution
+```
+
+**Drawbacks:**
+- Increases WASM binary size
+- Performance overhead for pause/resume
+- Complex integration with wasmer runtime
+
+#### 3. Restructure to Polling with setTimeout
+
+Instead of blocking await, use polling with `setTimeout(0)` to yield:
+
+```rust
+async fn host_exec_read_polling(session: u64) -> Result<i32, Error> {
+    loop {
+        // Check if result is available
+        if let Some(result) = check_result(session) {
+            return Ok(result);
+        }
+
+        // Yield to JS event loop via setTimeout(0)
+        gloo_timers::future::TimeoutFuture::new(0).await;
+    }
+}
+```
+
+**Drawbacks:**
+- `setTimeout(0)` has minimum 4ms delay in browsers (after 5 nested calls)
+- Adds significant latency
+- Doesn't truly integrate with the async runtime
+
+#### 4. Main Thread Execution (Not Recommended)
+
+Run all WASM on the main thread (no workers):
+
+**Drawbacks:**
+- Blocks the UI in browsers
+- No parallelism
+- Defeats the purpose of the worker-based architecture
+
+### Current Implementation Status
+
+| Component | Status |
+|-----------|--------|
+| `HostExecStart` message | ✅ Implemented |
+| `HostExecRead` message | ✅ Implemented |
+| Scheduler message handling | ✅ Implemented |
+| JS host exec handler | ✅ Implemented |
+| Response delivery to worker | ❌ Blocked by event loop issue |
+
+### Recommended Next Steps
+
+1. **Investigate SharedArrayBuffer approach**
+   - Add SharedArrayBuffer allocation during worker init
+   - Implement `Atomics.wait()` / `Atomics.notify()` synchronization
+   - Pass buffer references through existing message infrastructure
+
+2. **Test in Node.js first** (no COOP/COEP needed)
+
+3. **Add browser support with headers**
+
+### Key Files for host_exec
+
+| File | Purpose |
+|------|---------|
+| `wasmer-js/src/runtime.rs` | `HostExecImpl` implementing `HostExecRuntime` trait |
+| `wasmer-js/src/tasks/scheduler.rs` | Main thread message handling, Promise awaiting |
+| `wasmer-js/src/tasks/scheduler_message.rs` | `SchedulerMessage` enum with HostExec variants |
+| `wasmer-js/src/tasks/thread_pool_worker.rs` | Worker-side message handling, response callbacks |
+| `wasmer-js/src/tasks/worker_message.rs` | `WorkerMessage` for worker→scheduler communication |
+| `wasmer-js/src/tasks/post_message_payload.rs` | `PostMessagePayload` for scheduler→worker communication |
+| `lightweight-sandbox/packages/nanosandbox/src/vm/index.ts` | JS host exec handler implementation |
+

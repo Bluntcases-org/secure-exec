@@ -1,12 +1,21 @@
 # future work
 
+## key goals
+
+- 1-line embedded cc working
+- declarative sandbox with git, etc
+
 ## short term
 
-- impl process.cwd & integration with subprocesses
-- get npm working in terminal
 - remove use of runCommand, make it all run with ipc
-- clean up polyfills to get compiled in bridge
-- check if there is an issue running multiple wasix instances in the same machine
+- remove js cruft from npm tests (raw npm should work fine)
+- get npm working in terminal
+
+## cleanup
+
+- update polyfills to get compiled in bridge
+- standardize name of "bridge" -> "virtual ..."
+- refactor the node support to be an extension
 
 ## fs-polyfill
 - inline compiled code at build time instead of runtime fs.readFileSync()
