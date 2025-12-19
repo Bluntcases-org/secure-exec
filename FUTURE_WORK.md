@@ -11,6 +11,7 @@
 
 - clean up where load runtime is (it should be part of runtime.load())
 - implement child process with the host process context
+- clean up HostExecContext
 - remove js cruft from npm tests (raw npm should work fine)
 - get npm working in terminal
 - get basic ecosystem tests working

@@ -75,12 +75,11 @@ describe("Node Process", () => {
 	// These basic tests verify the integration works
 	describe("Child process basics", () => {
 		// Child process spawning from Node spawns actual WASM instances
-		// Note: execSync uses bash -c, which has exit code issues in WASM
-		// Use spawnSync for direct command execution
-		it("should spawn echo command from node via spawnSync", async () => {
+		// When spawning "node", it goes through host_exec and runs as sandboxed NodeProcess
+		it("should spawn node command from node via spawnSync", async () => {
 			const script = `
 				const { spawnSync } = require('child_process');
-				const result = spawnSync('echo', ['hello from child']);
+				const result = spawnSync('node', ['-e', 'console.log("hello from child")']);
 				console.log('stdout:', result.stdout.toString().trim());
 				console.log('code:', result.status);
 			`;
@@ -88,6 +87,7 @@ describe("Node Process", () => {
 				args: ["-e", script],
 			});
 			expect(vm.stdout).toContain("stdout: hello from child");
+			expect(vm.stdout).toContain("code: 0");
 		}, 30000);
 	});
 });
