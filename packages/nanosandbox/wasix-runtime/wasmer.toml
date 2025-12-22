@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "WASIX runtime with Node.js shim for IPC-based Node execution"
 
 [dependencies]
+"wasmer/bash" = "*"
 "wasmer/coreutils" = "*"
 
 [[module]]
