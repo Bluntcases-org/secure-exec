@@ -10,10 +10,13 @@
 ## short term
 
 - fix subprocesses
+- verify npm child process tests work with the same test suite for subprocesses
+
+---
+
 - verify docs on ipc host exec shows posix_spawn
 - get stdin streaming working again
 - clean up where load runtime is (it should be part of runtime.load())
-- implement child process with the host process context
 - clean up HostExecContext
 - remove js cruft from npm tests (raw npm should work fine)
 - get npm working in terminal
