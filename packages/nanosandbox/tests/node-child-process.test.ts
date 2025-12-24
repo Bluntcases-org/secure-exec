@@ -407,8 +407,7 @@ describe("Child Process from Sandboxed Node", () => {
 			expect(vm.stdout).toContain("status: 0");
 		}, 30000);
 
-		// WASIX limitation: cd to /bin doesn't work because /bin is a virtual mount point
-		it.skip("should reflect directory change via process.chdir in JS", async () => {
+		it("should reflect directory change via process.chdir in JS", async () => {
 			const script = `
 				const { spawnSync } = require('child_process');
 
@@ -431,9 +430,7 @@ describe("Child Process from Sandboxed Node", () => {
 			expect(vm.stdout).toContain("status: 0");
 		}, 30000);
 
-		// WASIX limitation: cd to /bin doesn't work because /bin is a virtual mount point
-		// from the coreutils package, not a real filesystem directory.
-		it.skip("should pass cwd option to spawnSync", async () => {
+		it("should pass cwd option to spawnSync", async () => {
 			const script = `
 				const { spawnSync } = require('child_process');
 

@@ -547,8 +547,20 @@ fn handle_spawn_request(
         }
 
         // Build the command with properly escaped arguments
-        script.push_str("exec ");
-        script.push_str(&shell_escape(command_path.to_string_lossy().as_ref()));
+        // Note: We don't use 'exec' because it replaces the shell, losing the cd context.
+        // The child process needs bash to fork and inherit the cwd.
+        //
+        // For commands with bash built-in equivalents (like pwd), use the command name
+        // instead of the full path. The bash built-in uses $PWD which works after cd,
+        // while the coreutils binary uses getcwd() which fails in WASIX subprocesses.
+        let bash_builtins = ["pwd", "cd", "echo", "test", "[", "true", "false", "read", "printf"];
+        let use_command_name = bash_builtins.contains(&spawn_req.command.as_str());
+
+        if use_command_name {
+            script.push_str(&shell_escape(&spawn_req.command));
+        } else {
+            script.push_str(&shell_escape(command_path.to_string_lossy().as_ref()));
+        }
         for arg in &spawn_req.args {
             script.push(' ');
             script.push_str(&shell_escape(arg));
