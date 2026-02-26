@@ -58,6 +58,13 @@ export {
 	NodeFileSystem,
 } from "./node/driver.js";
 export { createInMemoryFileSystem } from "./shared/in-memory-fs.js";
+export {
+	allowAll,
+	allowAllChildProcess,
+	allowAllEnv,
+	allowAllFs,
+	allowAllNetwork,
+} from "./shared/permissions.js";
 
 // Config types for process and os modules
 
@@ -98,13 +105,14 @@ export class NodeProcess {
 		this.isolate = new ivm.Isolate({ memoryLimit: this.memoryLimit });
 		const driver =
 			options.driver ??
+			// Set up explicit permissions so direct adapters stay deny-by-default.
 			createNodeDriver({
 				filesystem: options.filesystem,
 				networkAdapter: options.networkAdapter,
 				commandExecutor: options.commandExecutor,
-				permissions: options.permissions,
+				permissions: options.permissions ?? {},
 			});
-		const permissions = driver.permissions ?? options.permissions;
+		const permissions = options.permissions ?? driver.permissions;
 		this.permissions = permissions;
 		this.filesystemEnabled = Boolean(driver.filesystem);
 		this.commandExecutorEnabled = Boolean(driver.commandExecutor);

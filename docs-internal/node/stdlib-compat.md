@@ -6,6 +6,14 @@ Status of each Node.js core module in sandboxed-node. Modules are provided via o
 - **Polyfill** — Provided by `node-stdlib-browser` (e.g., `path-browserify`, `readable-stream`)
 - **Stub** — Minimal implementation for compatibility, may return mocks or throw
 
+## Permission model
+
+- Runtime permissions are deny-by-default per domain (`fs`, `network`, `childProcess`, `env`).
+- When a domain checker is not configured, operations fail with `EACCES`.
+- `filterEnv` strips all environment variables unless `permissions.env` explicitly allows them.
+- Embedders can opt in to permissive behavior with `allowAll`, or selectively via
+  `allowAllFs`, `allowAllNetwork`, `allowAllChildProcess`, and `allowAllEnv`.
+
 ## fs
 
 - Bridge implementation (`src/bridge/fs.ts`, ~1800 lines)

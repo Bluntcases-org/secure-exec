@@ -6,10 +6,8 @@ import * as https from "node:https";
 import type { Server as HttpServer } from "node:http";
 import * as zlib from "node:zlib";
 import {
+	allowAll,
 	filterEnv,
-	wrapCommandExecutor,
-	wrapFileSystem,
-	wrapNetworkAdapter,
 } from "../shared/permissions.js";
 import type {
 	CommandExecutor,
@@ -312,23 +310,23 @@ export function createDefaultNetworkAdapter(): NetworkAdapter {
 }
 
 export function createNodeDriver(options: NodeDriverOptions = {}): SandboxDriver {
-	const permissions = options.permissions;
-	const filesystem = options.filesystem
-		? wrapFileSystem(options.filesystem, permissions)
-		: undefined;
+	const hasAdapter =
+		Boolean(options.filesystem) ||
+		Boolean(options.networkAdapter) ||
+		Boolean(options.commandExecutor) ||
+		Boolean(options.useDefaultNetwork);
+	// Set up permissive defaults for direct driver construction.
+	const permissions = options.permissions ?? (hasAdapter ? allowAll : undefined);
 	const networkAdapter = options.networkAdapter
-		? wrapNetworkAdapter(options.networkAdapter, permissions)
+		? options.networkAdapter
 		: options.useDefaultNetwork
-			? wrapNetworkAdapter(createDefaultNetworkAdapter(), permissions)
+			? createDefaultNetworkAdapter()
 			: undefined;
-	const commandExecutor = options.commandExecutor
-		? wrapCommandExecutor(options.commandExecutor, permissions)
-		: undefined;
 
 	return {
-		filesystem,
+		filesystem: options.filesystem,
 		network: networkAdapter,
-		commandExecutor,
+		commandExecutor: options.commandExecutor,
 		permissions,
 	};
 }

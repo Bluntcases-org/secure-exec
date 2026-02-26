@@ -24,7 +24,8 @@
   - Current hacks include `chalk`, `supports-color`, `tty`, `constants`, `v8`, and `util/url/path` patching.
   - `packages/sandboxed-node/src/shared/require-setup.ts`
 
-- [ ] Decide and enforce sandbox permission default model (allow-by-default vs deny-by-default); tighten if strict mode is desired.
+- [x] Decide and enforce sandbox permission default model (allow-by-default vs deny-by-default); tighten if strict mode is desired.
+  - Fixed by flipping permission checks and env filtering to deny-by-default, and by exporting explicit `allowAll*` helpers for opt-in access.
   - `packages/sandboxed-node/src/shared/permissions.ts`
 
 - [ ] Make console capture robust for circular objects (avoid `JSON.stringify` throw paths in logging).

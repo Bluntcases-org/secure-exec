@@ -64,9 +64,6 @@ importers:
 
   packages/sandboxed-node:
     dependencies:
-      '@hono/node-server':
-        specifier: ^1.19.6
-        version: 1.19.9(hono@4.12.2)
       buffer:
         specifier: ^6.0.3
         version: 6.0.3

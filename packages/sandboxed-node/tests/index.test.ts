@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
+	allowAllEnv,
+	allowAllFs,
+	allowAllNetwork,
 	NodeFileSystem,
 	NodeProcess,
 	createInMemoryFileSystem,
@@ -9,6 +12,12 @@ import {
 function createFs() {
 	return createInMemoryFileSystem();
 }
+
+const allowFsNetworkEnv = {
+	...allowAllFs,
+	...allowAllNetwork,
+	...allowAllEnv,
+};
 
 describe("NodeProcess", () => {
 	let proc: NodeProcess | undefined;
@@ -101,7 +110,7 @@ describe("NodeProcess", () => {
 			"module.exports = { add: (a, b) => a + b };",
 		);
 
-		proc = new NodeProcess({ filesystem: fs });
+		proc = new NodeProcess({ filesystem: fs, permissions: allowAllFs });
 		const result = await proc.run(`
       const pkg = require('my-pkg');
       module.exports = pkg.add(2, 3);
@@ -114,7 +123,7 @@ describe("NodeProcess", () => {
 		await fs.mkdir("/data");
 		await fs.writeFile("/data/hello.txt", "hello world");
 
-		proc = new NodeProcess({ filesystem: fs });
+		proc = new NodeProcess({ filesystem: fs, permissions: allowAllFs });
 		const result = await proc.run(`
       const fs = require('fs');
       module.exports = fs.readFileSync('/data/hello.txt', 'utf8');
@@ -159,7 +168,7 @@ describe("NodeProcess", () => {
 			"export const feature = 'esm-feature';",
 		);
 
-		proc = new NodeProcess({ filesystem: fs });
+		proc = new NodeProcess({ filesystem: fs, permissions: allowAllFs });
 
 		const cjsResult = await proc.run(`
       const pkg = require('exported');
@@ -184,6 +193,7 @@ describe("NodeProcess", () => {
 		const driver = createNodeDriver({
 			filesystem: new NodeFileSystem(),
 			useDefaultNetwork: true,
+			permissions: allowFsNetworkEnv,
 		});
 		proc = new NodeProcess({
 			driver,
@@ -277,6 +287,7 @@ describe("NodeProcess", () => {
 		const driver = createNodeDriver({
 			filesystem: new NodeFileSystem(),
 			useDefaultNetwork: true,
+			permissions: allowFsNetworkEnv,
 		});
 		proc = new NodeProcess({
 			driver,
@@ -353,6 +364,7 @@ describe("NodeProcess", () => {
 		const driver = createNodeDriver({
 			filesystem: new NodeFileSystem(),
 			useDefaultNetwork: true,
+			permissions: allowFsNetworkEnv,
 		});
 		proc = new NodeProcess({
 			driver,

@@ -2,6 +2,9 @@ import { readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  allowAllEnv,
+  allowAllFs,
+  allowAllNetwork,
   NodeFileSystem,
   NodeProcess,
   createNodeDriver,
@@ -17,6 +20,11 @@ function createProcess(runnerRoot: string, runnerEntry: string): NodeProcess {
   const driver = createNodeDriver({
     filesystem: new NodeFileSystem(),
     useDefaultNetwork: true,
+    permissions: {
+      ...allowAllFs,
+      ...allowAllNetwork,
+      ...allowAllEnv,
+    },
   });
 
   return new NodeProcess({

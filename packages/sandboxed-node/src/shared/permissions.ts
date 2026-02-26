@@ -16,12 +16,41 @@ function checkPermission<T>(
 	request: T,
 	onDenied: (request: T) => Error,
 ): void {
-	if (!check) return;
+	if (!check) {
+		throw onDenied(request);
+	}
 	const decision = check(request);
 	if (!decision?.allow) {
 		throw onDenied(request);
 	}
 }
+
+function allowPermission() {
+	return { allow: true } as const;
+}
+
+export const allowAllFs: Pick<Permissions, "fs"> = {
+	fs: () => allowPermission(),
+};
+
+export const allowAllNetwork: Pick<Permissions, "network"> = {
+	network: () => allowPermission(),
+};
+
+export const allowAllChildProcess: Pick<Permissions, "childProcess"> = {
+	childProcess: () => allowPermission(),
+};
+
+export const allowAllEnv: Pick<Permissions, "env"> = {
+	env: () => allowPermission(),
+};
+
+export const allowAll: Permissions = {
+	...allowAllFs,
+	...allowAllNetwork,
+	...allowAllChildProcess,
+	...allowAllEnv,
+};
 
 function fsOpToSyscall(op: FsAccessRequest["op"]): string {
 	switch (op) {
@@ -249,7 +278,7 @@ export function filterEnv(
 	permissions?: Permissions,
 ): Record<string, string> {
 	if (!env) return {};
-	if (!permissions?.env) return { ...env };
+	if (!permissions?.env) return {};
 	const result: Record<string, string> = {};
 	for (const [key, value] of Object.entries(env)) {
 		const request: EnvAccessRequest = { op: "read", key, value };
