@@ -1,7 +1,8 @@
-# deny-by-default-permissions Specification
+# node-permissions Specification
 
 ## Purpose
-TBD - created by archiving change deny-by-default-permissions. Update Purpose after archive.
+Define deny-by-default permission behavior and permission helper contracts for sandboxed node execution.
+
 ## Requirements
 ### Requirement: Deny operations when no permission checker is provided
 The system SHALL deny (throw `EACCES`) any filesystem, network, child-process, or environment-variable operation when the corresponding `PermissionCheck` callback is `undefined` in the `Permissions` object.
@@ -57,4 +58,3 @@ When a `PermissionCheck` callback returns `{ allow: false }`, the operation SHAL
 #### Scenario: Permission checker denies a specific path
 - **WHEN** `permissions.fs` returns `{ allow: false }` for path `/secret` and the filesystem adapter has the file
 - **THEN** `fs.readFile("/secret")` SHALL throw an `EACCES` error (unchanged from current behavior)
-

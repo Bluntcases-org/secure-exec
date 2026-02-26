@@ -2,8 +2,10 @@
 
 Use these baseline capabilities when proposing sandboxed-node runtime or bridge changes:
 
-- `runtime-execution-model`
-- `bridge-boundary-policy`
+- `node-runtime`
+- `node-stdlib`
+- `node-bridge`
+- `node-permissions`
 - `compatibility-governance`
 
 ## How To Reference Baselines In New Changes
@@ -15,6 +17,8 @@ Use these baseline capabilities when proposing sandboxed-node runtime or bridge 
 
 ## Typical Mapping
 
-- Runtime execution semantics, async completion, module loading behavior -> `runtime-execution-model`
-- Bridge scope, module-resolution boundary, capability exposure rules -> `bridge-boundary-policy`
+- Runtime execution semantics, async completion, module loading behavior -> `node-runtime`
+- Stdlib support tiers, builtin resolution behavior, polyfill/stub policy -> `node-stdlib`
+- Bridge scope, module-resolution boundary, capability exposure rules -> `node-bridge`
+- Permission defaults and allow/deny behavior -> `node-permissions`
 - Compatibility/process obligations and required maintenance docs -> `compatibility-governance`

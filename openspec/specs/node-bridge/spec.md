@@ -1,3 +1,8 @@
+# node-bridge Specification
+
+## Purpose
+Define bridge boundary policy, third-party module boundaries, and capability expansion controls.
+
 ## ADDED Requirements
 
 ### Requirement: Bridge Scope Is Node Built-ins Only

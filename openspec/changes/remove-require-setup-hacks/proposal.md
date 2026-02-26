@@ -14,7 +14,7 @@
 - None.
 
 ### Modified Capabilities
-- `bridge-boundary-policy`: enforce stricter compliance around bridge/module boundaries and compatibility behavior.
+- `node-bridge`: enforce stricter compliance around bridge/module boundaries and compatibility behavior.
 - `compatibility-governance`: require synchronized compatibility documentation for any resulting API-surface behavior changes.
 
 ## Impact

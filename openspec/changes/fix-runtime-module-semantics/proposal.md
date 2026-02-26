@@ -14,7 +14,7 @@ Current sandboxed-node behavior does not fully match documented module execution
 - None.
 
 ### Modified Capabilities
-- `runtime-execution-model`: tighten and clarify module evaluation and result-return semantics for ESM and dynamic import behavior.
+- `node-runtime`: tighten and clarify module evaluation and result-return semantics for ESM and dynamic import behavior.
 
 ## Impact
 

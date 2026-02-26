@@ -16,7 +16,7 @@ The sandbox console (`console.log`, `console.error`, etc.) uses `JSON.stringify`
 
 ### Modified Capabilities
 
-- `runtime-execution-model`: Console output capture must not throw on circular objects.
+- `node-runtime`: Console output capture must not throw on circular objects.
 
 ## Impact
 
