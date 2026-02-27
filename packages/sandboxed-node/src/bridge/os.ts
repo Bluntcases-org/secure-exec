@@ -2,6 +2,7 @@
 // Provides Node.js os module emulation for sandbox compatibility
 
 import type * as nodeOs from "os";
+import { exposeCustomGlobal } from "../shared/global-exposure.js";
 
 // Configuration interface - values are set via globals before bridge loads
 export interface OSConfig {
@@ -288,7 +289,7 @@ const os: typeof nodeOs = {
   },
 };
 
-// Expose to global for require() to use
-(globalThis as Record<string, unknown>)._osModule = os;
+// Expose to global for require() to use.
+exposeCustomGlobal("_osModule", os);
 
 export default os;

@@ -11,6 +11,10 @@ import { URL as WhatwgURL, URLSearchParams as WhatwgURLSearchParams } from "what
 
 // Use buffer package for spec-compliant Buffer implementation
 import { Buffer as BufferPolyfill } from "buffer";
+import {
+  exposeCustomGlobal,
+  exposeMutableRuntimeStateGlobal,
+} from "../shared/global-exposure.js";
 
 
 // Configuration interface - values are set via globals before bridge loads
@@ -46,6 +50,12 @@ declare const _scheduleTimer: {
     args: [number],
     options?: { result: { promise: true } }
   ): Promise<void>;
+} | undefined;
+declare const _cryptoRandomFill: {
+  applySync(ctx: undefined, args: [number]): string;
+} | undefined;
+declare const _cryptoRandomUUID: {
+  applySync(ctx: undefined, args: []): string;
 } | undefined;
 
 // Get config with defaults
@@ -113,7 +123,7 @@ export class ProcessExitError extends Error {
 }
 
 // Make available globally
-(globalThis as Record<string, unknown>).ProcessExitError = ProcessExitError;
+exposeCustomGlobal("ProcessExitError", ProcessExitError);
 
 // EventEmitter implementation for process
 type EventListener = (...args: unknown[]) => void;
@@ -231,10 +241,13 @@ const _stdinListeners: Record<string, StdinListener[]> = {};
 const _stdinOnceListeners: Record<string, StdinListener[]> = {};
 
 // Initialize stdin state as globals for external access
-(globalThis as Record<string, unknown>)._stdinData = (typeof _processConfig !== "undefined" && _processConfig.stdin) || "";
-(globalThis as Record<string, unknown>)._stdinPosition = 0;
-(globalThis as Record<string, unknown>)._stdinEnded = false;
-(globalThis as Record<string, unknown>)._stdinFlowMode = false;
+exposeMutableRuntimeStateGlobal(
+  "_stdinData",
+  (typeof _processConfig !== "undefined" && _processConfig.stdin) || "",
+);
+exposeMutableRuntimeStateGlobal("_stdinPosition", 0);
+exposeMutableRuntimeStateGlobal("_stdinEnded", false);
+exposeMutableRuntimeStateGlobal("_stdinFlowMode", false);
 
 // Getters for the globals
 function getStdinData(): string { return (globalThis as Record<string, unknown>)._stdinData as string; }
@@ -955,38 +968,47 @@ export { TextEncoder, TextDecoder };
 // Buffer - use buffer package polyfill
 export const Buffer = BufferPolyfill;
 
+function throwUnsupportedCryptoApi(api: "getRandomValues" | "randomUUID"): never {
+  throw new Error(`crypto.${api} is not supported in sandbox`);
+}
+
 // Crypto polyfill
 export const cryptoPolyfill = {
   getRandomValues<T extends ArrayBufferView>(array: T): T {
+    if (typeof _cryptoRandomFill === "undefined") {
+      throwUnsupportedCryptoApi("getRandomValues");
+    }
     const bytes = new Uint8Array(
       array.buffer,
       array.byteOffset,
       array.byteLength
     );
-    for (let i = 0; i < bytes.length; i++) {
-      bytes[i] = Math.floor(Math.random() * 256);
+    try {
+      const base64 = _cryptoRandomFill.applySync(undefined, [bytes.byteLength]);
+      const hostBytes = BufferPolyfill.from(base64, "base64");
+      if (hostBytes.byteLength !== bytes.byteLength) {
+        throw new Error("invalid host entropy size");
+      }
+      bytes.set(hostBytes);
+      return array;
+    } catch {
+      throwUnsupportedCryptoApi("getRandomValues");
     }
-    return array;
   },
 
   randomUUID(): string {
-    const bytes = new Uint8Array(16);
-    cryptoPolyfill.getRandomValues(bytes);
-    // Set version (4) and variant (RFC4122)
-    bytes[6] = (bytes[6] & 0x0f) | 0x40;
-    bytes[8] = (bytes[8] & 0x3f) | 0x80;
-    const hex = [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
-    return (
-      hex.slice(0, 8) +
-      "-" +
-      hex.slice(8, 12) +
-      "-" +
-      hex.slice(12, 16) +
-      "-" +
-      hex.slice(16, 20) +
-      "-" +
-      hex.slice(20)
-    );
+    if (typeof _cryptoRandomUUID === "undefined") {
+      throwUnsupportedCryptoApi("randomUUID");
+    }
+    try {
+      const uuid = _cryptoRandomUUID.applySync(undefined, []);
+      if (typeof uuid !== "string") {
+        throw new Error("invalid host uuid");
+      }
+      return uuid;
+    } catch {
+      throwUnsupportedCryptoApi("randomUUID");
+    }
   },
 
   subtle: {
@@ -1050,9 +1072,13 @@ export function setupGlobals(): void {
   // Crypto
   if (typeof g.crypto === "undefined") {
     g.crypto = cryptoPolyfill;
-  } else if (typeof (g.crypto as Record<string, unknown>).getRandomValues === "undefined") {
-    (g.crypto as Record<string, unknown>).getRandomValues =
-      cryptoPolyfill.getRandomValues;
-    (g.crypto as Record<string, unknown>).randomUUID = cryptoPolyfill.randomUUID;
+  } else {
+    const cryptoObj = g.crypto as Record<string, unknown>;
+    if (typeof cryptoObj.getRandomValues === "undefined") {
+      cryptoObj.getRandomValues = cryptoPolyfill.getRandomValues;
+    }
+    if (typeof cryptoObj.randomUUID === "undefined") {
+      cryptoObj.randomUUID = cryptoPolyfill.randomUUID;
+    }
   }
 }

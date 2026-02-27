@@ -8,12 +8,12 @@ import type * as nodeFs from "fs";
 // Declare globals that are set up by the host environment
 declare const _fs: {
   readFile: { applySyncPromise: (ctx: undefined, args: [string]) => string };
-  writeFile: { applySync: (ctx: undefined, args: [string, string]) => void };
+  writeFile: { applySyncPromise: (ctx: undefined, args: [string, string]) => void };
   // Binary file operations use base64 encoding for transfer across isolate boundary
   readFileBinary: { applySyncPromise: (ctx: undefined, args: [string]) => string }; // Returns base64
-  writeFileBinary: { applySync: (ctx: undefined, args: [string, string]) => void }; // Takes base64
+  writeFileBinary: { applySyncPromise: (ctx: undefined, args: [string, string]) => void }; // Takes base64
   readDir: { applySyncPromise: (ctx: undefined, args: [string]) => string };
-  mkdir: { applySync: (ctx: undefined, args: [string, boolean]) => void };
+  mkdir: { applySyncPromise: (ctx: undefined, args: [string, boolean]) => void };
   rmdir: { applySyncPromise: (ctx: undefined, args: [string]) => void };
   exists: { applySyncPromise: (ctx: undefined, args: [string]) => boolean };
   stat: { applySyncPromise: (ctx: undefined, args: [string]) => string };
@@ -24,6 +24,15 @@ declare const _fs: {
 // File descriptor table
 const fdTable = new Map<number, { path: string; flags: number; position: number }>();
 let nextFd = 3;
+
+const O_RDONLY = 0;
+const O_WRONLY = 1;
+const O_RDWR = 2;
+const O_ACCMODE = 3;
+const O_CREAT = 64;
+const O_EXCL = 128;
+const O_TRUNC = 512;
+const O_APPEND = 1024;
 
 // Stats class
 class Stats implements nodeFs.Stats {
@@ -688,20 +697,20 @@ class WriteStream {
 function parseFlags(flags: OpenMode): number {
   if (typeof flags === "number") return flags;
   const flagMap: Record<string, number> = {
-    r: 0,
-    "r+": 2,
-    w: 577,
-    "w+": 578,
-    a: 1089,
-    "a+": 1090,
-    wx: 705,
-    xw: 705,
-    "wx+": 706,
-    "xw+": 706,
-    ax: 1217,
-    xa: 1217,
-    "ax+": 1218,
-    "xa+": 1218,
+    r: O_RDONLY,
+    "r+": O_RDWR,
+    w: O_WRONLY | O_CREAT | O_TRUNC,
+    "w+": O_RDWR | O_CREAT | O_TRUNC,
+    a: O_WRONLY | O_APPEND | O_CREAT,
+    "a+": O_RDWR | O_APPEND | O_CREAT,
+    wx: O_WRONLY | O_CREAT | O_TRUNC | O_EXCL,
+    xw: O_WRONLY | O_CREAT | O_TRUNC | O_EXCL,
+    "wx+": O_RDWR | O_CREAT | O_TRUNC | O_EXCL,
+    "xw+": O_RDWR | O_CREAT | O_TRUNC | O_EXCL,
+    ax: O_WRONLY | O_APPEND | O_CREAT | O_EXCL,
+    xa: O_WRONLY | O_APPEND | O_CREAT | O_EXCL,
+    "ax+": O_RDWR | O_APPEND | O_CREAT | O_EXCL,
+    "xa+": O_RDWR | O_APPEND | O_CREAT | O_EXCL,
   };
   if (flags in flagMap) return flagMap[flags];
   throw new Error("Unknown file flag: " + flags);
@@ -709,13 +718,13 @@ function parseFlags(flags: OpenMode): number {
 
 // Check if flags allow reading
 function canRead(flags: number): boolean {
-  const mode = flags & 3;
+  const mode = flags & O_ACCMODE;
   return mode === 0 || mode === 2;
 }
 
 // Check if flags allow writing
 function canWrite(flags: number): boolean {
-  const mode = flags & 3;
+  const mode = flags & O_ACCMODE;
   return mode === 1 || mode === 2;
 }
 
@@ -779,14 +788,14 @@ const fs = {
     COPYFILE_FICLONE: 2,
     COPYFILE_FICLONE_FORCE: 4,
     // File Open Constants
-    O_RDONLY: 0,
-    O_WRONLY: 1,
-    O_RDWR: 2,
-    O_CREAT: 64,
-    O_EXCL: 128,
+    O_RDONLY,
+    O_WRONLY,
+    O_RDWR,
+    O_CREAT,
+    O_EXCL,
     O_NOCTTY: 256,
-    O_TRUNC: 512,
-    O_APPEND: 1024,
+    O_TRUNC,
+    O_APPEND,
     O_DIRECTORY: 65536,
     O_NOATIME: 262144,
     O_NOFOLLOW: 131072,
@@ -868,15 +877,15 @@ const fs = {
 
     if (typeof data === "string") {
       // Text mode - use text write
-      _fs.writeFile.applySync(undefined, [pathStr, data]);
+      _fs.writeFile.applySyncPromise(undefined, [pathStr, data]);
     } else if (ArrayBuffer.isView(data)) {
       // Binary mode - convert to base64 and use binary write
       const uint8 = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
       const base64 = Buffer.from(uint8).toString("base64");
-      _fs.writeFileBinary.applySync(undefined, [pathStr, base64]);
+      _fs.writeFileBinary.applySyncPromise(undefined, [pathStr, base64]);
     } else {
       // Fallback to text mode
-      _fs.writeFile.applySync(undefined, [pathStr, String(data)]);
+      _fs.writeFile.applySyncPromise(undefined, [pathStr, String(data)]);
     }
   },
 
@@ -925,7 +934,7 @@ const fs = {
     const rawPath = toPathString(path);
     const pathStr = rawPath;
     const recursive = typeof options === "object" ? options?.recursive ?? false : false;
-    _fs.mkdir.applySync(undefined, [pathStr, recursive]);
+    _fs.mkdir.applySyncPromise(undefined, [pathStr, recursive]);
     return recursive ? rawPath : undefined;
   },
 

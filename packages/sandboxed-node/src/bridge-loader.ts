@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import * as esbuild from "esbuild";
+import { ISOLATE_GLOBAL_EXPOSURE_HELPER_SOURCE } from "./shared/global-exposure.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -90,8 +91,9 @@ export function getFsModuleCode(): string {
 	// bridge = { default: fs, fs: fs }
 	// We need to wrap it to return the default export (which is the fs module)
 	return `(function() {
+var { exposeCustomGlobal: __bridgeLoaderExposeCustomGlobal } = ${ISOLATE_GLOBAL_EXPOSURE_HELPER_SOURCE};
 ${code}
-  globalThis.bridge = bridge;
+  __bridgeLoaderExposeCustomGlobal("bridge", bridge);
   return bridge.default;
 })()`;
 }
@@ -106,8 +108,9 @@ export function getBridgeModuleCode(): string {
 	const code = getRawBridgeCode();
 
 	return `(function() {
+var { exposeCustomGlobal: __bridgeLoaderExposeCustomGlobal } = ${ISOLATE_GLOBAL_EXPOSURE_HELPER_SOURCE};
 ${code}
-  globalThis.bridge = bridge;
+  __bridgeLoaderExposeCustomGlobal("bridge", bridge);
   return bridge;
 })()`;
 }
@@ -151,15 +154,16 @@ export function getBridgeWithConfig(
 
 	// Set up config globals before loading the bridge
 	const configSetup = `
-    // Set up configuration globals before bridge loads
-    globalThis._processConfig = ${JSON.stringify(processConfig || {})};
-    globalThis._osConfig = ${JSON.stringify(osConfig || {})};
+    var { exposeCustomGlobal: __bridgeLoaderExposeCustomGlobal } = ${ISOLATE_GLOBAL_EXPOSURE_HELPER_SOURCE};
+    // Set up configuration globals before bridge loads.
+    __bridgeLoaderExposeCustomGlobal("_processConfig", ${JSON.stringify(processConfig || {})});
+    __bridgeLoaderExposeCustomGlobal("_osConfig", ${JSON.stringify(osConfig || {})});
   `;
 
 	return `(function() {
 ${configSetup}
 ${code}
-  globalThis.bridge = bridge;
+  __bridgeLoaderExposeCustomGlobal("bridge", bridge);
   return bridge;
 })()`;
 }

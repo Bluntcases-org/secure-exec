@@ -1,4 +1,7 @@
 import {
+	createCommandExecutorStub,
+	createFsStub,
+	createNetworkStub,
 	wrapCommandExecutor,
 	wrapFileSystem,
 	wrapNetworkAdapter,
@@ -12,6 +15,9 @@ import type {
 	VirtualFileSystem,
 } from "../types.js";
 import { createEnosysError } from "../shared/errors.js";
+
+const S_IFREG = 0o100000;
+const S_IFDIR = 0o040000;
 
 function normalizePath(path: string): string {
 	if (!path) return "/";
@@ -91,6 +97,20 @@ export class OpfsFileSystem implements VirtualFileSystem {
 		return entries;
 	}
 
+	async readDirWithTypes(
+		path: string,
+	): Promise<Array<{ name: string; isDirectory: boolean }>> {
+		const dir = await this.getDirHandle(path);
+		const entries: Array<{ name: string; isDirectory: boolean }> = [];
+		for await (const [name, handle] of dir.entries()) {
+			entries.push({
+				name,
+				isDirectory: handle.kind === "directory",
+			});
+		}
+		return entries;
+	}
+
 	async writeFile(path: string, content: string | Uint8Array): Promise<void> {
 		const normalized = normalizePath(path);
 		await this.mkdir(dirname(normalized));
@@ -99,7 +119,7 @@ export class OpfsFileSystem implements VirtualFileSystem {
 		if (typeof content === "string") {
 			await writable.write(content);
 		} else {
-			await writable.write(content);
+			await writable.write(content as unknown as FileSystemWriteChunkType);
 		}
 		await writable.close();
 	}
@@ -134,6 +154,49 @@ export class OpfsFileSystem implements VirtualFileSystem {
 		}
 	}
 
+	async stat(path: string): Promise<{
+		mode: number;
+		size: number;
+		isDirectory: boolean;
+		atimeMs: number;
+		mtimeMs: number;
+		ctimeMs: number;
+		birthtimeMs: number;
+	}> {
+		try {
+			const handle = await this.getFileHandle(path);
+			const file = await handle.getFile();
+			return {
+				mode: S_IFREG | 0o644,
+				size: file.size,
+				isDirectory: false,
+				atimeMs: file.lastModified,
+				mtimeMs: file.lastModified,
+				ctimeMs: file.lastModified,
+				birthtimeMs: file.lastModified,
+			};
+		} catch {
+			const normalized = normalizePath(path);
+			try {
+				await this.getDirHandle(normalized);
+				const now = Date.now();
+				return {
+					mode: S_IFDIR | 0o755,
+					size: 4096,
+					isDirectory: true,
+					atimeMs: now,
+					mtimeMs: now,
+					ctimeMs: now,
+					birthtimeMs: now,
+				};
+			} catch {
+				throw new Error(
+					`ENOENT: no such file or directory, stat '${normalized}'`,
+				);
+			}
+		}
+	}
+
 	async removeFile(path: string): Promise<void> {
 		const normalized = normalizePath(path);
 		const parent = dirname(normalized);
@@ -151,6 +214,10 @@ export class OpfsFileSystem implements VirtualFileSystem {
 		const name = normalized.split("/").pop() || "";
 		const dir = await this.getDirHandle(parent);
 		await dir.removeEntry(name);
+	}
+
+	async rename(_oldPath: string, _newPath: string): Promise<void> {
+		throw createEnosysError("rename");
 	}
 }
 

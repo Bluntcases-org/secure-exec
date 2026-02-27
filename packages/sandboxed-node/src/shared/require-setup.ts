@@ -1,5 +1,8 @@
+import { ISOLATE_GLOBAL_EXPOSURE_HELPER_SOURCE } from "./global-exposure.js";
+
 export function getRequireSetupCode(): string {
-	return `
+		return `
+      var { exposeCustomGlobal: __requireExposeCustomGlobal } = ${ISOLATE_GLOBAL_EXPOSURE_HELPER_SOURCE};
 
       // Path utilities
       function _dirname(p) {
@@ -168,9 +171,10 @@ export function getRequireSetupCode(): string {
         return stub;
       }
 
-      globalThis.require = function require(moduleName) {
+      const __require = function require(moduleName) {
         return _requireFrom(moduleName, _currentModule.dirname);
       };
+      __requireExposeCustomGlobal("require", __require);
 
       function _resolveFrom(moduleName, fromDir) {
         const resolved = _resolveModule.applySyncPromise(undefined, [moduleName, fromDir]);
@@ -396,7 +400,7 @@ export function getRequireSetupCode(): string {
       }
 
       // Expose _requireFrom globally so module polyfill can access it
-      globalThis._requireFrom = _requireFrom;
+      __requireExposeCustomGlobal("_requireFrom", _requireFrom);
 
     `;
 }

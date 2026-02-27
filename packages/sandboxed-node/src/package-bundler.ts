@@ -1,5 +1,4 @@
 import type { VirtualFileSystem } from "./types.js";
-import { exists, stat } from "./fs-helpers.js";
 
 // Path utilities (since we can't use node:path in a way that works in isolate)
 function dirname(p: string): string {
@@ -158,7 +157,7 @@ async function resolvePackageEntryFromDir(
 	const pkgJsonPath = join(packageDir, "package.json");
 	const pkgJson = await readPackageJson(fs, pkgJsonPath);
 
-	if (!pkgJson && !(await exists(fs, packageDir))) {
+	if (!pkgJson && !(await fs.exists(packageDir))) {
 		return null;
 	}
 
@@ -201,7 +200,7 @@ async function resolvePath(
 	let isDirectory = false;
 
 	try {
-		const statInfo = await stat(fs, basePath);
+		const statInfo = await fs.stat(basePath);
 		if (!statInfo.isDirectory) {
 			return basePath;
 		}
@@ -213,7 +212,7 @@ async function resolvePath(
 	// For extensionless specifiers, try files before directory resolution.
 	for (const ext of FILE_EXTENSIONS) {
 		const withExt = `${basePath}${ext}`;
-		if (await exists(fs, withExt)) {
+		if (await fs.exists(withExt)) {
 			return withExt;
 		}
 	}
@@ -233,7 +232,7 @@ async function resolvePath(
 
 		for (const ext of FILE_EXTENSIONS) {
 			const indexPath = join(basePath, `index${ext}`);
-			if (await exists(fs, indexPath)) {
+			if (await fs.exists(indexPath)) {
 				return indexPath;
 			}
 		}
@@ -247,7 +246,7 @@ async function readPackageJson(
 	fs: VirtualFileSystem,
 	pkgJsonPath: string,
 ): Promise<PackageJson | null> {
-	if (!(await exists(fs, pkgJsonPath))) {
+	if (!(await fs.exists(pkgJsonPath))) {
 		return null;
 	}
 	try {

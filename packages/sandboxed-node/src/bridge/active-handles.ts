@@ -1,3 +1,5 @@
+import { exposeCustomGlobal } from "../shared/global-exposure.js";
+
 /**
  * Active Handles: Mechanism to keep the sandbox alive for async operations.
  *
@@ -60,22 +62,7 @@ export function _getActiveHandles(): Array<[string, string]> {
 
 // Install on globalThis for use by other bridge modules and exec().
 // Lock bridge internals so sandbox code cannot replace lifecycle hooks.
-Object.defineProperty(globalThis, "_registerHandle", {
-	value: _registerHandle,
-	writable: false,
-	configurable: false,
-	enumerable: true,
-});
-Object.defineProperty(globalThis, "_unregisterHandle", {
-	value: _unregisterHandle,
-	writable: false,
-	configurable: false,
-	enumerable: true,
-});
-Object.defineProperty(globalThis, "_waitForActiveHandles", {
-	value: _waitForActiveHandles,
-	writable: false,
-	configurable: false,
-	enumerable: true,
-});
-(globalThis as Record<string, unknown>)._getActiveHandles = _getActiveHandles;
+exposeCustomGlobal("_registerHandle", _registerHandle);
+exposeCustomGlobal("_unregisterHandle", _unregisterHandle);
+exposeCustomGlobal("_waitForActiveHandles", _waitForActiveHandles);
+exposeCustomGlobal("_getActiveHandles", _getActiveHandles);

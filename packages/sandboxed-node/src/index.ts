@@ -1,6 +1,25 @@
 import ivm from "isolated-vm";
+import { randomFillSync, randomUUID } from "node:crypto";
+import { createInitialBridgeGlobalsCode } from "./bridge-setup.js";
 import { getBridgeWithConfig } from "./bridge-loader.js";
-import { exists, mkdir, readDirWithTypes, rename, stat } from "./fs-helpers.js";
+import { createBuiltinESMWrapper } from "./esm-compiler.js";
+import { formatCapturedOutput } from "./execution.js";
+import { mkdir } from "./fs-helpers.js";
+import {
+	DEFAULT_TIMING_MITIGATION,
+	TIMEOUT_ERROR_MESSAGE,
+	TIMEOUT_EXIT_CODE,
+	createIsolate,
+	getExecutionDeadlineMs,
+	getExecutionRunOptions,
+	isExecutionTimeoutError,
+	runWithExecutionDeadline,
+} from "./isolate.js";
+import {
+	BUILTIN_NAMED_EXPORTS,
+	getPathDir,
+	normalizeBuiltinSpecifier,
+} from "./module-resolver.js";
 import { loadFile, resolveModule } from "./package-bundler.js";
 import { bundlePolyfill, hasPolyfill } from "./polyfills.js";
 import { createNodeDriver } from "./node/driver.js";
@@ -20,6 +39,11 @@ import {
 	wrapCJSForESM,
 } from "./shared/esm-utils.js";
 import { getConsoleSetupCode } from "./shared/console-formatter.js";
+import {
+	HARDENED_NODE_CUSTOM_GLOBALS,
+	ISOLATE_GLOBAL_EXPOSURE_HELPER_SOURCE,
+	MUTABLE_NODE_CUSTOM_GLOBALS,
+} from "./shared/global-exposure.js";
 import { getRequireSetupCode } from "./shared/require-setup.js";
 import type {
 	CommandExecutor,
@@ -71,7 +95,6 @@ export {
 
 // Config types for process and os modules
 
-
 export interface NodeProcessOptions {
 	memoryLimit?: number; // MB, default 128
 	cpuTimeLimitMs?: number; // Maximum execution time budget in milliseconds
@@ -83,192 +106,27 @@ export interface NodeProcessOptions {
 	networkAdapter?: NetworkAdapter; // For network support (fetch, http, https, dns)
 	osConfig?: OSConfig; // OS module configuration
 	timingMitigation?: TimingMitigation; // Timing side-channel mitigation mode
+	payloadLimits?: {
+		base64TransferBytes?: number; // Max isolate boundary base64 payload bytes
+		jsonPayloadBytes?: number; // Max isolate-originated JSON payload bytes
+	};
 }
 
 // Cache of bundled polyfills
 const polyfillCodeCache: Map<string, string> = new Map();
-const DEFAULT_TIMING_MITIGATION: TimingMitigation = "freeze";
-const TIMEOUT_EXIT_CODE = 124;
-const TIMEOUT_ERROR_MESSAGE = "CPU time limit exceeded";
+const DEFAULT_BRIDGE_BASE64_TRANSFER_BYTES = 16 * 1024 * 1024;
+const DEFAULT_ISOLATE_JSON_PAYLOAD_BYTES = 4 * 1024 * 1024;
+const MIN_CONFIGURED_PAYLOAD_BYTES = 1024;
+const MAX_CONFIGURED_PAYLOAD_BYTES = 64 * 1024 * 1024;
+const PAYLOAD_LIMIT_ERROR_CODE = "ERR_SANDBOX_PAYLOAD_TOO_LARGE";
 
-class ExecutionTimeoutError extends Error {
-	constructor() {
-		super(TIMEOUT_ERROR_MESSAGE);
-		this.name = "ExecutionTimeoutError";
+class PayloadLimitError extends Error {
+	constructor(payloadLabel: string, maxBytes: number, actualBytes: number) {
+		super(
+			`${PAYLOAD_LIMIT_ERROR_CODE}: ${payloadLabel} exceeds ${maxBytes} bytes (got ${actualBytes})`,
+		);
+		this.name = "PayloadLimitError";
 	}
-}
-
-const BRIDGE_MODULES = [
-	"fs",
-	"fs/promises",
-	"module",
-	"os",
-	"http",
-	"https",
-	"http2",
-	"dns",
-	"child_process",
-	"process",
-	"v8",
-] as const;
-
-const DEFERRED_CORE_MODULES = [
-	"net",
-	"tls",
-	"readline",
-	"perf_hooks",
-	"async_hooks",
-	"worker_threads",
-] as const;
-
-const UNSUPPORTED_CORE_MODULES = [
-	"dgram",
-	"cluster",
-	"wasi",
-	"diagnostics_channel",
-	"inspector",
-	"repl",
-	"trace_events",
-	"domain",
-] as const;
-
-const KNOWN_BUILTIN_MODULES = new Set([
-	...BRIDGE_MODULES,
-	...DEFERRED_CORE_MODULES,
-	...UNSUPPORTED_CORE_MODULES,
-	"assert",
-	"buffer",
-	"constants",
-	"crypto",
-	"events",
-	"path",
-	"querystring",
-	"stream",
-	"stream/web",
-	"string_decoder",
-	"timers",
-	"tty",
-	"url",
-	"util",
-	"vm",
-	"zlib",
-]);
-
-const BUILTIN_NAMED_EXPORTS: Record<string, string[]> = {
-	fs: [
-		"promises",
-		"readFileSync",
-		"writeFileSync",
-		"appendFileSync",
-		"existsSync",
-		"statSync",
-		"mkdirSync",
-		"readdirSync",
-		"createReadStream",
-		"createWriteStream",
-	],
-	"fs/promises": [
-		"readFile",
-		"writeFile",
-		"appendFile",
-		"mkdir",
-		"readdir",
-		"rm",
-		"rmdir",
-		"stat",
-	],
-	module: [
-		"createRequire",
-		"Module",
-		"isBuiltin",
-		"builtinModules",
-		"SourceMap",
-		"syncBuiltinESMExports",
-	],
-	os: [
-		"arch",
-		"platform",
-		"tmpdir",
-		"homedir",
-		"hostname",
-		"type",
-		"release",
-		"constants",
-	],
-	http: [
-		"request",
-		"get",
-		"createServer",
-		"Server",
-		"IncomingMessage",
-		"ServerResponse",
-		"Agent",
-		"METHODS",
-		"STATUS_CODES",
-	],
-	https: ["request", "get", "createServer", "Agent", "globalAgent"],
-	dns: ["lookup", "resolve", "resolve4", "resolve6", "promises"],
-	child_process: [
-		"spawn",
-		"spawnSync",
-		"exec",
-		"execSync",
-		"execFile",
-		"execFileSync",
-		"fork",
-	],
-	process: [
-		"argv",
-		"env",
-		"cwd",
-		"chdir",
-		"exit",
-		"pid",
-		"platform",
-		"version",
-		"versions",
-		"stdout",
-		"stderr",
-		"stdin",
-		"nextTick",
-	],
-	path: [
-		"sep",
-		"delimiter",
-		"basename",
-		"dirname",
-		"extname",
-		"format",
-		"isAbsolute",
-		"join",
-		"normalize",
-		"parse",
-		"relative",
-		"resolve",
-	],
-};
-
-function isValidIdentifier(value: string): boolean {
-	return /^[$A-Z_][0-9A-Z_$]*$/i.test(value);
-}
-
-function createBuiltinESMWrapper(
-	bindingExpression: string,
-	namedExports: string[],
-): string {
-	const exportLines = Array.from(new Set(namedExports))
-		.filter(isValidIdentifier)
-		.map(
-			(name) =>
-				`export const ${name} = _builtin == null ? undefined : _builtin[${JSON.stringify(name)}];`,
-		)
-		.join("\n");
-
-	return `
-      const _builtin = ${bindingExpression};
-      export default _builtin;
-      ${exportLines}
-    `;
 }
 
 export class NodeProcess {
@@ -282,6 +140,8 @@ export class NodeProcess {
 	private permissions?: Permissions;
 	private cpuTimeLimitMs?: number;
 	private timingMitigation: TimingMitigation;
+	private bridgeBase64TransferLimitBytes: number;
+	private isolateJsonPayloadLimitBytes: number;
 	private filesystemEnabled: boolean = false;
 	private commandExecutorEnabled: boolean = false;
 	private networkEnabled: boolean = false;
@@ -326,6 +186,16 @@ export class NodeProcess {
 		this.cpuTimeLimitMs = options.cpuTimeLimitMs;
 		this.timingMitigation =
 			options.timingMitigation ?? DEFAULT_TIMING_MITIGATION;
+		this.bridgeBase64TransferLimitBytes = this.normalizePayloadLimit(
+			options.payloadLimits?.base64TransferBytes,
+			DEFAULT_BRIDGE_BASE64_TRANSFER_BYTES,
+			"payloadLimits.base64TransferBytes",
+		);
+		this.isolateJsonPayloadLimitBytes = this.normalizePayloadLimit(
+			options.payloadLimits?.jsonPayloadBytes,
+			DEFAULT_ISOLATE_JSON_PAYLOAD_BYTES,
+			"payloadLimits.jsonPayloadBytes",
+		);
 	}
 
 	/**
@@ -364,6 +234,71 @@ export class NodeProcess {
 		this.filesystem = wrapFileSystem(filesystem, this.permissions);
 	}
 
+	private normalizePayloadLimit(
+		configuredValue: number | undefined,
+		defaultValue: number,
+		optionName: string,
+	): number {
+		if (configuredValue === undefined) {
+			return defaultValue;
+		}
+		if (!Number.isFinite(configuredValue) || configuredValue <= 0) {
+			throw new RangeError(`${optionName} must be a positive finite number`);
+		}
+		const normalizedValue = Math.floor(configuredValue);
+		if (normalizedValue < MIN_CONFIGURED_PAYLOAD_BYTES) {
+			throw new RangeError(
+				`${optionName} must be at least ${MIN_CONFIGURED_PAYLOAD_BYTES} bytes`,
+			);
+		}
+		if (normalizedValue > MAX_CONFIGURED_PAYLOAD_BYTES) {
+			throw new RangeError(
+				`${optionName} must be at most ${MAX_CONFIGURED_PAYLOAD_BYTES} bytes`,
+			);
+		}
+		return normalizedValue;
+	}
+
+	private getUtf8ByteLength(text: string): number {
+		return Buffer.byteLength(text, "utf8");
+	}
+
+	private getBase64EncodedByteLength(rawByteLength: number): number {
+		return Math.ceil(rawByteLength / 3) * 4;
+	}
+
+	private assertPayloadByteLength(
+		payloadLabel: string,
+		actualBytes: number,
+		maxBytes: number,
+	): void {
+		if (actualBytes <= maxBytes) {
+			return;
+		}
+		throw new PayloadLimitError(payloadLabel, maxBytes, actualBytes);
+	}
+
+	private assertTextPayloadSize(
+		payloadLabel: string,
+		text: string,
+		maxBytes: number,
+	): void {
+		this.assertPayloadByteLength(
+			payloadLabel,
+			this.getUtf8ByteLength(text),
+			maxBytes,
+		);
+	}
+
+	private parseJsonWithLimit<T>(payloadLabel: string, jsonText: string): T {
+		this.assertTextPayloadSize(
+			payloadLabel,
+			jsonText,
+			this.isolateJsonPayloadLimitBytes,
+		);
+		return JSON.parse(jsonText) as T;
+	}
+
 	private getExecutionTimeoutMs(override?: number): number | undefined {
 		const timeoutMs = override ?? this.cpuTimeLimitMs;
 		if (timeoutMs === undefined) {
@@ -380,60 +315,24 @@ export class NodeProcess {
 	}
 
 	private getExecutionDeadlineMs(timeoutMs?: number): number | undefined {
-		if (timeoutMs === undefined) {
-			return undefined;
-		}
-		return Date.now() + timeoutMs;
+		return getExecutionDeadlineMs(timeoutMs);
 	}
 
 	private getExecutionRunOptions(
 		executionDeadlineMs?: number,
 	): Pick<ivm.ScriptRunOptions, "timeout"> {
-		if (executionDeadlineMs === undefined) {
-			return {};
-		}
-		const remainingMs = Math.floor(executionDeadlineMs - Date.now());
-		if (remainingMs <= 0) {
-			throw new ExecutionTimeoutError();
-		}
-		return { timeout: Math.max(1, remainingMs) };
+		return getExecutionRunOptions(executionDeadlineMs);
 	}
 
 	private async runWithExecutionDeadline<T>(
 		operation: Promise<T>,
 		executionDeadlineMs?: number,
 	): Promise<T> {
-		if (executionDeadlineMs === undefined) {
-			return operation;
-		}
-		const remainingMs = Math.floor(executionDeadlineMs - Date.now());
-		if (remainingMs <= 0) {
-			throw new ExecutionTimeoutError();
-		}
-		return await new Promise<T>((resolve, reject) => {
-			const timer = setTimeout(
-				() => reject(new ExecutionTimeoutError()),
-				remainingMs,
-			);
-			operation.then(
-				(value) => {
-					clearTimeout(timer);
-					resolve(value);
-				},
-				(err) => {
-					clearTimeout(timer);
-					reject(err);
-				},
-			);
-		});
+		return runWithExecutionDeadline(operation, executionDeadlineMs);
 	}
 
 	private isExecutionTimeoutError(error: unknown): boolean {
-		if (error instanceof ExecutionTimeoutError) {
-			return true;
-		}
-		const message = error instanceof Error ? error.message : String(error);
-		return /timed out|time limit exceeded/i.test(message);
+		return isExecutionTimeoutError(error);
 	}
 
 	private createProcessConfigForExecution(
@@ -503,18 +402,11 @@ export class NodeProcess {
 	 * Resolve a module specifier to an absolute path
 	 */
 	private normalizeBuiltinSpecifier(request: string): string | null {
-		const moduleName = request.replace(/^node:/, "");
-		if (KNOWN_BUILTIN_MODULES.has(moduleName) || hasPolyfill(moduleName)) {
-			return request.startsWith("node:") ? `node:${moduleName}` : moduleName;
-		}
-		return null;
+		return normalizeBuiltinSpecifier(request);
 	}
 
 	private getPathDir(path: string): string {
-		const normalizedPath = path.replace(/\\/g, "/");
-		const lastSlash = normalizedPath.lastIndexOf("/");
-		if (lastSlash <= 0) return "/";
-		return normalizedPath.slice(0, lastSlash);
+		return getPathDir(path);
 	}
 
 	private async getNearestPackageType(
@@ -535,11 +427,14 @@ export class NodeProcess {
 			const packageJsonPath =
 				currentDir === "/" ? "/package.json" : `${currentDir}/package.json`;
 
-			if (await exists(this.filesystem, packageJsonPath)) {
+			if (await this.filesystem.exists(packageJsonPath)) {
 				try {
-					const pkgJson = JSON.parse(
-						await this.filesystem.readTextFile(packageJsonPath),
-					) as { type?: unknown };
+					const packageJsonText =
+						await this.filesystem.readTextFile(packageJsonPath);
+					const pkgJson = this.parseJsonWithLimit<{ type?: unknown }>(
+						`package.json ${packageJsonPath}`,
+						packageJsonText,
+					);
 					const packageType =
 						pkgJson.type === "module" || pkgJson.type === "commonjs"
 							? pkgJson.type
@@ -853,7 +748,10 @@ export class NodeProcess {
 	// Cache for evaluated dynamic import module namespaces
 	private dynamicImportCache = new Map<string, ivm.Reference<unknown>>();
 	// Track in-flight dynamic import evaluations per resolved module path
-	private dynamicImportPending = new Map<string, Promise<ivm.Reference<unknown>>>();
+	private dynamicImportPending = new Map<
+		string,
+		Promise<ivm.Reference<unknown>>
+	>();
 
 	/**
 	 * Get a cached namespace or evaluate the module on first dynamic import.
@@ -960,21 +858,21 @@ export class NodeProcess {
 		executionDeadlineMs?: number,
 	): Promise<void> {
 		// Set up async module resolution/evaluation for first dynamic import.
-			const dynamicImportRef = new ivm.Reference(
-				async (specifier: string, fromPath?: string) => {
-					const effectiveReferrer =
-						typeof fromPath === "string" && fromPath.length > 0
-							? fromPath
-							: referrerPath;
-					const namespace = await this.resolveDynamicImportNamespace(
-						specifier,
-						context,
-						effectiveReferrer,
-						executionDeadlineMs,
-					);
-					if (!namespace) {
-						return null;
-					}
+		const dynamicImportRef = new ivm.Reference(
+			async (specifier: string, fromPath?: string) => {
+				const effectiveReferrer =
+					typeof fromPath === "string" && fromPath.length > 0
+						? fromPath
+						: referrerPath;
+				const namespace = await this.resolveDynamicImportNamespace(
+					specifier,
+					context,
+					effectiveReferrer,
+					executionDeadlineMs,
+				);
+				if (!namespace) {
+					return null;
+				}
 				return namespace.derefInto();
 			},
 		);
@@ -984,10 +882,11 @@ export class NodeProcess {
 		// Create the __dynamicImport function in the isolate
 		// Resolve in ESM mode first and only use require() fallback for explicit CJS/JSON.
 		await context.eval(`
-	      globalThis.__dynamicImport = async function(specifier, fromPath) {
-	        const request = String(specifier);
-	        const referrer = typeof fromPath === 'string' && fromPath.length > 0
-	          ? fromPath
+			      var { exposeCustomGlobal: __runtimeExposeCustomGlobal } = ${ISOLATE_GLOBAL_EXPOSURE_HELPER_SOURCE};
+		      const __dynamicImportHandler = async function(specifier, fromPath) {
+		        const request = String(specifier);
+		        const referrer = typeof fromPath === 'string' && fromPath.length > 0
+		          ? fromPath
 	          : ${JSON.stringify(referrerPath)};
 	        const allowRequireFallback =
 	          request.endsWith('.cjs') ||
@@ -1015,10 +914,11 @@ export class NodeProcess {
 	              namespaceFallback[key] = mod[key];
 	            }
 	          }
-	        }
-	        return namespaceFallback;
-	      };
-	    `);
+		        }
+		        return namespaceFallback;
+		      };
+			      __runtimeExposeCustomGlobal("__dynamicImport", __dynamicImportHandler);
+		    `);
 	}
 
 	/**
@@ -1122,6 +1022,18 @@ export class NodeProcess {
 		});
 		await jail.set("_scheduleTimer", scheduleTimerRef);
 
+		// Set up host crypto references for secure randomness.
+		const cryptoRandomFillRef = new ivm.Reference((byteLength: number) => {
+			const buffer = Buffer.allocUnsafe(byteLength);
+			randomFillSync(buffer);
+			return buffer.toString("base64");
+		});
+		const cryptoRandomUuidRef = new ivm.Reference(() => {
+			return randomUUID();
+		});
+		await jail.set("_cryptoRandomFill", cryptoRandomFillRef);
+		await jail.set("_cryptoRandomUUID", cryptoRandomUuidRef);
+
 		// Set up fs References (stubbed if filesystem is disabled)
 		{
 			const fs = this.filesystem ?? createFsStub();
@@ -1138,18 +1050,28 @@ export class NodeProcess {
 			// Binary file operations using base64 encoding
 			const readFileBinaryRef = new ivm.Reference(async (path: string) => {
 				const data = await fs.readFile(path);
+					this.assertPayloadByteLength(
+						`fs.readFileBinary ${path}`,
+						this.getBase64EncodedByteLength(data.byteLength),
+						this.bridgeBase64TransferLimitBytes,
+					);
 				// Convert to base64 for transfer across isolate boundary
 				return Buffer.from(data).toString("base64");
 			});
 			const writeFileBinaryRef = new ivm.Reference(
 				async (path: string, base64Content: string) => {
+						this.assertTextPayloadSize(
+							`fs.writeFileBinary ${path}`,
+							base64Content,
+							this.bridgeBase64TransferLimitBytes,
+						);
 					// Decode base64 and write as binary
 					const data = Buffer.from(base64Content, "base64");
 					await fs.writeFile(path, data);
 				},
 			);
 			const readDirRef = new ivm.Reference(async (path: string) => {
-				const entries = await readDirWithTypes(fs, path);
+				const entries = await fs.readDirWithTypes(path);
 				// Return as JSON string for transfer
 				return JSON.stringify(entries);
 			});
@@ -1160,10 +1082,10 @@ export class NodeProcess {
 				await fs.removeDir(path);
 			});
 			const existsRef = new ivm.Reference(async (path: string) => {
-				return exists(fs, path);
+				return fs.exists(path);
 			});
 			const statRef = new ivm.Reference(async (path: string) => {
-				const statInfo = await stat(fs, path);
+				const statInfo = await fs.stat(path);
 				// Return as JSON string for transfer
 				return JSON.stringify({
 					mode: statInfo.mode,
@@ -1180,7 +1102,7 @@ export class NodeProcess {
 			});
 			const renameRef = new ivm.Reference(
 				async (oldPath: string, newPath: string) => {
-					await rename(fs, oldPath, newPath);
+					await fs.rename(oldPath, newPath);
 				},
 			);
 
@@ -1199,20 +1121,22 @@ export class NodeProcess {
 
 			// Create the _fs object inside the isolate
 			await context.eval(`
-        globalThis._fs = {
-          readFile: _fsReadFile,
-          writeFile: _fsWriteFile,
-          readFileBinary: _fsReadFileBinary,
-          writeFileBinary: _fsWriteFileBinary,
-          readDir: _fsReadDir,
-          mkdir: _fsMkdir,
-          rmdir: _fsRmdir,
-          exists: _fsExists,
-          stat: _fsStat,
-          unlink: _fsUnlink,
-          rename: _fsRename,
-        };
-      `);
+			        var { exposeCustomGlobal: __runtimeExposeCustomGlobal } = ${ISOLATE_GLOBAL_EXPOSURE_HELPER_SOURCE};
+		        const __fsFacade = {
+		          readFile: _fsReadFile,
+		          writeFile: _fsWriteFile,
+	          readFileBinary: _fsReadFileBinary,
+	          writeFileBinary: _fsWriteFileBinary,
+	          readDir: _fsReadDir,
+	          mkdir: _fsMkdir,
+	          rmdir: _fsRmdir,
+	          exists: _fsExists,
+	          stat: _fsStat,
+		          unlink: _fsUnlink,
+		          rename: _fsRename,
+		        };
+			        __runtimeExposeCustomGlobal("_fs", __fsFacade);
+		      `);
 		}
 
 		// Set up child_process References (stubbed when disabled)
@@ -1250,11 +1174,14 @@ export class NodeProcess {
 			// Start a spawn - returns session ID
 			const spawnStartRef = new ivm.Reference(
 				(command: string, argsJson: string, optionsJson: string): number => {
-					const args = JSON.parse(argsJson) as string[];
-					const options = JSON.parse(optionsJson) as {
+					const args = this.parseJsonWithLimit<string[]>(
+						"child_process.spawn args",
+						argsJson,
+					);
+					const options = this.parseJsonWithLimit<{
 						cwd?: string;
 						env?: Record<string, string>;
-					};
+					}>("child_process.spawn options", optionsJson);
 					const sessionId = nextSessionId++;
 
 					const proc = executor.spawn(command, args, {
@@ -1313,11 +1240,14 @@ export class NodeProcess {
 					argsJson: string,
 					optionsJson: string,
 				): Promise<string> => {
-					const args = JSON.parse(argsJson) as string[];
-					const options = JSON.parse(optionsJson) as {
+					const args = this.parseJsonWithLimit<string[]>(
+						"child_process.spawnSync args",
+						argsJson,
+					);
+					const options = this.parseJsonWithLimit<{
 						cwd?: string;
 						env?: Record<string, string>;
-					};
+					}>("child_process.spawnSync options", optionsJson);
 
 					// Collect stdout/stderr
 					const stdoutChunks: Uint8Array[] = [];
@@ -1339,12 +1269,8 @@ export class NodeProcess {
 
 					// Combine chunks into strings
 					const decoder = new TextDecoder();
-					const stdout = stdoutChunks
-						.map((c) => decoder.decode(c))
-						.join("");
-					const stderr = stderrChunks
-						.map((c) => decoder.decode(c))
-						.join("");
+					const stdout = stdoutChunks.map((c) => decoder.decode(c)).join("");
+					const stderr = stderrChunks.map((c) => decoder.decode(c)).join("");
 
 					return JSON.stringify({ stdout, stderr, code: exitCode });
 				},
@@ -1363,10 +1289,15 @@ export class NodeProcess {
 
 			// Reference for fetch - returns JSON string for transfer
 			const networkFetchRef = new ivm.Reference(
-				async (url: string, optionsJson: string): Promise<string> => {
-					const options = JSON.parse(optionsJson);
-					const result = await adapter.fetch(url, options);
-					return JSON.stringify(result);
+				(url: string, optionsJson: string): Promise<string> => {
+					const options = this.parseJsonWithLimit<{
+						method?: string;
+						headers?: Record<string, string>;
+						body?: string | null;
+					}>("network.fetch options", optionsJson);
+					return adapter
+						.fetch(url, options)
+						.then((result) => JSON.stringify(result));
 				},
 			);
 
@@ -1380,30 +1311,32 @@ export class NodeProcess {
 
 			// Reference for HTTP request - returns JSON string for transfer
 			const networkHttpRequestRef = new ivm.Reference(
-				async (url: string, optionsJson: string): Promise<string> => {
-					const options = JSON.parse(optionsJson);
-					const result = await adapter.httpRequest(url, options);
-					return JSON.stringify(result);
+				(url: string, optionsJson: string): Promise<string> => {
+					const options = this.parseJsonWithLimit<{
+						method?: string;
+						headers?: Record<string, string>;
+						body?: string | null;
+					}>("network.httpRequest options", optionsJson);
+					return adapter
+						.httpRequest(url, options)
+						.then((result) => JSON.stringify(result));
 				},
 			);
 
 			// Lazy dispatcher reference for in-sandbox HTTP server callbacks
 			let httpServerDispatchRef: ivm.Reference<
-				(
-					serverId: number,
-					requestJson: string,
-				) => Promise<string>
+				(serverId: number, requestJson: string) => Promise<string>
 			> | null = null;
 
 			const getHttpServerDispatchRef = () => {
 				if (!httpServerDispatchRef) {
-					httpServerDispatchRef = context.global.getSync("_httpServerDispatch", {
-						reference: true,
-					}) as ivm.Reference<
-						(
-							serverId: number,
-							requestJson: string,
-						) => Promise<string>
+					httpServerDispatchRef = context.global.getSync(
+						"_httpServerDispatch",
+						{
+							reference: true,
+						},
+					) as ivm.Reference<
+						(serverId: number, requestJson: string) => Promise<string>
 					>;
 				}
 				return httpServerDispatchRef!;
@@ -1411,42 +1344,43 @@ export class NodeProcess {
 
 			// Reference for starting an in-sandbox HTTP server
 			const networkHttpServerListenRef = new ivm.Reference(
-				async (optionsJson: string): Promise<string> => {
+				(optionsJson: string): Promise<string> => {
 					if (!adapter.httpServerListen) {
 						throw new Error(
 							"http.createServer requires NetworkAdapter.httpServerListen support",
 						);
 					}
 
-					const options = JSON.parse(optionsJson) as {
+					const options = this.parseJsonWithLimit<{
 						serverId: number;
 						port?: number;
 						hostname?: string;
-					};
+					}>("network.httpServer.listen options", optionsJson);
 
-					const result = await adapter.httpServerListen({
-						serverId: options.serverId,
-						port: options.port,
-						hostname: options.hostname,
-						onRequest: async (request) => {
-							const requestJson = JSON.stringify(request);
+					return (async () => {
+						const result = await adapter.httpServerListen!({
+							serverId: options.serverId,
+							port: options.port,
+							hostname: options.hostname,
+							onRequest: async (request) => {
+								const requestJson = JSON.stringify(request);
 
-							const responseJson = await getHttpServerDispatchRef().apply(
-								undefined,
-								[options.serverId, requestJson],
-								{ result: { promise: true } },
-							);
-							return JSON.parse(String(responseJson)) as {
-								status: number;
-								headers?: Array<[string, string]>;
-								body?: string;
-								bodyEncoding?: "utf8" | "base64";
-							};
-						},
-					});
-					this.activeHttpServerIds.add(options.serverId);
-
-					return JSON.stringify(result);
+								const responseJson = await getHttpServerDispatchRef().apply(
+									undefined,
+									[options.serverId, requestJson],
+									{ result: { promise: true } },
+								);
+								return this.parseJsonWithLimit<{
+									status: number;
+									headers?: Array<[string, string]>;
+									body?: string;
+									bodyEncoding?: "utf8" | "base64";
+								}>("network.httpServer response", String(responseJson));
+							},
+						});
+						this.activeHttpServerIds.add(options.serverId);
+						return JSON.stringify(result);
+					})();
 				},
 			);
 
@@ -1472,36 +1406,14 @@ export class NodeProcess {
 
 		// Set up globals needed by the bridge BEFORE loading it
 		const initialCwd = this.processConfig.cwd ?? "/";
-		await context.eval(`
-      globalThis._moduleCache = {};
-      // Set up built-ins that have no bridge/polyfill implementation.
-      globalThis._moduleCache['v8'] = {
-        getHeapStatistics: function() {
-          return {
-            total_heap_size: 67108864,
-            total_heap_size_executable: 1048576,
-            total_physical_size: 67108864,
-            total_available_size: 67108864,
-            used_heap_size: 52428800,
-            heap_size_limit: 134217728,
-            malloced_memory: 8192,
-            peak_malloced_memory: 16384,
-            does_zap_garbage: 0,
-            number_of_native_contexts: 1,
-            number_of_detached_contexts: 0,
-            external_memory: 0
-          };
-        },
-        getHeapSpaceStatistics: function() { return []; },
-        getHeapCodeStatistics: function() { return {}; },
-        setFlagsFromString: function() {},
-        serialize: function(value) { return Buffer.from(JSON.stringify(value)); },
-        deserialize: function(buffer) { return JSON.parse(buffer.toString()); },
-        cachedDataVersionTag: function() { return 0; }
-      };
-      globalThis._pendingModules = {};
-      globalThis._currentModule = { dirname: ${JSON.stringify(initialCwd)} };
-    `);
+		await context.eval(
+			createInitialBridgeGlobalsCode({
+				initialCwd,
+				jsonPayloadLimitBytes: this.isolateJsonPayloadLimitBytes,
+				payloadLimitErrorCode: PAYLOAD_LIMIT_ERROR_CODE,
+				isolateGlobalExposureHelperSource: ISOLATE_GLOBAL_EXPOSURE_HELPER_SOURCE,
+			}),
+		);
 
 		// Load the bridge bundle which sets up all polyfill modules
 		const bridgeCode = getBridgeWithConfig(
@@ -1659,14 +1571,15 @@ export class NodeProcess {
 					context,
 					entryReferrerPath,
 				);
-				await this.setupDynamicImport(
-					context,
-					jail,
-					entryReferrerPath,
-					executionDeadlineMs,
-				);
+					await this.setupDynamicImport(
+						context,
+						jail,
+						entryReferrerPath,
+						executionDeadlineMs,
+					);
+					await this.applyCustomGlobalExposurePolicy(context);
 
-				const esmResult = await this.runESM(
+					const esmResult = await this.runESM(
 					transformedCode,
 					context,
 					options.filePath,
@@ -1676,13 +1589,12 @@ export class NodeProcess {
 					exports = esmResult as T;
 				}
 			} else {
-				await this.setupRequire(
-					context,
-					jail,
-					timingMitigation,
-					frozenTimeMs,
-				);
-				await context.eval("globalThis.module = { exports: {} };");
+		await this.setupRequire(context, jail, timingMitigation, frozenTimeMs);
+		await context.eval(`
+			      var { exposeMutableRuntimeStateGlobal: __runtimeExposeMutableGlobal } = ${ISOLATE_GLOBAL_EXPOSURE_HELPER_SOURCE};
+			      __runtimeExposeMutableGlobal("module", { exports: {} });
+			      __runtimeExposeMutableGlobal("exports", globalThis.module.exports);
+			    `);
 
 				if (options.mode === "exec") {
 					await this.applyExecutionOverrides(
@@ -1702,14 +1614,15 @@ export class NodeProcess {
 					context,
 					entryReferrerPath,
 				);
-				await this.setupDynamicImport(
-					context,
-					jail,
-					entryReferrerPath,
-					executionDeadlineMs,
-				);
+					await this.setupDynamicImport(
+						context,
+						jail,
+						entryReferrerPath,
+						executionDeadlineMs,
+					);
+					await this.applyCustomGlobalExposurePolicy(context);
 
-				if (options.mode === "exec") {
+					if (options.mode === "exec") {
 					// Capture eval() result and await it if script returns a Promise.
 					const wrappedCode = `
             globalThis.__scriptResult__ = eval(${JSON.stringify(transformedCode)});
@@ -1752,8 +1665,8 @@ export class NodeProcess {
 			})) as number;
 
 			return {
-				stdout: stdout.join("\n") + (stdout.length > 0 ? "\n" : ""),
-				stderr: stderr.join("\n") + (stderr.length > 0 ? "\n" : ""),
+				stdout: formatCapturedOutput(stdout),
+				stderr: formatCapturedOutput(stderr),
 				code: exitCode,
 				exports,
 			};
@@ -1762,8 +1675,8 @@ export class NodeProcess {
 				recycleIsolateAfterTimeout = true;
 				stderr.push(TIMEOUT_ERROR_MESSAGE);
 				return {
-					stdout: stdout.join("\n") + (stdout.length > 0 ? "\n" : ""),
-					stderr: stderr.join("\n") + (stderr.length > 0 ? "\n" : ""),
+					stdout: formatCapturedOutput(stdout),
+					stderr: formatCapturedOutput(stderr),
 					code: TIMEOUT_EXIT_CODE,
 					exports: undefined as T,
 				};
@@ -1776,8 +1689,8 @@ export class NodeProcess {
 			if (exitMatch) {
 				const exitCode = parseInt(exitMatch[1], 10);
 				return {
-					stdout: stdout.join("\n") + (stdout.length > 0 ? "\n" : ""),
-					stderr: stderr.join("\n") + (stderr.length > 0 ? "\n" : ""),
+					stdout: formatCapturedOutput(stdout),
+					stderr: formatCapturedOutput(stderr),
 					code: exitCode,
 					exports: undefined as T,
 				};
@@ -1785,8 +1698,8 @@ export class NodeProcess {
 
 			stderr.push(errMessage);
 			return {
-				stdout: stdout.join("\n") + (stdout.length > 0 ? "\n" : ""),
-				stderr: stderr.join("\n") + (stderr.length > 0 ? "\n" : ""),
+				stdout: formatCapturedOutput(stdout),
+				stderr: formatCapturedOutput(stderr),
 				code: 1,
 				exports: undefined as T,
 			};
@@ -1826,11 +1739,36 @@ export class NodeProcess {
 			? filePath.substring(0, filePath.lastIndexOf("/")) || "/"
 			: "/";
 		await context.eval(`
-      globalThis.__filename = ${JSON.stringify(filePath)};
-      globalThis.__dirname = ${JSON.stringify(dirname)};
-      globalThis._currentModule.dirname = ${JSON.stringify(dirname)};
-      globalThis._currentModule.filename = ${JSON.stringify(filePath)};
-    `);
+	      var { exposeMutableRuntimeStateGlobal: __runtimeExposeMutableGlobal } = ${ISOLATE_GLOBAL_EXPOSURE_HELPER_SOURCE};
+	      __runtimeExposeMutableGlobal("__filename", ${JSON.stringify(filePath)});
+	      __runtimeExposeMutableGlobal("__dirname", ${JSON.stringify(dirname)});
+	      globalThis._currentModule.dirname = ${JSON.stringify(dirname)};
+	      globalThis._currentModule.filename = ${JSON.stringify(filePath)};
+	    `);
+	}
+
+	/**
+	 * Apply descriptor policy to custom globals before user code executes.
+	 */
+	private async applyCustomGlobalExposurePolicy(context: ivm.Context): Promise<void> {
+		await context.eval(`
+	      var {
+	        exposeCustomGlobal: __runtimeExposeCustomGlobal,
+	        exposeMutableRuntimeStateGlobal: __runtimeExposeMutableGlobal,
+	      } = ${ISOLATE_GLOBAL_EXPOSURE_HELPER_SOURCE};
+	      const __hardenedGlobals = ${JSON.stringify(HARDENED_NODE_CUSTOM_GLOBALS)};
+	      const __mutableGlobals = ${JSON.stringify(MUTABLE_NODE_CUSTOM_GLOBALS)};
+	      for (const globalName of __hardenedGlobals) {
+	        if (Object.prototype.hasOwnProperty.call(globalThis, globalName)) {
+	          __runtimeExposeCustomGlobal(globalName, globalThis[globalName]);
+	        }
+	      }
+	      for (const globalName of __mutableGlobals) {
+	        if (Object.prototype.hasOwnProperty.call(globalThis, globalName)) {
+	          __runtimeExposeMutableGlobal(globalName, globalThis[globalName]);
+	        }
+	      }
+	    `);
 	}
 
 	/**
@@ -1903,7 +1841,7 @@ export class NodeProcess {
 	}
 
 	private createIsolate(): ivm.Isolate {
-		return new ivm.Isolate({ memoryLimit: this.memoryLimit });
+		return createIsolate(this.memoryLimit);
 	}
 
 	private recycleIsolate(): void {

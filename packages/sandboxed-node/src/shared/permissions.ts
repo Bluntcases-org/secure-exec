@@ -105,6 +105,14 @@ export function wrapFileSystem(
 			);
 			return fs.readDir(path);
 		},
+		readDirWithTypes: async (path) => {
+			checkPermission(
+				permissions?.fs,
+				{ op: "readdir", path },
+				(req) => createEaccesError(fsOpToSyscall(req.op), req.path),
+			);
+			return fs.readDirWithTypes(path);
+		},
 		writeFile: async (path, content) => {
 			checkPermission(
 				permissions?.fs,
@@ -137,6 +145,14 @@ export function wrapFileSystem(
 			);
 			return fs.exists(path);
 		},
+		stat: async (path) => {
+			checkPermission(
+				permissions?.fs,
+				{ op: "stat", path },
+				(req) => createEaccesError(fsOpToSyscall(req.op), req.path),
+			);
+			return fs.stat(path);
+		},
 		removeFile: async (path) => {
 			checkPermission(
 				permissions?.fs,
@@ -152,6 +168,19 @@ export function wrapFileSystem(
 				(req) => createEaccesError(fsOpToSyscall(req.op), req.path),
 			);
 			return fs.removeDir(path);
+		},
+		rename: async (oldPath, newPath) => {
+			checkPermission(
+				permissions?.fs,
+				{ op: "rename", path: oldPath },
+				(req) => createEaccesError(fsOpToSyscall(req.op), req.path),
+			);
+			checkPermission(
+				permissions?.fs,
+				{ op: "rename", path: newPath },
+				(req) => createEaccesError(fsOpToSyscall(req.op), req.path),
+			);
+			return fs.rename(oldPath, newPath);
 		},
 	};
 }
@@ -243,12 +272,15 @@ export function createFsStub(): VirtualFileSystem {
 		readFile: async (path) => stub("open", path),
 		readTextFile: async (path) => stub("open", path),
 		readDir: async (path) => stub("scandir", path),
+		readDirWithTypes: async (path) => stub("scandir", path),
 		writeFile: async (path) => stub("write", path),
 		createDir: async (path) => stub("mkdir", path),
 		mkdir: async (path) => stub("mkdir", path),
 		exists: async (path) => stub("access", path),
+		stat: async (path) => stub("stat", path),
 		removeFile: async (path) => stub("unlink", path),
 		removeDir: async (path) => stub("rmdir", path),
+		rename: async (oldPath, newPath) => stub("rename", `${oldPath}->${newPath}`),
 	};
 }
 

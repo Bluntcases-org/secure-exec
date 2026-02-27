@@ -15,7 +15,7 @@ import {
 } from "../shared/esm-utils.js";
 import { POLYFILL_CODE_MAP } from "../generated/polyfills.js";
 import { loadFile, resolveModule } from "../package-bundler.js";
-import { exists, mkdir, readDirWithTypes, rename, stat } from "../fs-helpers.js";
+import { mkdir } from "../fs-helpers.js";
 import {
 	createBrowserNetworkAdapter,
 	createOpfsFileSystem,
@@ -33,6 +33,10 @@ import type {
 	ProcessConfig,
 	RunResult,
 } from "../shared/api-types.js";
+import {
+	exposeCustomGlobal,
+	exposeMutableRuntimeStateGlobal,
+} from "../shared/global-exposure.js";
 
 type SerializedPermissions = {
 	fs?: string;
@@ -141,8 +145,8 @@ async function initRuntime(payload: InitPayload): Promise<void> {
 
 	const processConfig = payload.processConfig ?? {};
 	processConfig.env = filterEnv(processConfig.env, permissions);
-	(globalThis as Record<string, unknown>)._processConfig = processConfig;
-	(globalThis as Record<string, unknown>)._osConfig = payload.osConfig ?? {};
+	exposeCustomGlobal("_processConfig", processConfig);
+	exposeCustomGlobal("_osConfig", payload.osConfig ?? {});
 
 	// fs bridge
 	const readFileRef = makeApplySyncPromise(async (path: string) => {
@@ -160,7 +164,7 @@ async function initRuntime(payload: InitPayload): Promise<void> {
 		return fsOps.writeFile(path, bytes);
 	});
 	const readDirRef = makeApplySyncPromise(async (path: string) => {
-		const entries = await readDirWithTypes(fsOps, path);
+		const entries = await fsOps.readDirWithTypes(path);
 		return JSON.stringify(entries);
 	});
 	const mkdirRef = makeApplySync(async (path: string) => {
@@ -170,20 +174,20 @@ async function initRuntime(payload: InitPayload): Promise<void> {
 		return fsOps.removeDir(path);
 	});
 	const existsRef = makeApplySyncPromise(async (path: string) => {
-		return exists(fsOps, path);
+		return fsOps.exists(path);
 	});
 	const statRef = makeApplySyncPromise(async (path: string) => {
-		const statInfo = await stat(fsOps, path);
+		const statInfo = await fsOps.stat(path);
 		return JSON.stringify(statInfo);
 	});
 	const unlinkRef = makeApplySyncPromise(async (path: string) => {
 		return fsOps.removeFile(path);
 	});
 	const renameRef = makeApplySyncPromise(async (oldPath: string, newPath: string) => {
-		return rename(fsOps, oldPath, newPath);
+		return fsOps.rename(oldPath, newPath);
 	});
 
-	(globalThis as Record<string, unknown>)._fs = {
+	exposeCustomGlobal("_fs", {
 		readFile: readFileRef,
 		writeFile: writeFileRef,
 		readFileBinary: readFileBinaryRef,
@@ -195,24 +199,24 @@ async function initRuntime(payload: InitPayload): Promise<void> {
 		stat: statRef,
 		unlink: unlinkRef,
 		rename: renameRef,
-	};
+	});
 
 	// Polyfill loader
-	(globalThis as Record<string, unknown>)._loadPolyfill = makeApplySyncPromise(
+	exposeCustomGlobal("_loadPolyfill", makeApplySyncPromise(
 		async (moduleName: string) => {
 			const name = moduleName.replace(/^node:/, "");
 			return POLYFILL_CODE_MAP[name] ?? null;
 		},
-	);
+	));
 
 	// Module resolution
-	(globalThis as Record<string, unknown>)._resolveModule = makeApplySyncPromise(
+	exposeCustomGlobal("_resolveModule", makeApplySyncPromise(
 		async (request: string, fromDir: string) => {
 			return resolveModule(request, fromDir, fsOps);
 		},
-	);
+	));
 
-	(globalThis as Record<string, unknown>)._loadFile = makeApplySyncPromise(
+	exposeCustomGlobal("_loadFile", makeApplySyncPromise(
 		async (path: string) => {
 			const source = await loadFile(path, fsOps);
 			if (source === null) return null;
@@ -222,38 +226,38 @@ async function initRuntime(payload: InitPayload): Promise<void> {
 			}
 			return transformDynamicImport(code);
 		},
-	);
+	));
 
-	(globalThis as Record<string, unknown>)._scheduleTimer = {
+	exposeCustomGlobal("_scheduleTimer", {
 		apply(_ctx: undefined, args: [number]) {
 			return new Promise<void>((resolve) => {
 				setTimeout(resolve, args[0]);
 			});
 		},
-	};
+	});
 
 	// network bridge
 	const netAdapter = networkAdapter ?? createNetworkStub();
-	(globalThis as Record<string, unknown>)._networkFetchRaw = makeApplyPromise(
+	exposeCustomGlobal("_networkFetchRaw", makeApplyPromise(
 		async (url: string, optionsJson: string) => {
 			const options = JSON.parse(optionsJson);
 			const result = await netAdapter.fetch(url, options);
 			return JSON.stringify(result);
 		},
-	);
-	(globalThis as Record<string, unknown>)._networkDnsLookupRaw = makeApplyPromise(
+	));
+	exposeCustomGlobal("_networkDnsLookupRaw", makeApplyPromise(
 		async (hostname: string) => {
 			const result = await netAdapter.dnsLookup(hostname);
 			return JSON.stringify(result);
 		},
-	);
-	(globalThis as Record<string, unknown>)._networkHttpRequestRaw = makeApplyPromise(
+	));
+	exposeCustomGlobal("_networkHttpRequestRaw", makeApplyPromise(
 		async (url: string, optionsJson: string) => {
 			const options = JSON.parse(optionsJson);
 			const result = await netAdapter.httpRequest(url, options);
 			return JSON.stringify(result);
 		},
-	);
+	));
 
 	// child_process bridge
 	const execAdapter = commandExecutor ?? createCommandExecutorStub();
@@ -264,7 +268,7 @@ async function initRuntime(payload: InitPayload): Promise<void> {
 			| ((sessionId: number, type: "stdout" | "stderr" | "exit", data: Uint8Array | number) => void)
 			| undefined;
 
-	(globalThis as Record<string, unknown>)._childProcessSpawnStart = makeApplySync(
+	exposeCustomGlobal("_childProcessSpawnStart", makeApplySync(
 		(command: string, argsJson: string, optionsJson: string) => {
 			const args = JSON.parse(argsJson) as string[];
 			const options = JSON.parse(optionsJson) as { cwd?: string; env?: Record<string, string> };
@@ -286,27 +290,27 @@ async function initRuntime(payload: InitPayload): Promise<void> {
 			sessions.set(sessionId, proc);
 			return sessionId;
 		},
-	);
+	));
 
-	(globalThis as Record<string, unknown>)._childProcessStdinWrite = makeApplySync(
+	exposeCustomGlobal("_childProcessStdinWrite", makeApplySync(
 		(sessionId: number, data: Uint8Array) => {
 			sessions.get(sessionId)?.writeStdin(data);
 		},
-	);
+	));
 
-	(globalThis as Record<string, unknown>)._childProcessStdinClose = makeApplySync(
+	exposeCustomGlobal("_childProcessStdinClose", makeApplySync(
 		(sessionId: number) => {
 			sessions.get(sessionId)?.closeStdin();
 		},
-	);
+	));
 
-	(globalThis as Record<string, unknown>)._childProcessKill = makeApplySync(
+	exposeCustomGlobal("_childProcessKill", makeApplySync(
 		(sessionId: number, signal: number) => {
 			sessions.get(sessionId)?.kill(signal);
 		},
-	);
+	));
 
-	(globalThis as Record<string, unknown>)._childProcessSpawnSync = makeApplySyncPromise(
+	exposeCustomGlobal("_childProcessSpawnSync", makeApplySyncPromise(
 		async (command: string, argsJson: string, optionsJson: string) => {
 			const args = JSON.parse(argsJson) as string[];
 			const options = JSON.parse(optionsJson) as { cwd?: string; env?: Record<string, string> };
@@ -324,13 +328,12 @@ async function initRuntime(payload: InitPayload): Promise<void> {
 			const stderr = stderrChunks.map((c) => decoder.decode(c)).join("");
 			return JSON.stringify({ stdout, stderr, code: exitCode });
 		},
-	);
+	));
 
 	// Load bridge after globals are in place
 	const bridge = await import("../bridge/index.js");
-	(globalThis as Record<string, unknown>)._fsModule = (bridge as Record<string, unknown>).default;
-	(globalThis as Record<string, unknown>)._fsModuleCode =
-		"(function() { return globalThis._fsModule; })()";
+	exposeCustomGlobal("_fsModule", (bridge as Record<string, unknown>).default);
+	exposeCustomGlobal("_fsModuleCode", "(function() { return globalThis._fsModule; })()");
 
 	eval(getRequireSetupCode());
 
@@ -338,13 +341,13 @@ async function initRuntime(payload: InitPayload): Promise<void> {
 }
 
 function resetModuleState(cwd: string): void {
-	(globalThis as Record<string, unknown>)._moduleCache = {};
-	(globalThis as Record<string, unknown>)._pendingModules = {};
-	(globalThis as Record<string, unknown>)._currentModule = { dirname: cwd };
+	exposeMutableRuntimeStateGlobal("_moduleCache", {});
+	exposeMutableRuntimeStateGlobal("_pendingModules", {});
+	exposeMutableRuntimeStateGlobal("_currentModule", { dirname: cwd });
 }
 
 function setDynamicImportFallback(): void {
-	(globalThis as Record<string, unknown>).__dynamicImport = function (specifier: string) {
+	exposeCustomGlobal("__dynamicImport", function (specifier: string) {
 		const cached = dynamicImportCache.get(specifier);
 		if (cached) return Promise.resolve(cached);
 		try {
@@ -353,7 +356,7 @@ function setDynamicImportFallback(): void {
 		} catch (e) {
 			return Promise.reject(new Error(`Cannot dynamically import '${specifier}': ${String(e)}`));
 		}
-	};
+	});
 }
 
 function captureConsole(): {
@@ -399,10 +402,10 @@ function updateProcessConfig(options?: ExecOptions): void {
 		proc.env = { ...currentEnv, ...filtered };
 	}
 	if (options?.stdin !== undefined) {
-		(globalThis as Record<string, unknown>)._stdinData = options.stdin;
-		(globalThis as Record<string, unknown>)._stdinPosition = 0;
-		(globalThis as Record<string, unknown>)._stdinEnded = false;
-		(globalThis as Record<string, unknown>)._stdinFlowMode = false;
+		exposeMutableRuntimeStateGlobal("_stdinData", options.stdin);
+		exposeMutableRuntimeStateGlobal("_stdinPosition", 0);
+		exposeMutableRuntimeStateGlobal("_stdinEnded", false);
+		exposeMutableRuntimeStateGlobal("_stdinFlowMode", false);
 	}
 }
 
@@ -422,19 +425,22 @@ async function execScript(
 		}
 		transformed = transformDynamicImport(transformed);
 
-		(globalThis as Record<string, unknown>).module = { exports: {} };
-		(globalThis as Record<string, unknown>).exports = (globalThis as Record<string, unknown>).module.exports;
+		exposeMutableRuntimeStateGlobal("module", { exports: {} });
+		exposeMutableRuntimeStateGlobal(
+			"exports",
+			(globalThis as Record<string, unknown>).module.exports,
+		);
 
 		if (options?.filePath) {
 			const dirname = options.filePath.includes("/")
 				? options.filePath.substring(0, options.filePath.lastIndexOf("/")) || "/"
 				: "/";
-			(globalThis as Record<string, unknown>).__filename = options.filePath;
-			(globalThis as Record<string, unknown>).__dirname = dirname;
-			(globalThis as Record<string, unknown>)._currentModule = {
+			exposeMutableRuntimeStateGlobal("__filename", options.filePath);
+			exposeMutableRuntimeStateGlobal("__dirname", dirname);
+			exposeMutableRuntimeStateGlobal("_currentModule", {
 				dirname,
 				filename: options.filePath,
-			};
+			});
 		}
 
 		eval(transformed);

@@ -3,6 +3,7 @@
 
 import type * as nodeHttp from "http";
 import type * as nodeDns from "dns";
+import { exposeCustomGlobal } from "../shared/global-exposure.js";
 
 // Declare host bridge References
 declare const _networkFetchRaw: {
@@ -1345,11 +1346,11 @@ export const http2 = {
 };
 
 // Export modules and make them available as globals for require()
-(globalThis as Record<string, unknown>)._httpModule = http;
-(globalThis as Record<string, unknown>)._httpsModule = https;
-(globalThis as Record<string, unknown>)._http2Module = http2;
-(globalThis as Record<string, unknown>)._dnsModule = dns;
-(globalThis as Record<string, unknown>)._httpServerDispatch = dispatchServerRequest;
+exposeCustomGlobal("_httpModule", http);
+exposeCustomGlobal("_httpsModule", https);
+exposeCustomGlobal("_http2Module", http2);
+exposeCustomGlobal("_dnsModule", dns);
+exposeCustomGlobal("_httpServerDispatch", dispatchServerRequest);
 
 // Make fetch API available globally
 (globalThis as Record<string, unknown>).fetch = fetch;

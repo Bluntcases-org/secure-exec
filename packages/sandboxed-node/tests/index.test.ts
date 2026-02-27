@@ -8,6 +8,10 @@ import {
 	createInMemoryFileSystem,
 	createNodeDriver,
 } from "../src/index.js";
+import {
+	HARDENED_NODE_CUSTOM_GLOBALS,
+	MUTABLE_NODE_CUSTOM_GLOBALS,
+} from "../src/shared/global-exposure.js";
 
 function createFs() {
 	return createInMemoryFileSystem();
@@ -103,10 +107,53 @@ describe("NodeProcess", () => {
 	it("loads node stdlib polyfills", async () => {
 		proc = new NodeProcess();
 		const result = await proc.run(`
-      const path = require('path');
-      module.exports = path.join('foo', 'bar');
-    `);
+	      const path = require('path');
+	      module.exports = path.join('foo', 'bar');
+	    `);
 		expect(result.exports).toBe("foo/bar");
+	});
+
+	it("provides host-backed crypto randomness APIs", async () => {
+		proc = new NodeProcess();
+		const result = await proc.exec(`
+	      const bytes = new Uint8Array(16);
+	      crypto.getRandomValues(bytes);
+	      const uuid = crypto.randomUUID();
+	      const uuidV4Pattern =
+	        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+	      console.log(uuidV4Pattern.test(uuid), uuid.length, bytes.length);
+	    `);
+		expect(result.code).toBe(0);
+		expect(result.stdout.trim()).toBe("true 36 16");
+	});
+
+	it("prevents sandbox override of host entropy bridge hooks", async () => {
+		proc = new NodeProcess();
+		const result = await proc.exec(`
+		      const originalFill = globalThis._cryptoRandomFill;
+		      const originalUuid = globalThis._cryptoRandomUUID;
+		      globalThis._cryptoRandomFill = {
+		        applySync() {
+		          throw new Error("host entropy unavailable");
+		        },
+		      };
+		      globalThis._cryptoRandomUUID = {
+		        applySync() {
+		          throw new Error("host entropy unavailable");
+		        },
+		      };
+		      const bytes = new Uint8Array(4);
+		      crypto.getRandomValues(bytes);
+		      const uuid = crypto.randomUUID();
+		      console.log(
+		        originalFill === globalThis._cryptoRandomFill,
+		        originalUuid === globalThis._cryptoRandomUUID,
+		        bytes.length,
+		        uuid.length
+		      );
+		    `);
+		expect(result.code).toBe(0);
+		expect(result.stdout.trim()).toBe("true true 4 36");
 	});
 
 	it("does not shim third-party packages in require resolution", async () => {
@@ -188,6 +235,56 @@ describe("NodeProcess", () => {
       module.exports = fs.readFileSync('/data/hello.txt', 'utf8');
 		`);
 		expect(result.exports).toBe("hello world");
+	});
+
+	it("returns typed directory entries via fs.readdirSync({ withFileTypes: true })", async () => {
+		const fs = createFs();
+		await fs.mkdir("/data");
+		await fs.mkdir("/data/sub");
+		await fs.writeFile("/data/file.txt", "value");
+
+		proc = new NodeProcess({ filesystem: fs, permissions: allowAllFs });
+		const result = await proc.run(`
+      const fs = require('fs');
+      const entries = fs.readdirSync('/data', { withFileTypes: true })
+        .map((entry) => [entry.name, entry.isDirectory()])
+        .sort((a, b) => a[0].localeCompare(b[0]));
+      module.exports = entries;
+		`);
+
+		expect(result.exports).toEqual([
+			["file.txt", false],
+			["sub", true],
+		]);
+	});
+
+	it("supports metadata checks and rename without content-probing helpers", async () => {
+		const fs = createFs();
+		await fs.mkdir("/data");
+		await fs.writeFile("/data/large.txt", "x".repeat(1024 * 1024));
+
+		proc = new NodeProcess({ filesystem: fs, permissions: allowAllFs });
+		const result = await proc.run(`
+      const fs = require('fs');
+      const before = fs.existsSync('/data/large.txt');
+      const statSize = fs.statSync('/data/large.txt').size;
+      fs.renameSync('/data/large.txt', '/data/renamed.txt');
+      module.exports = {
+        before,
+        afterOld: fs.existsSync('/data/large.txt'),
+        afterNew: fs.existsSync('/data/renamed.txt'),
+        statSize,
+        renamedSize: fs.statSync('/data/renamed.txt').size,
+      };
+		`);
+
+		expect(result.exports).toEqual({
+			before: true,
+			afterOld: false,
+			afterNew: true,
+			statSize: 1024 * 1024,
+			renamedSize: 1024 * 1024,
+		});
 	});
 
 	it("resolves package exports and ESM entrypoints from node_modules", async () => {
@@ -608,27 +705,96 @@ describe("NodeProcess", () => {
 		expect(result.stderr).toContain("CPU time limit exceeded");
 	});
 
-	it("hardens active-handle bridge globals as non-writable and non-configurable", async () => {
+	it("hardens all custom globals as non-writable and non-configurable", async () => {
 		proc = new NodeProcess();
 		const result = await proc.exec(`
-	      const targets = [
-	        "_registerHandle",
-	        "_unregisterHandle",
-	        "_waitForActiveHandles",
-	      ];
-	      const descriptors = Object.fromEntries(
-	        targets.map((name) => [name, Object.getOwnPropertyDescriptor(globalThis, name)])
-	      );
-	      console.log(JSON.stringify(descriptors));
-	    `);
+		      const targets = ${JSON.stringify(HARDENED_NODE_CUSTOM_GLOBALS)};
+		      const failures = [];
+		      for (const name of targets) {
+		        const originalValue = globalThis[name];
+		        let redefineThrew = false;
+		        try {
+		          globalThis[name] = { replaced: true };
+		        } catch {}
+		        try {
+		          Object.defineProperty(globalThis, name, {
+		            value: { redefined: true },
+		          });
+		        } catch {
+		          redefineThrew = true;
+		        }
+		        const descriptor = Object.getOwnPropertyDescriptor(globalThis, name);
+		        if (!descriptor) {
+		          failures.push([name, "missing"]);
+		          continue;
+		        }
+		        if (descriptor.writable !== false) failures.push([name, "writable"]);
+		        if (descriptor.configurable !== false) failures.push([name, "configurable"]);
+		        if (globalThis[name] !== originalValue) failures.push([name, "replaced"]);
+		        if (!redefineThrew) failures.push([name, "redefine-no-throw"]);
+		      }
+		      console.log(JSON.stringify({ checked: targets.length, failures }));
+		    `);
 		expect(result.code).toBe(0);
-		const descriptors = JSON.parse(result.stdout.trim()) as Record<
-			string,
-			{ writable?: boolean; configurable?: boolean } | undefined
-		>;
-		for (const name of ["_registerHandle", "_unregisterHandle", "_waitForActiveHandles"]) {
-			expect(descriptors[name]?.writable).toBe(false);
-			expect(descriptors[name]?.configurable).toBe(false);
+		const summary = JSON.parse(result.stdout.trim()) as {
+			checked: number;
+			failures: Array<[string, string]>;
+		};
+		expect(summary.checked).toBe(HARDENED_NODE_CUSTOM_GLOBALS.length);
+		expect(summary.failures).toEqual([]);
+	});
+
+	it("keeps stdlib globals compatible and mutable runtime globals writable", async () => {
+		proc = new NodeProcess();
+		const result = await proc.exec(
+			`
+		      const processDescriptor = Object.getOwnPropertyDescriptor(globalThis, "process");
+		      const mutableTargets = ${JSON.stringify(MUTABLE_NODE_CUSTOM_GLOBALS)};
+		      const mutableDescriptors = Object.fromEntries(
+		        mutableTargets.map((name) => {
+		          const descriptor = Object.getOwnPropertyDescriptor(globalThis, name);
+		          return [
+		            name,
+		            descriptor
+		              ? {
+		                  exists: true,
+		                  writable: descriptor.writable,
+		                  configurable: descriptor.configurable,
+		                }
+		              : { exists: false },
+		          ];
+		        })
+		      );
+		      console.log(JSON.stringify({
+		        processDescriptor: {
+		          writable: processDescriptor?.writable,
+		          configurable: processDescriptor?.configurable,
+		        },
+		        mutableDescriptors,
+		      }));
+		    `,
+			{ filePath: "/entry.js" },
+		);
+		expect(result.code).toBe(0);
+		const payload = JSON.parse(result.stdout.trim()) as {
+			processDescriptor: { writable?: boolean; configurable?: boolean };
+			mutableDescriptors: Record<
+				string,
+				{
+					exists: boolean;
+					writable?: boolean;
+					configurable?: boolean;
+				}
+			>;
+		};
+		expect(
+			payload.processDescriptor.writable === false &&
+				payload.processDescriptor.configurable === false,
+		).toBe(false);
+		for (const name of MUTABLE_NODE_CUSTOM_GLOBALS) {
+			expect(payload.mutableDescriptors[name]?.exists).toBe(true);
+			expect(payload.mutableDescriptors[name]?.writable).toBe(true);
+			expect(payload.mutableDescriptors[name]?.configurable).toBe(true);
 		}
 	});
 

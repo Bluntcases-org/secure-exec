@@ -38,6 +38,16 @@ export class NodeFileSystem implements VirtualFileSystem {
 		return fs.readdir(path);
 	}
 
+	async readDirWithTypes(
+		path: string,
+	): Promise<Array<{ name: string; isDirectory: boolean }>> {
+		const entries = await fs.readdir(path, { withFileTypes: true });
+		return entries.map((entry) => ({
+			name: entry.name,
+			isDirectory: entry.isDirectory(),
+		}));
+	}
+
 	async writeFile(path: string, content: string | Uint8Array): Promise<void> {
 		await fs.writeFile(path, content);
 	}
@@ -59,12 +69,37 @@ export class NodeFileSystem implements VirtualFileSystem {
 		}
 	}
 
+	async stat(path: string): Promise<{
+		mode: number;
+		size: number;
+		isDirectory: boolean;
+		atimeMs: number;
+		mtimeMs: number;
+		ctimeMs: number;
+		birthtimeMs: number;
+	}> {
+		const info = await fs.stat(path);
+		return {
+			mode: info.mode,
+			size: info.size,
+			isDirectory: info.isDirectory(),
+			atimeMs: info.atimeMs,
+			mtimeMs: info.mtimeMs,
+			ctimeMs: info.ctimeMs,
+			birthtimeMs: info.birthtimeMs,
+		};
+	}
+
 	async removeFile(path: string): Promise<void> {
 		await fs.unlink(path);
 	}
 
 	async removeDir(path: string): Promise<void> {
 		await fs.rmdir(path);
+	}
+
+	async rename(oldPath: string, newPath: string): Promise<void> {
+		await fs.rename(oldPath, newPath);
 	}
 }
 

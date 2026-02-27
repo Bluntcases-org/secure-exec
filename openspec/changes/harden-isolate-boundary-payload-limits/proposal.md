@@ -6,6 +6,7 @@ Sandboxed-node currently accepts unbounded payloads from the isolate for base64 
 
 - Add runtime-enforced size limits for base64 payloads crossing the isolate boundary in `readFileBinaryRef` and `writeFileBinaryRef` paths.
 - Add host-side byte-length validation before every `JSON.parse` call that consumes isolate-originated payloads in `packages/sandboxed-node/src/index.ts`.
+- Add bounded host configuration for payload limits so deployments can tune limits without disabling boundary protection.
 - Define deterministic failure behavior when payload-size limits are exceeded (structured bridge/runtime error contract instead of host OOM).
 - Add targeted regression tests that prove oversized isolate payloads are rejected safely and normal-sized payloads preserve existing behavior.
 - Document intentional compatibility constraints for isolate-boundary transfer limits in friction/security documentation.

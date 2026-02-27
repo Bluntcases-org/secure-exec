@@ -1,0 +1,166 @@
+import { hasPolyfill } from "./polyfills.js";
+
+const BRIDGE_MODULES = [
+	"fs",
+	"fs/promises",
+	"module",
+	"os",
+	"http",
+	"https",
+	"http2",
+	"dns",
+	"child_process",
+	"process",
+	"v8",
+] as const;
+
+const DEFERRED_CORE_MODULES = [
+	"net",
+	"tls",
+	"readline",
+	"perf_hooks",
+	"async_hooks",
+	"worker_threads",
+] as const;
+
+const UNSUPPORTED_CORE_MODULES = [
+	"dgram",
+	"cluster",
+	"wasi",
+	"diagnostics_channel",
+	"inspector",
+	"repl",
+	"trace_events",
+	"domain",
+] as const;
+
+const KNOWN_BUILTIN_MODULES = new Set([
+	...BRIDGE_MODULES,
+	...DEFERRED_CORE_MODULES,
+	...UNSUPPORTED_CORE_MODULES,
+	"assert",
+	"buffer",
+	"constants",
+	"crypto",
+	"events",
+	"path",
+	"querystring",
+	"stream",
+	"stream/web",
+	"string_decoder",
+	"timers",
+	"tty",
+	"url",
+	"util",
+	"vm",
+	"zlib",
+]);
+
+export const BUILTIN_NAMED_EXPORTS: Record<string, string[]> = {
+	fs: [
+		"promises",
+		"readFileSync",
+		"writeFileSync",
+		"appendFileSync",
+		"existsSync",
+		"statSync",
+		"mkdirSync",
+		"readdirSync",
+		"createReadStream",
+		"createWriteStream",
+	],
+	"fs/promises": [
+		"readFile",
+		"writeFile",
+		"appendFile",
+		"mkdir",
+		"readdir",
+		"rm",
+		"rmdir",
+		"stat",
+	],
+	module: [
+		"createRequire",
+		"Module",
+		"isBuiltin",
+		"builtinModules",
+		"SourceMap",
+		"syncBuiltinESMExports",
+	],
+	os: [
+		"arch",
+		"platform",
+		"tmpdir",
+		"homedir",
+		"hostname",
+		"type",
+		"release",
+		"constants",
+	],
+	http: [
+		"request",
+		"get",
+		"createServer",
+		"Server",
+		"IncomingMessage",
+		"ServerResponse",
+		"Agent",
+		"METHODS",
+		"STATUS_CODES",
+	],
+	https: ["request", "get", "createServer", "Agent", "globalAgent"],
+	dns: ["lookup", "resolve", "resolve4", "resolve6", "promises"],
+	child_process: [
+		"spawn",
+		"spawnSync",
+		"exec",
+		"execSync",
+		"execFile",
+		"execFileSync",
+		"fork",
+	],
+	process: [
+		"argv",
+		"env",
+		"cwd",
+		"chdir",
+		"exit",
+		"pid",
+		"platform",
+		"version",
+		"versions",
+		"stdout",
+		"stderr",
+		"stdin",
+		"nextTick",
+	],
+	path: [
+		"sep",
+		"delimiter",
+		"basename",
+		"dirname",
+		"extname",
+		"format",
+		"isAbsolute",
+		"join",
+		"normalize",
+		"parse",
+		"relative",
+		"resolve",
+	],
+};
+
+export function normalizeBuiltinSpecifier(request: string): string | null {
+	const moduleName = request.replace(/^node:/, "");
+	if (KNOWN_BUILTIN_MODULES.has(moduleName) || hasPolyfill(moduleName)) {
+		return request.startsWith("node:") ? `node:${moduleName}` : moduleName;
+	}
+	return null;
+}
+
+export function getPathDir(path: string): string {
+	const normalizedPath = path.replace(/\\/g, "/");
+	const lastSlash = normalizedPath.lastIndexOf("/");
+	if (lastSlash <= 0) return "/";
+	return normalizedPath.slice(0, lastSlash);
+}

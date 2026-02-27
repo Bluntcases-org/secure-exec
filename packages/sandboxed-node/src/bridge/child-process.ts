@@ -5,6 +5,7 @@
 // processes are running. See: docs-internal/node/ACTIVE_HANDLES.md
 
 import type * as nodeChildProcess from "child_process";
+import { exposeCustomGlobal } from "../shared/global-exposure.js";
 
 // Host bridge declarations for streaming mode
 declare const _childProcessSpawnStart:
@@ -47,7 +48,7 @@ declare const _unregisterHandle: (id: string) => void;
 const activeChildren = new Map<number, ChildProcess>();
 
 // Global dispatcher - host calls this when data arrives
-(globalThis as Record<string, unknown>)._childProcessDispatch = (
+const childProcessDispatch = (
   sessionId: number,
   type: "stdout" | "stderr" | "exit",
   data: Uint8Array | number
@@ -77,6 +78,7 @@ const activeChildren = new Map<number, ChildProcess>();
     }
   }
 };
+exposeCustomGlobal("_childProcessDispatch", childProcessDispatch);
 
 // Event listener types
 type EventListener = (...args: unknown[]) => void;
@@ -699,7 +701,7 @@ const childProcess = {
 };
 
 // Expose to global for require() to use
-(globalThis as Record<string, unknown>)._childProcessModule = childProcess;
+exposeCustomGlobal("_childProcessModule", childProcess);
 
 export { ChildProcess, exec, execSync, spawn, spawnSync, execFile, execFileSync, fork };
 export default childProcess;

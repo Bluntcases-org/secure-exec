@@ -4,7 +4,7 @@ Sandboxed-node still has known filesystem and runtime TODOs that create avoidabl
 
 ## What Changes
 
-- Extend the `VirtualFileSystem` metadata contract so `stat` and metadata-based existence checks do not require reading full file contents.
+- Extend the `VirtualFileSystem` metadata contract so `stat`, metadata-based `exists`, and typed directory entry lookup do not require reading full file contents.
 - Replace helper-layer metadata emulation (`readFile`/`readDir` probing) with driver-backed metadata operations and directory-entry typing to remove O(file size) and N+1 filesystem patterns.
 - Define and implement `rename` behavior as atomic when supported by the active driver, and explicitly document deterministic fallback behavior when atomic rename is unavailable.
 - Replace hardcoded numeric open-flag literals in the fs bridge with named constants derived from Node `fs.constants` semantics.

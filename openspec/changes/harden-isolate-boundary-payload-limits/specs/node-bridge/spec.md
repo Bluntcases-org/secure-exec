@@ -11,6 +11,10 @@ Bridge handlers that exchange serialized payloads between isolate and host MUST 
 - **WHEN** `writeFileBinaryRef` receives a base64 payload larger than the configured bridge transfer limit
 - **THEN** the bridge MUST reject the request before base64 decode and MUST NOT allocate a decoded buffer for the oversized payload
 
-#### Scenario: Bridge JSON payloads are validated before parse
-- **WHEN** host bridge code receives isolate-originated JSON text for a bridged operation
-- **THEN** the runtime MUST validate payload size before `JSON.parse` and MUST reject oversized payloads with a deterministic overflow error
+#### Scenario: Base64 transfer checks use encoded payload byte length
+- **WHEN** the runtime evaluates payload size for `readFileBinaryRef` or `writeFileBinaryRef`
+- **THEN** it MUST measure the serialized base64 payload byte length before decode and enforce limits on that encoded payload
+
+#### Scenario: Bridge transfer uses configured payload limit when provided
+- **WHEN** a host configures an in-range base64 transfer payload limit for the runtime
+- **THEN** bridge-side `readFileBinaryRef` and `writeFileBinaryRef` enforcement MUST use the configured value instead of the default

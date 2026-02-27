@@ -1,3 +1,5 @@
+import { exposeCustomGlobal } from "../shared/global-exposure.js";
+
 // Module polyfill for isolated-vm
 // Provides module.createRequire and other module utilities for npm compatibility
 
@@ -417,6 +419,6 @@ const moduleModule = {
 };
 
 // Expose to global for require() to use
-(globalThis as Record<string, unknown>)._moduleModule = moduleModule;
+exposeCustomGlobal("_moduleModule", moduleModule);
 
 export default moduleModule;

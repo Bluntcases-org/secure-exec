@@ -25,6 +25,6 @@ Runtime rename behavior MUST delegate to the active driver `rename` operation an
 - **WHEN** the active driver supports atomic rename semantics
 - **THEN** sandboxed `rename` MUST complete through that atomic driver operation
 
-#### Scenario: Unsupported atomic rename does not silently degrade
+#### Scenario: Unsupported atomic rename is explicit and deterministic
 - **WHEN** the active driver cannot provide atomic rename semantics
-- **THEN** the runtime MUST surface a deterministic error contract instead of silently performing copy-write-delete emulation
+- **THEN** the runtime MUST expose deterministic documented behavior for that driver and MUST NOT silently perform copy-write-delete emulation as if it were atomic

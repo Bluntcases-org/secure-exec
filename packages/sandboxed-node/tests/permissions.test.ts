@@ -22,12 +22,23 @@ const baseFs: VirtualFileSystem = {
 	readFile: async () => new Uint8Array([1]),
 	readTextFile: async () => "ok",
 	readDir: async () => ["a"],
+	readDirWithTypes: async () => [{ name: "a", isDirectory: false }],
 	writeFile: async () => undefined,
 	createDir: async () => undefined,
 	mkdir: async () => undefined,
 	exists: async () => true,
+	stat: async () => ({
+		mode: 0o100644,
+		size: 1,
+		isDirectory: false,
+		atimeMs: 0,
+		mtimeMs: 0,
+		ctimeMs: 0,
+		birthtimeMs: 0,
+	}),
 	removeFile: async () => undefined,
 	removeDir: async () => undefined,
+	rename: async () => undefined,
 };
 
 const baseNetwork: NetworkAdapter = {

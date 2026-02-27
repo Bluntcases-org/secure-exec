@@ -38,6 +38,9 @@ In isolated-vm:
 4. V8 context is released
 5. Callbacks can never fire
 
+The lifecycle globals are intentionally immutable so sandboxed code cannot replace `_registerHandle`, `_unregisterHandle`, or `_waitForActiveHandles` and bypass runtime completion handling.
+They are exposed through the shared helper policy in `packages/sandboxed-node/src/shared/global-exposure.ts`, which is also used for other custom runtime/bridge globals.
+
 ## Solution: Active Handle Tracking
 
 We implement a simple handle tracking mechanism that mimics Node.js's ref counting:
@@ -48,12 +51,12 @@ const _activeHandles = new Map();  // id -> description
 let _waitResolvers = [];
 
 // Register a handle (keeps sandbox alive)
-globalThis._registerHandle = function(id, description) {
+const _registerHandle = (id, description) => {
     _activeHandles.set(id, description);
 };
 
 // Unregister a handle (allows sandbox to exit if no handles remain)
-globalThis._unregisterHandle = function(id) {
+const _unregisterHandle = (id) => {
     _activeHandles.delete(id);
     if (_activeHandles.size === 0) {
         _waitResolvers.forEach(r => r());
@@ -62,16 +65,23 @@ globalThis._unregisterHandle = function(id) {
 };
 
 // Wait for all handles to complete
-globalThis._waitForActiveHandles = function() {
+const _waitForActiveHandles = () => {
     if (_activeHandles.size === 0) return Promise.resolve();
     return new Promise(resolve => _waitResolvers.push(resolve));
 };
 
 // Debug: see what's still active
-globalThis._getActiveHandles = function() {
+const _getActiveHandles = () => {
     return Array.from(_activeHandles.entries());
 };
+
+exposeCustomGlobal("_registerHandle", _registerHandle);
+exposeCustomGlobal("_unregisterHandle", _unregisterHandle);
+exposeCustomGlobal("_waitForActiveHandles", _waitForActiveHandles);
+exposeCustomGlobal("_getActiveHandles", _getActiveHandles);
 ```
+
+Active-handle bindings are listed in the canonical custom-global inventory (`NODE_CUSTOM_GLOBAL_INVENTORY`) in `packages/sandboxed-node/src/shared/global-exposure.ts`, alongside mutable runtime-state exceptions and stdlib-compatibility exclusions.
 
 The `exec()` method in sandboxed-node automatically awaits `_waitForActiveHandles()` after running user code:
 

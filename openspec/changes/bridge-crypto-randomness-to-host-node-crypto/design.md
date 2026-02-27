@@ -71,4 +71,4 @@ Rationale:
 
 ## Open Questions
 
-- Should the compatibility matrix continue classifying `crypto` as Tier 3 (Stub) with secure randomness exceptions, or move `crypto` to a bridge-oriented tier now that host-backed primitives are required?
+- None.

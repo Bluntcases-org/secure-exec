@@ -64,9 +64,9 @@
 
 ## Security & Hardening
 
-- [ ] Bridge `crypto.getRandomValues` / `randomUUID` to host `node:crypto` instead of `Math.random()`.
-  - `packages/sandboxed-node/src/bridge/process.ts` (~line 960)
-  - Silent weak randomness is actively dangerous; either bridge to host `randomFillSync` or throw.
+- [x] Bridge `crypto.getRandomValues` / `randomUUID` to host `node:crypto` instead of `Math.random()`.
+  - Fix: runtime now wires host `node:crypto` references from `packages/sandboxed-node/src/index.ts` into the isolate and uses them in `packages/sandboxed-node/src/bridge/process.ts`.
+  - Fail-closed contract: bridge throws deterministic `crypto.getRandomValues is not supported in sandbox` / `crypto.randomUUID is not supported in sandbox` errors when host entropy hooks are unavailable.
 
 - [ ] Add transfer size limits on base64 file I/O across the isolate boundary.
   - `packages/sandboxed-node/src/index.ts` (~line 1138, `readFileBinaryRef` / `writeFileBinaryRef`)
@@ -76,9 +76,9 @@
   - `packages/sandboxed-node/src/index.ts` (10 unvalidated `JSON.parse` calls)
   - Crafted large payloads from sandbox can OOM the host process.
 
-- [ ] Make bridge globals non-writable on `globalThis`.
-  - `packages/sandboxed-node/src/bridge/active-handles.ts` (lines 62-65)
-  - Use `Object.defineProperty` with `writable: false, configurable: false` to prevent sandbox code from overwriting `_registerHandle` / `_unregisterHandle` / `_waitForActiveHandles`.
+- [x] Make bridge globals non-writable on `globalThis`.
+  - Fix: active-handle lifecycle globals now install via `Object.defineProperty` with `writable: false` and `configurable: false`, preventing sandbox overwrite of `_registerHandle` / `_unregisterHandle` / `_waitForActiveHandles`.
+  - `packages/sandboxed-node/src/bridge/active-handles.ts`, `packages/sandboxed-node/tests/index.test.ts`
 
 ## Performance & Correctness
 

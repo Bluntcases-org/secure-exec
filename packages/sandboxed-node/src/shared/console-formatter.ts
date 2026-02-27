@@ -167,9 +167,11 @@ export function getConsoleSetupCode(
 ): string {
 	const normalizedBudget = normalizeBudget(budget);
 	return `
-      const __consoleBudget = ${JSON.stringify(normalizedBudget)};
-      const normalizeBudget = ${normalizeBudget.toString()};
-      const safeStringifyConsoleValueWithBudget = ${safeStringifyConsoleValueWithBudget.toString()};
+	      // tsx/esbuild may emit __name(...) wrappers inside function source strings.
+	      const __name = (value) => value;
+	      const __consoleBudget = ${JSON.stringify(normalizedBudget)};
+	      const normalizeBudget = ${normalizeBudget.toString()};
+	      const safeStringifyConsoleValueWithBudget = ${safeStringifyConsoleValueWithBudget.toString()};
       const safeStringifyConsoleValue = ${safeStringifyConsoleValue.toString()};
       const formatConsoleArgs = ${formatConsoleArgs.toString()};
 

@@ -24,7 +24,7 @@ Unsupported modules use: `"<module> is not supported in sandbox"`.
 
 | Module | Tier | Status |
 | --- | --- | --- |
-| `fs` | 1 (Bridge) + 4 (Deferred APIs) | Implemented: `readFile`, `writeFile`, `appendFile`, `open`, `read`, `write`, `close`, `readdir`, `mkdir`, `rmdir`, `rm`, `unlink`, `stat`, `lstat`, `rename`, `copyFile`, `exists`, `createReadStream`, `createWriteStream`, `writev`, `access`, `realpath`; deferred deterministic errors for `watch`, `watchFile`, `chmod`, `chown`, `link`, `symlink`, `readlink`, `truncate`, `utimes`. |
+| `fs` | 1 (Bridge) + 4 (Deferred APIs) | Implemented: `readFile`, `writeFile`, `appendFile`, `open`, `read`, `write`, `close`, `readdir`, `mkdir`, `rmdir`, `rm`, `unlink`, `stat`, `lstat`, `rename`, `copyFile`, `exists`, `createReadStream`, `createWriteStream`, `writev`, `access`, `realpath`. Metadata-sensitive operations (`stat`, `exists`, `readdir` with `withFileTypes`) use metadata-native driver paths instead of content probing. `rename` delegates to driver semantics (atomic where supported; explicit limitation errors where not). Deferred deterministic errors remain for `watch`, `watchFile`, `chmod`, `chown`, `link`, `symlink`, `readlink`, `truncate`, `utimes`. |
 | `process` | 1 (Bridge) | Env access (permission-gated), cwd/chdir, exit semantics, timers, stdio, eventing, and basic usage/system metadata APIs. |
 | `os` | 1 (Bridge) | Platform/arch/version, user/system info, and `os.constants`. |
 | `child_process` | 1 (Bridge) + 5 (`fork`) | Implemented: `spawn`, `spawnSync`, `exec`, `execSync`, `execFile`, `execFileSync`; `fork` is intentionally unsupported. |
@@ -45,7 +45,7 @@ Unsupported modules use: `"<module> is not supported in sandbox"`.
 | `string_decoder` | 2 (Polyfill) | Polyfill via node-stdlib-browser. |
 | `zlib` | 2 (Polyfill) | Polyfill via node-stdlib-browser. |
 | `vm` | 2 (Polyfill) | Polyfill via node-stdlib-browser. |
-| `crypto` | 3 (Stub) | Limited bridge/polyfill blend; `randomUUID()` available; `getRandomValues()` is not cryptographically secure; `subtle.*` methods throw deterministic unsupported errors. |
+| `crypto` | 3 (Stub) | Limited bridge/polyfill blend; `getRandomValues()` and `randomUUID()` use host `node:crypto` secure randomness, or throw deterministic unsupported errors if host entropy is unavailable; `subtle.*` methods throw deterministic unsupported errors. |
 | `tty` | 2 (Polyfill) | `tty-browserify`; `isatty()` returns `false`; `ReadStream`/`WriteStream` are compatibility constructors. |
 | `v8` | 3 (Stub) | Pre-registered stub with mock heap stats and JSON-based `serialize`/`deserialize`. |
 | `constants` | 2 (Polyfill) | `constants-browserify`; `os.constants` remains available via `os`. |

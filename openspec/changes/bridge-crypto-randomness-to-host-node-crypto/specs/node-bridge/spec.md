@@ -13,4 +13,4 @@ Bridge-provided randomness for global `crypto` APIs MUST delegate to host `node:
 
 #### Scenario: Host entropy is unavailable
 - **WHEN** host `node:crypto` randomness primitives are unavailable or fail
-- **THEN** the bridge MUST throw a deterministic unsupported error for the invoked randomness API and MUST NOT fall back to non-cryptographic randomness
+- **THEN** the bridge MUST throw a deterministic error matching the unsupported API format (`"<module>.<api> is not supported in sandbox"`) for the invoked randomness API and MUST NOT fall back to non-cryptographic randomness

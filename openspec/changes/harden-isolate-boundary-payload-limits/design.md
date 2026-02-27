@@ -21,7 +21,7 @@ The sandboxed-node runtime currently accepts unbounded isolate-originated string
 ### 1. Enforce explicit isolate-boundary transfer limits for base64 file I/O
 
 Decision:
-- Introduce shared runtime constants for maximum inbound/outbound base64 payload bytes.
+- Introduce secure default limits for maximum inbound/outbound base64 payload bytes.
 - Apply the limits in `readFileBinaryRef` and `writeFileBinaryRef` before decoding/encoding large buffers.
 - Convert limit violations into deterministic runtime errors returned through existing bridge error channels.
 
@@ -36,8 +36,8 @@ Alternatives considered:
 ### 2. Add pre-parse size guards for all isolate-originated JSON payloads
 
 Decision:
-- Add a small helper that validates serialized byte length before `JSON.parse`.
-- Replace each direct `JSON.parse` on isolate-originated values with the helper.
+- Add a small helper that validates UTF-8 serialized byte length before `JSON.parse`.
+- Replace each direct `JSON.parse` on isolate-originated values with the helper across all current parse entry points in `packages/sandboxed-node/src/index.ts`.
 - Apply one configurable/default max JSON payload size for consistency and simpler test coverage.
 
 Rationale:
@@ -51,7 +51,8 @@ Alternatives considered:
 ### 3. Preserve compatibility for normal workloads while documenting intentional guardrails
 
 Decision:
-- Keep limit values high enough for common project-matrix fixtures.
+- Keep default limit values high enough for common project-matrix fixtures.
+- Expose host-side payload-limit overrides in `NodeProcessOptions` with strict validation and bounded max/min constraints.
 - Emit deterministic overflow errors so parity failures are actionable and non-crashing.
 - Update friction/security documentation to describe this intentional runtime guardrail where behavior can differ from unconstrained host Node execution.
 
@@ -62,6 +63,7 @@ Rationale:
 Alternatives considered:
 - Silent truncation of payloads: rejected because it creates correctness bugs and non-obvious data loss.
 - Process-abort on overflow: rejected because deterministic recoverable failure is safer for host orchestration.
+- Fully unbounded host overrides: rejected because it can recreate OOM vectors and silently disable security controls.
 
 ## Risks / Trade-offs
 
@@ -71,10 +73,10 @@ Alternatives considered:
 
 ## Migration Plan
 
-1. Add boundary size constants and shared helper utilities in sandboxed-node runtime code.
+1. Add default boundary size constants, bounded configuration validation, and shared helper utilities in sandboxed-node runtime code.
 2. Apply guards to `readFileBinaryRef` and `writeFileBinaryRef` base64 transfer paths.
 3. Replace direct isolate-originated `JSON.parse` calls with guarded parsing helper.
-4. Add focused tests for overflow rejection and non-overflow parity behavior.
+4. Add focused tests for overflow rejection, in-range override behavior, and invalid override rejection.
 5. Update required documentation artifacts (`docs-internal/friction/sandboxed-node.md`, `docs/security-model.mdx`) with guardrail rationale and behavior.
 
 Rollback:
@@ -82,5 +84,4 @@ Rollback:
 
 ## Open Questions
 
-- Should payload limits be runtime-configurable via `NodeProcess` options, or fixed constants in the first iteration?
 - Should overflow failures map to a specific stable exit code in addition to deterministic stderr text?

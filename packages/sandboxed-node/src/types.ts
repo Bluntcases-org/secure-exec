@@ -3,6 +3,21 @@
  *
  * This interface abstracts filesystem operations needed by the sandbox.
  */
+export interface VirtualDirEntry {
+	name: string;
+	isDirectory: boolean;
+}
+
+export interface VirtualStat {
+	mode: number;
+	size: number;
+	isDirectory: boolean;
+	atimeMs: number;
+	mtimeMs: number;
+	ctimeMs: number;
+	birthtimeMs: number;
+}
+
 export interface VirtualFileSystem {
 	/**
 	 * Read a file as binary data.
@@ -21,6 +36,12 @@ export interface VirtualFileSystem {
 	 * @throws Error if directory doesn't exist.
 	 */
 	readDir(path: string): Promise<string[]>;
+
+	/**
+	 * Read directory entries with type metadata.
+	 * @throws Error if directory doesn't exist.
+	 */
+	readDirWithTypes(path: string): Promise<VirtualDirEntry[]>;
 
 	/**
 	 * Write a file (creates parent directories as needed).
@@ -47,6 +68,12 @@ export interface VirtualFileSystem {
 	exists(path: string): Promise<boolean>;
 
 	/**
+	 * Get file or directory metadata.
+	 * @throws Error if path doesn't exist.
+	 */
+	stat(path: string): Promise<VirtualStat>;
+
+	/**
 	 * Remove a file.
 	 * @throws Error if file doesn't exist.
 	 */
@@ -57,6 +84,12 @@ export interface VirtualFileSystem {
 	 * @throws Error if directory doesn't exist or is not empty.
 	 */
 	removeDir(path: string): Promise<void>;
+
+	/**
+	 * Rename or move a file/directory.
+	 * Behavior SHOULD be atomic when supported by the backing store.
+	 */
+	rename(oldPath: string, newPath: string): Promise<void>;
 }
 
 export interface SpawnedProcess {

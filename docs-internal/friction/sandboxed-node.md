@@ -14,6 +14,26 @@
    - Symptom: threat model and trust-boundary assumptions were not published in one canonical docs page.
    - Fix: added canonical docs page `docs/security-model.mdx` and docs navigation entry in `docs/docs.json`; comparison guidance now references this page.
 
+4. **[resolved]** Active-handle bridge lifecycle hooks were mutable from sandboxed code.
+   - Symptom: sandbox code could overwrite `_registerHandle`, `_unregisterHandle`, or `_waitForActiveHandles` on `globalThis`, weakening execution completion guarantees.
+   - Fix: active-handle lifecycle globals are now installed with non-writable/non-configurable descriptors via `Object.defineProperty` in `packages/sandboxed-node/src/bridge/active-handles.ts`, with regression coverage in runtime tests.
+
+5. **[resolved]** Unbounded isolate-boundary payload parsing and base64 transfer could OOM the host.
+   - Symptom: isolate-originated JSON payloads and base64 file-transfer strings were accepted without host-side size checks, so crafted oversized payloads could force large allocations before runtime validation.
+   - Fix: added deterministic payload guards in `packages/sandboxed-node/src/index.ts` for base64 file transfer (`readFileBinaryRef`/`writeFileBinaryRef`) and all host-side isolate-originated JSON parsing paths; overflow now fails with `ERR_SANDBOX_PAYLOAD_TOO_LARGE` instead of process-fatal behavior. Limits now support bounded host configuration for compatibility tuning without allowing disablement.
+
+6. **[resolved]** `crypto.getRandomValues()` / `crypto.randomUUID()` used weak randomness fallback.
+   - Symptom: bridge crypto polyfill generated entropy with `Math.random()`, creating silent security risk and non-Node randomness semantics.
+   - Fix: bridge now delegates randomness to host `node:crypto` (`randomFillSync` / `randomUUID`) via isolate bridge hooks and fails closed with deterministic `crypto.<api> is not supported in sandbox` errors when host entropy is unavailable.
+
+7. **[resolved]** Filesystem metadata helpers used content-probing and rename emulation.
+   - Symptom: helper `stat()` and `exists()` could read file contents (`O(file size)`), `readDirWithTypes()` used per-entry probe loops, and `rename` used copy-write-delete fallback with crash-window risk.
+   - Fix: `VirtualFileSystem` now exposes metadata-native `stat`, typed `readDirWithTypes`, and driver `rename`; runtime/worker/package resolver paths now use these APIs directly, and OPFS rename now returns explicit `ENOSYS` instead of silent non-atomic emulation.
+
+8. **[resolved]** Custom bridge/runtime globals had inconsistent descriptor hardening.
+   - Symptom: runtime-owned global bindings were exposed through mixed assignment patterns, letting sandbox code overwrite control-plane globals in some paths.
+   - Fix: custom global exposure now uses shared helper policy in `packages/sandboxed-node/src/shared/global-exposure.ts` with hardened defaults (`writable: false`, `configurable: false`), plus explicit mutable runtime-state allowlist entries. Node stdlib globals remain compatibility-oriented and are not force-frozen by this policy.
+
 ## 2026-02-26
 
 1. **[resolved]** Bridging `@hono/node-server` violated strict sandbox boundary policy.
