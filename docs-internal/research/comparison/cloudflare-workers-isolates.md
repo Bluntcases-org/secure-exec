@@ -78,10 +78,10 @@ libsandbox uses `isolated-vm` (also V8 isolates) and shares some of the same pri
 
 ### 1. CPU/time limits (RESOLVED)
 
-`sandboxed-node` now enforces optional runtime CPU budgets with a shared execution deadline:
+`secure-exec` now enforces optional runtime CPU budgets with a shared execution deadline:
 
 1. `cpuTimeLimitMs?: number` is supported on `NodeProcessOptions` and `ExecOptions`.
-2. Timeout budget is enforced across all relevant isolate execution points in `packages/sandboxed-node/src/index.ts`:
+2. Timeout budget is enforced across all relevant isolate execution points in `packages/secure-exec/src/index.ts`:
    - `script.run(...)` in CJS `run()` and `exec()` paths
    - user-influenced `context.eval(...)` calls (`module.exports`, active-handle wait, script-result await)
    - `entryModule.evaluate(...)` and dynamic `module.evaluate(...)` in ESM paths
@@ -100,7 +100,7 @@ The host Node.js process has full OS access. If there is ever an isolated-vm esc
 
 ### 3. Timing side-channel hardening (RESOLVED)
 
-`sandboxed-node` now includes explicit timing mitigation controls with security-first defaults:
+`secure-exec` now includes explicit timing mitigation controls with security-first defaults:
 
 1. `timingMitigation?: "off" | "freeze"` is supported, defaulting to `"freeze"`.
 2. In freeze mode, timing APIs are deterministic/frozen:

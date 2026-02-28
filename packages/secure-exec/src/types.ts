@@ -1,5 +1,5 @@
 /**
- * Minimal filesystem interface for sandboxed-node.
+ * Minimal filesystem interface for secure-exec.
  *
  * This interface abstracts filesystem operations needed by the sandbox.
  */

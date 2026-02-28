@@ -1,6 +1,6 @@
 # OpenSpec Capability Delta Guide
 
-Use these baseline capabilities when proposing sandboxed-node runtime or bridge changes:
+Use these baseline capabilities when proposing secure-exec runtime or bridge changes:
 
 - `node-runtime`
 - `node-stdlib`

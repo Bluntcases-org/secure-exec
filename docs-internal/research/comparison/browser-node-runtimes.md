@@ -87,7 +87,7 @@ A comparison of tools that run Node.js-compatible code in browsers or sandboxed 
 
 ---
 
-### libsandbox (sandboxed-node)
+### libsandbox (secure-exec)
 
 **What it is:** A driver-based sandboxed Node.js runtime with two backends: `isolated-vm` for Node.js (V8 isolate-level isolation) and Web Workers for browsers. Designed for executing code snippets with controlled API access.
 

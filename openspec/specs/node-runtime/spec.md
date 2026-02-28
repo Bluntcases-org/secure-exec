@@ -204,7 +204,7 @@ The Node runtime MUST validate isolate-originated serialized payload size before
 - **THEN** the runtime MUST fail the operation with a deterministic overflow error and MUST NOT call `JSON.parse` on that payload
 
 #### Scenario: All isolate-originated parse entry points are guarded
-- **WHEN** host runtime code in `packages/sandboxed-node/src/index.ts` parses isolate-originated JSON payloads for bridged operations
+- **WHEN** host runtime code in `packages/secure-exec/src/index.ts` parses isolate-originated JSON payloads for bridged operations
 - **THEN** each parse entry point MUST apply the same pre-parse size validation before invoking `JSON.parse`
 
 #### Scenario: In-limit serialized payload preserves existing behavior
@@ -286,3 +286,13 @@ Runtime rename behavior MUST delegate to the active driver `rename` operation an
 - **WHEN** the active driver cannot provide atomic rename semantics
 - **THEN** the runtime MUST expose deterministic documented behavior for that driver and MUST NOT silently perform copy-write-delete emulation as if it were atomic
 
+### Requirement: Runtime Package Identity Uses Secure-Exec
+The runtime SHALL publish its execution interface from the `secure-exec` package name, and runtime implementation sources SHALL reside under `packages/secure-exec` in the workspace.
+
+#### Scenario: Consumers import runtime APIs from secure-exec
+- **WHEN** a Node or browser consumer imports runtime APIs
+- **THEN** the documented and supported package specifier MUST be `secure-exec`
+
+#### Scenario: Runtime source path is canonicalized to secure-exec
+- **WHEN** contributors update runtime implementation files
+- **THEN** those files MUST live under `packages/secure-exec` rather than the legacy runtime package path

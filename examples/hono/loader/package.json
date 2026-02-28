@@ -6,7 +6,7 @@
     "dev": "tsx src/index.ts"
   },
   "dependencies": {
-    "sandboxed-node": "workspace:*"
+    "secure-exec": "workspace:*"
   },
   "devDependencies": {
     "tsx": "^4.19.2"

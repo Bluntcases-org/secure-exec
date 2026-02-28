@@ -5,7 +5,7 @@ import {
   type CommandExecutor,
   type SpawnedProcess,
   type VirtualFileSystem,
-} from "sandboxed-node";
+} from "secure-exec";
 
 function createVirtualFs(fs: IFileSystem): VirtualFileSystem {
   return {

@@ -1,6 +1,6 @@
 ---
 title: Node Compatibility
-description: Target Node.js version and standard-library compatibility matrix for sandboxed-node.
+description: Target Node.js version and standard-library compatibility matrix for secure-exec.
 ---
 
 ## Target Node Version
@@ -11,7 +11,7 @@ description: Target Node.js version and standard-library compatibility matrix fo
 
 | Tier | Label | Meaning |
 | --- | --- | --- |
-| 1 | Bridge | Runtime implementation in sandboxed-node bridge modules. |
+| 1 | Bridge | Runtime implementation in secure-exec bridge modules. |
 | 2 | Polyfill | Browser-compatible polyfill package implementation. |
 | 3 | Stub | Minimal compatibility surface for lightweight usage and type/instance checks. |
 | 4 | Deferred | `require()` succeeds, but APIs throw deterministic unsupported errors on call. |

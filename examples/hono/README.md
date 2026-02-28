@@ -2,7 +2,7 @@
 
 This example uses a loader/runner split:
 
-- `loader/` runs sandboxed-node and executes the runner entry file.
+- `loader/` runs secure-exec and executes the runner entry file.
 - `runner/` contains a regular Hono app with package dependencies in `node_modules`.
   - `src/fetch-handler.ts` exports only `fetch`.
   - `src/server.ts` boots a real HTTP server using `@hono/node-server`.

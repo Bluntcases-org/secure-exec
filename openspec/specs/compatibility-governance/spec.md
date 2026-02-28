@@ -1,7 +1,7 @@
 # compatibility-governance Specification
 
 ## Purpose
-Define compatibility and tracking obligations for sandboxed-node changes.
+Define compatibility and tracking obligations for secure-exec changes.
 ## Requirements
 ### Requirement: Maintain Node Stdlib Compatibility Matrix
 Changes affecting bridged or polyfilled Node APIs MUST keep `docs/node-compatability.mdx` synchronized with the actual runtime surface, including supported, limited, and unsupported modules/APIs. Every module entry in the matrix MUST include an explicit support-tier classification (Bridge, Polyfill, Stub, Deferred, or Unsupported) as defined by the `node-stdlib` spec. The page MUST include a top-of-page target Node version statement.
@@ -19,22 +19,22 @@ Changes affecting bridged or polyfilled Node APIs MUST keep `docs/node-compatabi
 - **THEN** the page MUST retain an explicit target Node version statement at the top
 
 ### Requirement: Node Compatibility Target Version Tracks Test Type Baseline
-The runtime compatibility target MUST align with the `@types/node` package major version used to validate sandboxed-node tests and type checks. Compatibility documentation and spec references MUST describe the same target major Node line.
+The runtime compatibility target MUST align with the `@types/node` package major version used to validate secure-exec tests and type checks. Compatibility documentation and spec references MUST describe the same target major Node line.
 
 #### Scenario: Current baseline is declared for contributors and users
 - **WHEN** this requirement is applied for the current dependency baseline
 - **THEN** compatibility docs and governance text MUST declare Node `22.x` as the active target line derived from `@types/node` `22.x`
 
 #### Scenario: `@types/node` target major is upgraded
-- **WHEN** the workspace intentionally upgrades `@types/node` to a new major version used by sandboxed-node validation
+- **WHEN** the workspace intentionally upgrades `@types/node` to a new major version used by secure-exec validation
 - **THEN** the same change MUST update `docs/node-compatability.mdx` and related compatibility-governance references to the new target Node major line
 
 #### Scenario: Compatibility target is documented
 - **WHEN** compatibility requirements or docs declare a target Node version
-- **THEN** the declared target MUST match the active `@types/node` major version used by sandboxed-node validation workflows
+- **THEN** the declared target MUST match the active `@types/node` major version used by secure-exec validation workflows
 
-### Requirement: Maintain Sandboxed Node Follow-Up Backlog
-Work touching sandboxed-node behavior SHALL keep follow-up work tracked in OpenSpec change artifacts, including checking off completed tasks and adding newly discovered actionable items as new tasks or follow-up changes.
+### Requirement: Maintain Secure-Exec Follow-Up Backlog
+Work touching secure-exec behavior SHALL keep follow-up work tracked in OpenSpec change artifacts, including checking off completed tasks and adding newly discovered actionable items as new tasks or follow-up changes.
 
 #### Scenario: Implementation resolves tracked backlog work
 - **WHEN** a change completes an item already tracked in OpenSpec tasks
@@ -45,7 +45,7 @@ Work touching sandboxed-node behavior SHALL keep follow-up work tracked in OpenS
 - **THEN** a new OpenSpec task or follow-up change MUST be added immediately with enough detail to guide follow-up work
 
 ### Requirement: Maintain Friction Log for Development Issues
-Unexpected issues, workarounds, and integration friction encountered during sandboxed-node development MUST be recorded in `docs-internal/friction/sandboxed-node.md`, and resolved items MUST be marked as resolved with fix notes.
+Unexpected issues, workarounds, and integration friction encountered during secure-exec development MUST be recorded in `docs-internal/friction/secure-exec.md`, and resolved items MUST be marked as resolved with fix notes.
 
 #### Scenario: Workaround is introduced during implementation
 - **WHEN** a change requires a workaround to unblock progress
@@ -56,33 +56,33 @@ Unexpected issues, workarounds, and integration friction encountered during sand
 - **THEN** its log entry MUST be updated to indicate resolution and summarize the fix
 
 ### Requirement: Run Bridge Type Conformance Tests After Bridge Changes
-Any change to files under `packages/sandboxed-node/src/bridge` MUST run bridge type conformance checks via `pnpm run check-types:test` in `packages/sandboxed-node` before completion.
+Any change to files under `packages/secure-exec/src/bridge` MUST run bridge type conformance checks via `pnpm run check-types:test` in `packages/secure-exec` before completion.
 
 #### Scenario: Bridge source file is modified
-- **WHEN** a commit modifies one or more files in `packages/sandboxed-node/src/bridge`
+- **WHEN** a commit modifies one or more files in `packages/secure-exec/src/bridge`
 - **THEN** `pnpm run check-types:test` MUST be executed and failures MUST be addressed before the change is considered complete
 
 ### Requirement: Compatibility Project Matrix Uses Black-Box Node Fixtures
-Compatibility validation for sandboxed-node SHALL execute fixture projects that behave as ordinary Node projects, with no sandbox-aware code paths.
+Compatibility validation for secure-exec SHALL execute fixture projects that behave as ordinary Node projects, with no sandbox-aware code paths.
 
 #### Scenario: Fixture uses only Node-project interfaces
 - **WHEN** a fixture is added under the compatibility project matrix
 - **THEN** it MUST define a standard Node project structure (`package.json` + source entrypoint) and MUST NOT import sandbox runtime internals directly
 
 #### Scenario: Runtime remains opaque to fixture identity
-- **WHEN** sandboxed-node executes a compatibility fixture
+- **WHEN** secure-exec executes a compatibility fixture
 - **THEN** runtime behavior MUST NOT branch on fixture name, fixture path, or test-specific markers
 
 ### Requirement: Compatibility Matrix Enforces Differential Parity Checks
-The compatibility project matrix SHALL execute each fixture in host Node and in sandboxed-node, then compare normalized externally visible outcomes.
+The compatibility project matrix SHALL execute each fixture in host Node and in secure-exec, then compare normalized externally visible outcomes.
 
 #### Scenario: Pass fixture requires parity
 - **WHEN** a fixture is classified as pass-expected
-- **THEN** the matrix MUST fail unless host Node and sandboxed-node produce matching normalized `code`, `stdout`, and `stderr`
+- **THEN** the matrix MUST fail unless host Node and secure-exec produce matching normalized `code`, `stdout`, and `stderr`
 
 #### Scenario: Fail fixture requires deterministic failure contract
 - **WHEN** a fixture is classified as fail-expected for unsupported behavior
-- **THEN** the matrix MUST fail unless sandboxed-node produces the documented deterministic error contract
+- **THEN** the matrix MUST fail unless secure-exec produces the documented deterministic error contract
 
 ### Requirement: Compatibility Matrix Uses Persistent Fixture Install Cache
 Fixture dependency installation SHALL be cached across repeated test invocations using a persistent content hash.
@@ -107,7 +107,7 @@ Any runtime timing-hardening behavior that intentionally diverges from default N
 
 #### Scenario: Hardened timing mode is introduced or changed
 - **WHEN** a change adds or modifies timing hardening behavior (for example frozen clocks or disabled timing primitives)
-- **THEN** the change MUST update `docs-internal/friction/sandboxed-node.md` with the deviation and fix/intent notes
+- **THEN** the change MUST update `docs-internal/friction/secure-exec.md` with the deviation and fix/intent notes
 
 #### Scenario: Security-first default intentionally diverges from Node timing
 - **WHEN** timing hardening is enabled by default for sandbox execution
@@ -118,18 +118,18 @@ Any runtime timing-hardening behavior that intentionally diverges from default N
 - **THEN** `docs-internal/research/comparison/cloudflare-workers-isolates.md` MUST be updated so its recommendations match the current OpenSpec change scope
 
 ### Requirement: CPU Limit Compatibility and Friction Documentation Stays Aligned
-Any change that introduces or modifies the sandboxed-node CPU time limit contract MUST update compatibility/friction documentation in the same change.
+Any change that introduces or modifies the secure-exec CPU time limit contract MUST update compatibility/friction documentation in the same change.
 
 #### Scenario: CPU timeout contract is introduced or changed
 - **WHEN** runtime behavior for configured CPU limits changes (including option names, failure codes, or timeout stderr contract)
-- **THEN** `docs-internal/friction/sandboxed-node.md` MUST be updated with the behavior change and resolution notes
+- **THEN** `docs-internal/friction/secure-exec.md` MUST be updated with the behavior change and resolution notes
 
 #### Scenario: Research guidance reflects current CPU limit design
 - **WHEN** CPU limit implementation guidance is revised
 - **THEN** `docs-internal/research/comparison/cloudflare-workers-isolates.md` MUST be updated so recommendations match the active runtime contract and OpenSpec deltas
 
-### Requirement: Maintain Canonical Sandboxed-Node Security Model Documentation
-The project MUST maintain `docs/security-model.mdx` as the canonical security model for sandboxed-node runtime behavior and deployment assumptions.
+### Requirement: Maintain Canonical Secure-Exec Security Model Documentation
+The project MUST maintain `docs/security-model.mdx` as the canonical security model for secure-exec runtime behavior and deployment assumptions.
 
 #### Scenario: Security model document covers required security-contract topics
 - **WHEN** the canonical security model document is authored or updated
@@ -145,7 +145,7 @@ The project MUST maintain `docs/security-model.mdx` as the canonical security mo
 
 #### Scenario: Cloudflare/browser alignment is described without over-claiming parity
 - **WHEN** the canonical security model explains isolation architecture
-- **THEN** it MUST describe how sandboxed-node uses the same isolate-style security primitives as Cloudflare Workers and modern browsers while explicitly distinguishing production hardening layers that are outside sandboxed-node runtime scope
+- **THEN** it MUST describe how secure-exec uses the same isolate-style security primitives as Cloudflare Workers and modern browsers while explicitly distinguishing production hardening layers that are outside secure-exec runtime scope
 
 ### Requirement: Security-Contract Changes Must Synchronize Security Model Guidance
 Changes to security-relevant runtime contracts MUST update canonical security model guidance in the same change.
@@ -163,7 +163,7 @@ Any change that introduces or modifies isolate-boundary payload size limits MUST
 
 #### Scenario: Boundary limit contract changes
 - **WHEN** runtime or bridge payload-size limits are introduced or changed for isolate-originated data
-- **THEN** `docs-internal/friction/sandboxed-node.md` MUST be updated with the behavior change, rationale, and resolution notes
+- **THEN** `docs-internal/friction/secure-exec.md` MUST be updated with the behavior change, rationale, and resolution notes
 
 #### Scenario: Security model reflects boundary guardrails
 - **WHEN** isolate-boundary payload limits are introduced or changed
@@ -196,16 +196,26 @@ Any intentional deviation from default Node.js behavior for filesystem metadata 
 
 #### Scenario: Driver cannot provide atomic rename semantics
 - **WHEN** a runtime/driver path cannot satisfy Node-like atomic rename behavior
-- **THEN** `docs-internal/friction/sandboxed-node.md` MUST record the limitation and supported behavior contract in the same change
+- **THEN** `docs-internal/friction/secure-exec.md` MUST record the limitation and supported behavior contract in the same change
 
 #### Scenario: Metadata behavior intentionally differs from Node expectations
 - **WHEN** filesystem metadata behavior diverges from default Node semantics for performance or platform constraints
 - **THEN** compatibility documentation MUST explicitly describe the divergence and mitigation/expected impact
 
 ### Requirement: Compatibility Matrix Coverage Is Updated for Filesystem Semantics Changes
-Changes to runtime or bridge filesystem metadata/rename behavior SHALL update compatibility project-matrix coverage with black-box fixtures that compare host Node and sandboxed-node normalized outputs.
+Changes to runtime or bridge filesystem metadata/rename behavior SHALL update compatibility project-matrix coverage with black-box fixtures that compare host Node and secure-exec normalized outputs.
 
 #### Scenario: Metadata behavior change is implemented
-- **WHEN** a change modifies `stat`, `exists`, typed `readdir`, or rename semantics in sandboxed-node
-- **THEN** the compatibility project-matrix MUST include fixture coverage that exercises the changed behavior under host Node and sandboxed-node comparison
+- **WHEN** a change modifies `stat`, `exists`, typed `readdir`, or rename semantics in secure-exec
+- **THEN** the compatibility project-matrix MUST include fixture coverage that exercises the changed behavior under host Node and secure-exec comparison
 
+### Requirement: Governance References Use Canonical Secure-Exec Naming
+Governance artifacts that reference runtime package imports or runtime source paths SHALL use `secure-exec` and `packages/secure-exec` as the canonical identifiers.
+
+#### Scenario: Governance guidance references runtime package imports
+- **WHEN** a governance document or spec requirement describes runtime package imports
+- **THEN** it MUST use `secure-exec` rather than the legacy package name
+
+#### Scenario: Governance guidance references runtime source paths
+- **WHEN** a governance document or spec requirement describes runtime source directories
+- **THEN** it MUST use `packages/secure-exec` rather than the legacy package path

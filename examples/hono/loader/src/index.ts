@@ -8,7 +8,7 @@ import {
   NodeFileSystem,
   NodeProcess,
   createNodeDriver,
-} from "../../../../packages/sandboxed-node/src/index.ts";
+} from "../../../../packages/secure-exec/src/index.ts";
 import {
   LOOPBACK_HOST,
   findOpenPort,

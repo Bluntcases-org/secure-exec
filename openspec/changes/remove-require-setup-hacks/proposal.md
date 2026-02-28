@@ -1,6 +1,6 @@
 ## Why
 
-`sandboxed-node` still relies on brittle monkeypatches and ad hoc module stubs in `require-setup`, which increases maintenance risk and conflicts with the strict bridge boundary policy. This change formalizes cleanup of those hacks as a dedicated follow-up.
+`secure-exec` still relies on brittle monkeypatches and ad hoc module stubs in `require-setup`, which increases maintenance risk and conflicts with the strict bridge boundary policy. This change formalizes cleanup of those hacks as a dedicated follow-up.
 
 ## What Changes
 
@@ -19,6 +19,6 @@
 
 ## Impact
 
-- Affected code: `packages/sandboxed-node/src/shared/require-setup.ts` and related module-loading paths.
+- Affected code: `packages/secure-exec/src/shared/require-setup.ts` and related module-loading paths.
 - Affected docs: `docs/node-compatability.mdx`.
 - Affected follow-up validation: bridge/runtime compatibility tests.

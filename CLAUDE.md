@@ -13,22 +13,22 @@
 ## Specs Source of Truth
 
 - bridge/runtime/governance requirements are canonical in `openspec/specs/`
-- for sandboxed-node runtime behavior, target Node.js semantics as close to 1:1 as practical
+- for secure-exec runtime behavior, target Node.js semantics as close to 1:1 as practical
 - any intentional deviation from Node.js behavior must be explicitly documented in OpenSpec deltas and reflected in compatibility/friction docs
 - use `openspec/specs/README.md` for how to reference baseline capabilities in new change proposals
-- track development friction in `docs-internal/friction/sandboxed-node.md` (mark resolved items with fix notes)
+- track development friction in `docs-internal/friction/secure-exec.md` (mark resolved items with fix notes)
 
 ## Compatibility Project-Matrix Policy
 
-- compatibility fixtures live under `packages/sandboxed-node/tests/projects/` and MUST be black-box Node projects (`package.json` + source entrypoint)
+- compatibility fixtures live under `packages/secure-exec/tests/projects/` and MUST be black-box Node projects (`package.json` + source entrypoint)
 - fixtures MUST stay sandbox-blind: no sandbox-only branches, no sandbox-specific entrypoints, and no runtime tailoring in fixture code
-- sandboxed-node runtime MUST stay fixture-opaque: no behavior branches by fixture name/path/test marker
-- the matrix runs each fixture in host Node and sandboxed-node and compares normalized `code`, `stdout`, and `stderr`
+- secure-exec runtime MUST stay fixture-opaque: no behavior branches by fixture name/path/test marker
+- the matrix runs each fixture in host Node and secure-exec and compares normalized `code`, `stdout`, and `stderr`
 - no known-mismatch classification is allowed; parity mismatches stay failing until runtime/bridge behavior is fixed
 
 ## Comment Pattern
 
-Follow the style in `packages/sandboxed-node/src/index.ts`.
+Follow the style in `packages/secure-exec/src/index.ts`.
 
 - use short phase comments above logical blocks
 - explain intent/why, not obvious mechanics

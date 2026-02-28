@@ -1,7 +1,7 @@
 # node-permissions Specification
 
 ## Purpose
-Define deny-by-default permission behavior and permission helper contracts for sandboxed node execution.
+Define deny-by-default permission behavior and permission helper contracts for secure-exec runtime execution.
 
 ## Requirements
 ### Requirement: Deny operations when no permission checker is provided

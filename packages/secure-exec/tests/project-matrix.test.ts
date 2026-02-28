@@ -71,7 +71,7 @@ describe("compatibility project matrix", () => {
 
 	for (const fixture of discoveredFixtures) {
 		it(
-			`runs fixture ${fixture.name} in host node and sandboxed-node`,
+			`runs fixture ${fixture.name} in host node and secure-exec`,
 			async () => {
 				const firstPrepare = await prepareFixtureProject(fixture);
 				const secondPrepare = await prepareFixtureProject(fixture);
@@ -352,7 +352,7 @@ async function runSandboxExecution(
 	projectDir: string,
 	entryRelativePath: string,
 ): Promise<ResultEnvelope> {
-	// Execute the same entrypoint code against sandboxed-node.
+	// Execute the same entrypoint code against secure-exec.
 	const entryPath = path.join(projectDir, entryRelativePath);
 	const entryCode = await readFile(entryPath, "utf8");
 	const proc = new NodeProcess({

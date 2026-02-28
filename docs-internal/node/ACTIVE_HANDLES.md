@@ -39,7 +39,7 @@ In isolated-vm:
 5. Callbacks can never fire
 
 The lifecycle globals are intentionally immutable so sandboxed code cannot replace `_registerHandle`, `_unregisterHandle`, or `_waitForActiveHandles` and bypass runtime completion handling.
-They are exposed through the shared helper policy in `packages/sandboxed-node/src/shared/global-exposure.ts`, which is also used for other custom runtime/bridge globals.
+They are exposed through the shared helper policy in `packages/secure-exec/src/shared/global-exposure.ts`, which is also used for other custom runtime/bridge globals.
 
 ## Solution: Active Handle Tracking
 
@@ -81,9 +81,9 @@ exposeCustomGlobal("_waitForActiveHandles", _waitForActiveHandles);
 exposeCustomGlobal("_getActiveHandles", _getActiveHandles);
 ```
 
-Active-handle bindings are listed in the canonical custom-global inventory (`NODE_CUSTOM_GLOBAL_INVENTORY`) in `packages/sandboxed-node/src/shared/global-exposure.ts`, alongside mutable runtime-state exceptions and stdlib-compatibility exclusions.
+Active-handle bindings are listed in the canonical custom-global inventory (`NODE_CUSTOM_GLOBAL_INVENTORY`) in `packages/secure-exec/src/shared/global-exposure.ts`, alongside mutable runtime-state exceptions and stdlib-compatibility exclusions.
 
-The `exec()` method in sandboxed-node automatically awaits `_waitForActiveHandles()` after running user code:
+The `exec()` method in secure-exec automatically awaits `_waitForActiveHandles()` after running user code:
 
 ```typescript
 // Run user's script
@@ -135,7 +135,7 @@ Active handles: [
 
 ## Comparison with Node.js
 
-| Feature | Node.js | sandboxed-node |
+| Feature | Node.js | secure-exec |
 |---------|---------|----------------|
 | Event loop | Built-in libuv | None (isolated-vm) |
 | Handle tracking | Automatic via libuv | Manual via `_registerHandle` |

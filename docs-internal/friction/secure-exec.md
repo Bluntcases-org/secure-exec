@@ -16,11 +16,11 @@
 
 4. **[resolved]** Active-handle bridge lifecycle hooks were mutable from sandboxed code.
    - Symptom: sandbox code could overwrite `_registerHandle`, `_unregisterHandle`, or `_waitForActiveHandles` on `globalThis`, weakening execution completion guarantees.
-   - Fix: active-handle lifecycle globals are now installed with non-writable/non-configurable descriptors via `Object.defineProperty` in `packages/sandboxed-node/src/bridge/active-handles.ts`, with regression coverage in runtime tests.
+   - Fix: active-handle lifecycle globals are now installed with non-writable/non-configurable descriptors via `Object.defineProperty` in `packages/secure-exec/src/bridge/active-handles.ts`, with regression coverage in runtime tests.
 
 5. **[resolved]** Unbounded isolate-boundary payload parsing and base64 transfer could OOM the host.
    - Symptom: isolate-originated JSON payloads and base64 file-transfer strings were accepted without host-side size checks, so crafted oversized payloads could force large allocations before runtime validation.
-   - Fix: added deterministic payload guards in `packages/sandboxed-node/src/index.ts` for base64 file transfer (`readFileBinaryRef`/`writeFileBinaryRef`) and all host-side isolate-originated JSON parsing paths; overflow now fails with `ERR_SANDBOX_PAYLOAD_TOO_LARGE` instead of process-fatal behavior. Limits now support bounded host configuration for compatibility tuning without allowing disablement.
+   - Fix: added deterministic payload guards in `packages/secure-exec/src/index.ts` for base64 file transfer (`readFileBinaryRef`/`writeFileBinaryRef`) and all host-side isolate-originated JSON parsing paths; overflow now fails with `ERR_SANDBOX_PAYLOAD_TOO_LARGE` instead of process-fatal behavior. Limits now support bounded host configuration for compatibility tuning without allowing disablement.
 
 6. **[resolved]** `crypto.getRandomValues()` / `crypto.randomUUID()` used weak randomness fallback.
    - Symptom: bridge crypto polyfill generated entropy with `Math.random()`, creating silent security risk and non-Node randomness semantics.
@@ -32,7 +32,7 @@
 
 8. **[resolved]** Custom bridge/runtime globals had inconsistent descriptor hardening.
    - Symptom: runtime-owned global bindings were exposed through mixed assignment patterns, letting sandbox code overwrite control-plane globals in some paths.
-   - Fix: custom global exposure now uses shared helper policy in `packages/sandboxed-node/src/shared/global-exposure.ts` with hardened defaults (`writable: false`, `configurable: false`), plus explicit mutable runtime-state allowlist entries. Node stdlib globals remain compatibility-oriented and are not force-frozen by this policy.
+   - Fix: custom global exposure now uses shared helper policy in `packages/secure-exec/src/shared/global-exposure.ts` with hardened defaults (`writable: false`, `configurable: false`), plus explicit mutable runtime-state allowlist entries. Node stdlib globals remain compatibility-oriented and are not force-frozen by this policy.
 
 9. TODO: convert IO handling to a generalized implementation reusable across runtimes.
    - Symptom: runtime-specific IO paths are still implemented separately, which increases duplication and behavior drift risk between Node and browser runtime surfaces.
@@ -70,7 +70,7 @@
 
 6. **[resolved]** Project-matrix fixture installs were repeated on every run.
    - Symptom: compatibility fixtures paid repeated `copy + pnpm install` cost even when fixture inputs were unchanged.
-   - Fix: added persistent fixture install cache under `packages/sandboxed-node/.cache/project-matrix/` keyed by fixture/toolchain/runtime factors with `.ready` marker semantics. Repeated `test:project-matrix` runs now reuse prepared installs.
+   - Fix: added persistent fixture install cache under `packages/secure-exec/.cache/project-matrix/` keyed by fixture/toolchain/runtime factors with `.ready` marker semantics. Repeated `test:project-matrix` runs now reuse prepared installs.
 
 7. TODO: follow up on lazy dynamic-import edge cases in ESM execution.
    - Symptom: `filePath: "/entry.mjs"` with top-level `await import("./mod.mjs")` can log pre-import output and imported-module side effects but miss post-await statements.
@@ -106,9 +106,9 @@
    - Symptom: module evaluation could finish before awaited async work (timers/network) completed.
    - Mitigation for example: runner switched to CJS async-IIFE, which `exec()` already awaits reliably.
 
-7. `sandboxed-node` package build currently fails due to broad pre-existing type errors in bridge/browser files.
-   - Symptom: importing `sandboxed-node` from `dist/` in example loader was not reliable in this workspace state.
-   - Mitigation for example: loader imports `packages/sandboxed-node/src/index.ts` directly so the end-to-end example can run without a successful package build.
+7. `secure-exec` package build currently fails due to broad pre-existing type errors in bridge/browser files.
+   - Symptom: importing `secure-exec` from `dist/` in example loader was not reliable in this workspace state.
+   - Mitigation for example: loader imports `packages/secure-exec/src/index.ts` directly so the end-to-end example can run without a successful package build.
    - Note: 32+ type errors remain across child-process, network, os, process, and polyfills bridge files (as of 2026-02-25).
 
 8. **[resolved]** Workspace-linked `node_modules` in the runner package caused environment coupling.

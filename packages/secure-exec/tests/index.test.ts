@@ -847,7 +847,7 @@ describe("NodeProcess", () => {
 
           if (req.url === '/json') {
             res.writeHead(200, { 'content-type': 'application/json' });
-            res.end(JSON.stringify({ ok: true, runtime: 'sandboxed-node' }));
+            res.end(JSON.stringify({ ok: true, runtime: 'secure-exec' }));
             return;
           }
 

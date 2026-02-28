@@ -40,7 +40,7 @@ function ensureBridgeBundle(bridgePath: string): void {
 	if (!sourcePath) {
 		if (fs.existsSync(bridgePath)) return;
 		throw new Error(
-			"bridge.js not found and source is unavailable. Run `pnpm -C packages/sandboxed-node build:bridge`.",
+			"bridge.js not found and source is unavailable. Run `pnpm -C packages/secure-exec build:bridge`.",
 		);
 	}
 

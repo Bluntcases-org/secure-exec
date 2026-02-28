@@ -32,9 +32,9 @@ importers:
 
   examples/hono/loader:
     dependencies:
-      sandboxed-node:
+      secure-exec:
         specifier: workspace:*
-        version: link:../../../packages/sandboxed-node
+        version: link:../../../packages/secure-exec
     devDependencies:
       tsx:
         specifier: ^4.19.2
@@ -54,15 +54,15 @@ importers:
       just-bash:
         specifier: github:vercel-labs/just-bash
         version: github.com/vercel-labs/just-bash/043e3410064cde8e4b2bbc3c8ee147f5b9d8b21c
-      sandboxed-node:
+      secure-exec:
         specifier: workspace:*
-        version: link:../../packages/sandboxed-node
+        version: link:../../packages/secure-exec
     devDependencies:
       tsx:
         specifier: ^4.19.2
         version: 4.21.0
 
-  packages/sandboxed-node:
+  packages/secure-exec:
     dependencies:
       buffer:
         specifier: ^6.0.3
