@@ -685,12 +685,23 @@
           throw new Error('Cannot load module: ' + resolved);
         }
 
-        // Handle JSON files
-        if (resolved.endsWith('.json')) {
-          const parsed = JSON.parse(source);
-          _moduleCache[cacheKey] = parsed;
-          return parsed;
-        }
+	        // Handle JSON files
+	        if (resolved.endsWith('.json')) {
+	          const parsed = JSON.parse(source);
+	          _moduleCache[cacheKey] = parsed;
+	          return parsed;
+	        }
+
+	        // Some CJS artifacts include import.meta.url probes that are valid in
+	        // ESM but a syntax error in Function()-compiled CJS wrappers.
+	        const normalizedSource =
+	          typeof source === 'string'
+	            ? source
+	                .replace(/import\.meta\.url/g, '__filename')
+	                .replace(/fileURLToPath\(__filename\)/g, '__filename')
+	                .replace(/url\.fileURLToPath\(__filename\)/g, '__filename')
+	                .replace(/fileURLToPath\.call\(void 0, __filename\)/g, '__filename')
+	            : source;
 
         // Create module object
         const module = {
@@ -710,15 +721,15 @@
           // Wrap and execute the code
           let wrapper;
           try {
-            wrapper = new Function(
-              'exports',
-              'require',
-              'module',
-              '__filename',
-              '__dirname',
-              '__dynamicImport',
-              source + '\n//# sourceURL=' + resolved
-            );
+	            wrapper = new Function(
+	              'exports',
+	              'require',
+	              'module',
+	              '__filename',
+	              '__dirname',
+	              '__dynamicImport',
+	              normalizedSource + '\n//# sourceURL=' + resolved
+	            );
           } catch (error) {
             const details =
               error && error.stack ? error.stack : String(error);
