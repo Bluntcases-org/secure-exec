@@ -1,9 +1,9 @@
 import { createNetworkStub, filterEnv } from "./shared/permissions.js";
 import type {
 	NetworkAdapter,
-	RuntimeExecutionDriver,
-	RuntimeExecutionDriverFactory,
 	RuntimeDriver,
+	RuntimeDriverFactory,
+	SystemDriver,
 } from "./types.js";
 import type {
 	StdioHook,
@@ -18,8 +18,9 @@ export type {
 	CommandExecutor,
 	NetworkAdapter,
 	Permissions,
-	RuntimeExecutionDriverFactory,
 	RuntimeDriver,
+	RuntimeDriverFactory,
+	SystemDriver,
 	VirtualFileSystem,
 } from "./types.js";
 export type { DirEntry, StatInfo } from "./fs-helpers.js";
@@ -37,11 +38,14 @@ export type {
 export {
 	createDefaultNetworkAdapter,
 	createNodeDriver,
-	createNodeExecutionFactory,
+	createNodeRuntimeDriverFactory,
 	NodeExecutionDriver,
 	NodeFileSystem,
 } from "./node/driver.js";
-export type { ModuleAccessOptions, NodeExecutionFactoryOptions } from "./node/driver.js";
+export type {
+	ModuleAccessOptions,
+	NodeRuntimeDriverFactoryOptions,
+} from "./node/driver.js";
 export { createInMemoryFileSystem } from "./shared/in-memory-fs.js";
 export {
 	allowAll,
@@ -56,8 +60,8 @@ const DEFAULT_SANDBOX_HOME = "/root";
 const DEFAULT_SANDBOX_TMPDIR = "/tmp";
 
 export interface NodeRuntimeOptions {
-	driver: RuntimeDriver;
-	executionFactory: RuntimeExecutionDriverFactory;
+	systemDriver: SystemDriver;
+	runtimeDriverFactory: RuntimeDriverFactory;
 	memoryLimit?: number;
 	cpuTimeLimitMs?: number;
 	timingMitigation?: TimingMitigation;
@@ -68,7 +72,7 @@ export interface NodeRuntimeOptions {
 	};
 }
 
-type UnsafeRuntimeExecutionDriver = RuntimeExecutionDriver & {
+type UnsafeRuntimeDriver = RuntimeDriver & {
 	unsafeIsolate?: unknown;
 	createUnsafeContext?(options?: {
 		env?: Record<string, string>;
@@ -78,25 +82,25 @@ type UnsafeRuntimeExecutionDriver = RuntimeExecutionDriver & {
 };
 
 export class NodeRuntime {
-	private readonly executionDriver: UnsafeRuntimeExecutionDriver;
+	private readonly runtimeDriver: UnsafeRuntimeDriver;
 
 	constructor(options: NodeRuntimeOptions) {
-		const { driver, executionFactory } = options;
+		const { systemDriver, runtimeDriverFactory } = options;
 
 		const processConfig = {
-			...(driver.runtime.process ?? {}),
+			...(systemDriver.runtime.process ?? {}),
 		};
 		processConfig.cwd ??= DEFAULT_SANDBOX_CWD;
-		processConfig.env = filterEnv(processConfig.env, driver.permissions);
+		processConfig.env = filterEnv(processConfig.env, systemDriver.permissions);
 
 		const osConfig = {
-			...(driver.runtime.os ?? {}),
+			...(systemDriver.runtime.os ?? {}),
 		};
 		osConfig.homedir ??= DEFAULT_SANDBOX_HOME;
 		osConfig.tmpdir ??= DEFAULT_SANDBOX_TMPDIR;
 
-		this.executionDriver = executionFactory.createExecutionDriver({
-			driver,
+		this.runtimeDriver = runtimeDriverFactory.createRuntimeDriver({
+			system: systemDriver,
 			runtime: {
 				process: processConfig,
 				os: osConfig,
@@ -106,11 +110,11 @@ export class NodeRuntime {
 			timingMitigation: options.timingMitigation,
 			onStdio: options.onStdio,
 			payloadLimits: options.payloadLimits,
-		}) as UnsafeRuntimeExecutionDriver;
+		}) as UnsafeRuntimeDriver;
 	}
 
 	get network(): Pick<NetworkAdapter, "fetch" | "dnsLookup" | "httpRequest"> {
-		const adapter = this.executionDriver.network ?? createNetworkStub();
+		const adapter = this.runtimeDriver.network ?? createNetworkStub();
 		return {
 			fetch: (url, options) => adapter.fetch(url, options),
 			dnsLookup: (hostname) => adapter.dnsLookup(hostname),
@@ -119,10 +123,10 @@ export class NodeRuntime {
 	}
 
 	get __unsafeIsoalte(): unknown {
-		if (this.executionDriver.unsafeIsolate === undefined) {
+		if (this.runtimeDriver.unsafeIsolate === undefined) {
 			throw new Error("Driver runtime does not expose unsafe isolate access");
 		}
-		return this.executionDriver.unsafeIsolate;
+		return this.runtimeDriver.unsafeIsolate;
 	}
 
 	async __unsafeCreateContext(options: {
@@ -130,29 +134,29 @@ export class NodeRuntime {
 		cwd?: string;
 		filePath?: string;
 	} = {}): Promise<unknown> {
-		if (!this.executionDriver.createUnsafeContext) {
+		if (!this.runtimeDriver.createUnsafeContext) {
 			throw new Error("Driver runtime does not expose unsafe context creation");
 		}
-		return this.executionDriver.createUnsafeContext(options);
+		return this.runtimeDriver.createUnsafeContext(options);
 	}
 
 	async run<T = unknown>(code: string, filePath?: string): Promise<RunResult<T>> {
-		return this.executionDriver.run<T>(code, filePath);
+		return this.runtimeDriver.run<T>(code, filePath);
 	}
 
 	async exec(code: string, options?: ExecOptions): Promise<ExecResult> {
-		return this.executionDriver.exec(code, options);
+		return this.runtimeDriver.exec(code, options);
 	}
 
 	dispose(): void {
-		this.executionDriver.dispose();
+		this.runtimeDriver.dispose();
 	}
 
 	async terminate(): Promise<void> {
-		if (this.executionDriver.terminate) {
-			await this.executionDriver.terminate();
+		if (this.runtimeDriver.terminate) {
+			await this.runtimeDriver.terminate();
 			return;
 		}
-		this.executionDriver.dispose();
+		this.runtimeDriver.dispose();
 	}
 }

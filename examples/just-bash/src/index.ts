@@ -3,7 +3,7 @@ import {
   allowAll,
   NodeRuntime,
   createNodeDriver,
-  createNodeExecutionFactory,
+  createNodeRuntimeDriverFactory,
   type CommandExecutor,
   type SpawnedProcess,
   type VirtualFileSystem,
@@ -94,8 +94,8 @@ async function main(): Promise<void> {
   });
 
   const proc = new NodeRuntime({
-    driver,
-    executionFactory: createNodeExecutionFactory(),
+    systemDriver: driver,
+    runtimeDriverFactory: createNodeRuntimeDriverFactory(),
   });
   const result = await proc.exec(`
     const { execSync } = require('child_process');

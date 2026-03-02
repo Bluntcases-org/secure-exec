@@ -11,7 +11,7 @@ import type {
 	CommandExecutor,
 	NetworkAdapter,
 	Permissions,
-	RuntimeDriver,
+	SystemDriver,
 	VirtualFileSystem,
 } from "../types.js";
 import { createEnosysError } from "../shared/errors.js";
@@ -308,10 +308,10 @@ export function createBrowserNetworkAdapter(): NetworkAdapter {
 	};
 }
 
-/** Assemble a browser-side RuntimeDriver with permission-wrapped adapters. */
+/** Assemble a browser-side SystemDriver with permission-wrapped adapters. */
 export async function createBrowserDriver(
 	options: BrowserDriverOptions = {},
-): Promise<RuntimeDriver> {
+): Promise<SystemDriver> {
 	void options;
 	throw new Error(
 		"Browser runtime support is temporarily disabled. See change driver-owned-node-runtime.",

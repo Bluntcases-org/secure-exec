@@ -19,8 +19,8 @@ export interface DriverRuntimeConfig {
 	os: OSConfig;
 }
 
-export interface RuntimeExecutionDriverOptions {
-	driver: RuntimeDriver;
+export interface RuntimeDriverOptions {
+	system: SystemDriver;
 	runtime: DriverRuntimeConfig;
 	memoryLimit?: number;
 	cpuTimeLimitMs?: number;
@@ -32,7 +32,7 @@ export interface RuntimeExecutionDriverOptions {
 	};
 }
 
-export interface RuntimeExecutionDriver {
+export interface RuntimeDriver {
 	run<T = unknown>(code: string, filePath?: string): Promise<RunResult<T>>;
 	exec(code: string, options?: ExecOptions): Promise<ExecResult>;
 	dispose(): void;
@@ -46,13 +46,11 @@ export interface RuntimeExecutionDriver {
 	}): Promise<unknown>;
 }
 
-export interface RuntimeExecutionDriverFactory {
-	createExecutionDriver(
-		options: RuntimeExecutionDriverOptions,
-	): RuntimeExecutionDriver;
+export interface RuntimeDriverFactory {
+	createRuntimeDriver(options: RuntimeDriverOptions): RuntimeDriver;
 }
 
-export interface RuntimeDriver {
+export interface SystemDriver {
 	filesystem?: VirtualFileSystem;
 	network?: NetworkAdapter;
 	commandExecutor?: CommandExecutor;

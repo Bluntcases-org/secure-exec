@@ -236,8 +236,8 @@ export interface Permissions {
 
 export type {
 	DriverRuntimeConfig,
-	RuntimeExecutionDriver,
-	RuntimeExecutionDriverFactory,
-	RuntimeExecutionDriverOptions,
 	RuntimeDriver,
+	RuntimeDriverFactory,
+	RuntimeDriverOptions,
+	SystemDriver,
 } from "./runtime-driver.js";

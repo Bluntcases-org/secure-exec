@@ -7,7 +7,7 @@ import {
 	NodeRuntime,
 	createInMemoryFileSystem,
 	createNodeDriver,
-	createNodeExecutionFactory,
+	createNodeRuntimeDriverFactory,
 } from "../src/index.js";
 import { createTestNodeRuntime } from "./test-utils.js";
 import {
@@ -71,8 +71,8 @@ describe("NodeRuntime", () => {
 			processConfig: { cwd: "/sandbox-app" },
 		});
 		proc = new NodeRuntime({
-			driver,
-			executionFactory: createNodeExecutionFactory(),
+			systemDriver: driver,
+			runtimeDriverFactory: createNodeRuntimeDriverFactory(),
 		});
 		const result = await proc.run(`module.exports = process.cwd();`);
 		expect(result.exports).toBe("/sandbox-app");

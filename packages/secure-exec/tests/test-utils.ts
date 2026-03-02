@@ -2,14 +2,14 @@ import {
 	NodeRuntime,
 	createInMemoryFileSystem,
 	createNodeDriver,
-	createNodeExecutionFactory,
+	createNodeRuntimeDriverFactory,
 } from "../src/index.js";
 import type {
 	CommandExecutor,
 	NetworkAdapter,
 	Permissions,
-	RuntimeExecutionDriverFactory,
-	RuntimeDriver,
+	RuntimeDriverFactory,
+	SystemDriver,
 	VirtualFileSystem,
 } from "../src/types.js";
 import type {
@@ -25,8 +25,10 @@ export function createTestFileSystem(): VirtualFileSystem {
 }
 
 export type LegacyNodeRuntimeOptions = {
-	driver?: RuntimeDriver;
-	executionFactory?: RuntimeExecutionDriverFactory;
+	driver?: SystemDriver;
+	executionFactory?: RuntimeDriverFactory;
+	systemDriver?: SystemDriver;
+	runtimeDriverFactory?: RuntimeDriverFactory;
 	filesystem?: VirtualFileSystem;
 	moduleAccess?: ModuleAccessOptions;
 	networkAdapter?: NetworkAdapter;
@@ -50,6 +52,8 @@ export function createTestNodeRuntime(
 	const {
 		driver,
 		executionFactory,
+		systemDriver,
+		runtimeDriverFactory,
 		filesystem,
 		moduleAccess,
 		networkAdapter,
@@ -60,16 +64,17 @@ export function createTestNodeRuntime(
 		...nodeProcessOptions
 	} = options;
 
-	const resolvedDriver = driver
+	const baseSystemDriver = systemDriver ?? driver;
+	const resolvedSystemDriver = baseSystemDriver
 		? {
-				...driver,
+				...baseSystemDriver,
 				runtime: {
 					process: {
-						...(driver.runtime.process ?? {}),
+						...(baseSystemDriver.runtime.process ?? {}),
 						...(processConfig ?? {}),
 					},
 					os: {
-						...(driver.runtime.os ?? {}),
+						...(baseSystemDriver.runtime.os ?? {}),
 						...(osConfig ?? {}),
 					},
 				},
@@ -83,12 +88,14 @@ export function createTestNodeRuntime(
 				processConfig,
 				osConfig,
 			});
-	const resolvedExecutionFactory =
-		executionFactory ?? createNodeExecutionFactory();
+	const resolvedRuntimeDriverFactory =
+		runtimeDriverFactory ??
+		executionFactory ??
+		createNodeRuntimeDriverFactory();
 
 	return new NodeRuntime({
 		...nodeProcessOptions,
-		driver: resolvedDriver,
-		executionFactory: resolvedExecutionFactory,
+		systemDriver: resolvedSystemDriver,
+		runtimeDriverFactory: resolvedRuntimeDriverFactory,
 	});
 }

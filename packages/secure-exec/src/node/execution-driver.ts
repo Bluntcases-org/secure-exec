@@ -57,8 +57,8 @@ import type {
 	CommandExecutor,
 	NetworkAdapter,
 	Permissions,
-	RuntimeExecutionDriver,
-	RuntimeExecutionDriverOptions,
+	RuntimeDriver,
+	RuntimeDriverOptions,
 	SpawnedProcess,
 	VirtualFileSystem,
 } from "../types.js";
@@ -73,7 +73,7 @@ import type {
 	TimingMitigation,
 } from "../shared/api-types.js";
 
-export interface NodeExecutionDriverOptions extends RuntimeExecutionDriverOptions {
+export interface NodeExecutionDriverOptions extends RuntimeDriverOptions {
 	createIsolate?(memoryLimit: number): unknown;
 }
 
@@ -132,7 +132,7 @@ class PayloadLimitError extends Error {
 	}
 }
 
-export class NodeExecutionDriver implements RuntimeExecutionDriver {
+export class NodeExecutionDriver implements RuntimeDriver {
 	private isolate: ivm.Isolate;
 	private memoryLimit: number;
 	private filesystem: VirtualFileSystem;
@@ -157,23 +157,23 @@ export class NodeExecutionDriver implements RuntimeExecutionDriver {
 
 	constructor(options: NodeExecutionDriverOptions) {
 		this.memoryLimit = options.memoryLimit ?? 128;
-		const driver = options.driver;
+		const system = options.system;
 		this.runtimeCreateIsolate =
 			(options.createIsolate as
 				| ((memoryLimit: number) => ivm.Isolate)
 				| undefined) ??
 			((memoryLimit) => createDefaultIsolate(memoryLimit));
 		this.isolate = this.createIsolate();
-		const permissions = driver.permissions;
+		const permissions = system.permissions;
 		this.permissions = permissions;
-		this.filesystem = driver.filesystem
-			? wrapFileSystem(driver.filesystem, permissions)
+		this.filesystem = system.filesystem
+			? wrapFileSystem(system.filesystem, permissions)
 			: createFsStub();
-		this.commandExecutor = driver.commandExecutor
-			? wrapCommandExecutor(driver.commandExecutor, permissions)
+		this.commandExecutor = system.commandExecutor
+			? wrapCommandExecutor(system.commandExecutor, permissions)
 			: createCommandExecutorStub();
-		this.networkAdapter = driver.network
-			? wrapNetworkAdapter(driver.network, permissions)
+		this.networkAdapter = system.network
+			? wrapNetworkAdapter(system.network, permissions)
 			: createNetworkStub();
 		const processConfig = {
 			...(options.runtime.process ?? {}),

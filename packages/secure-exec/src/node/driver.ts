@@ -18,13 +18,13 @@ import type {
 	CommandExecutor,
 	NetworkAdapter,
 	Permissions,
-	RuntimeExecutionDriverFactory,
-	RuntimeDriver,
+	RuntimeDriverFactory,
+	SystemDriver,
 	VirtualFileSystem,
 } from "../types.js";
 import type { ModuleAccessOptions } from "./module-access.js";
 
-/** Options for assembling a Node.js-backed RuntimeDriver. */
+/** Options for assembling a Node.js-backed SystemDriver. */
 export interface NodeDriverOptions {
 	filesystem?: VirtualFileSystem;
 	moduleAccess?: ModuleAccessOptions;
@@ -36,7 +36,7 @@ export interface NodeDriverOptions {
 	osConfig?: OSConfig;
 }
 
-export interface NodeExecutionFactoryOptions {
+export interface NodeRuntimeDriverFactoryOptions {
 	createIsolate?(memoryLimit: number): unknown;
 }
 
@@ -367,11 +367,11 @@ export function createDefaultNetworkAdapter(): NetworkAdapter {
 }
 
 /**
- * Assemble a RuntimeDriver from Node.js-native adapters. Wraps the filesystem
+ * Assemble a SystemDriver from Node.js-native adapters. Wraps the filesystem
  * in a ModuleAccessFileSystem overlay and keeps capabilities deny-by-default
  * unless explicit permissions are provided.
  */
-export function createNodeDriver(options: NodeDriverOptions = {}): RuntimeDriver {
+export function createNodeDriver(options: NodeDriverOptions = {}): SystemDriver {
 	const filesystem = new ModuleAccessFileSystem(
 		options.filesystem,
 		options.moduleAccess ?? {},
@@ -399,11 +399,11 @@ export function createNodeDriver(options: NodeDriverOptions = {}): RuntimeDriver
 	};
 }
 
-export function createNodeExecutionFactory(
-	options: NodeExecutionFactoryOptions = {},
-): RuntimeExecutionDriverFactory {
+export function createNodeRuntimeDriverFactory(
+	options: NodeRuntimeDriverFactoryOptions = {},
+): RuntimeDriverFactory {
 	return {
-		createExecutionDriver: (runtimeOptions) =>
+		createRuntimeDriver: (runtimeOptions) =>
 			new NodeExecutionDriver({
 				...runtimeOptions,
 				createIsolate: options.createIsolate,

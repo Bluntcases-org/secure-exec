@@ -8,7 +8,7 @@ import {
   NodeFileSystem,
   NodeRuntime,
   createNodeDriver,
-  createNodeExecutionFactory,
+  createNodeRuntimeDriverFactory,
 } from "../../../../packages/secure-exec/src/index.ts";
 import {
   LOOPBACK_HOST,
@@ -33,8 +33,8 @@ function createProcess(runnerRoot: string, runnerEntry: string): NodeRuntime {
   });
 
   return new NodeRuntime({
-    driver,
-    executionFactory: createNodeExecutionFactory(),
+    systemDriver: driver,
+    runtimeDriverFactory: createNodeRuntimeDriverFactory(),
   });
 }
 

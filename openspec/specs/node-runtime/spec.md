@@ -31,23 +31,23 @@ The project SHALL provide a stable Node sandbox execution interface, with `NodeR
 - **THEN** the result's `exports` field MUST be an object containing both the `default` property and all named export properties
 
 ### Requirement: Driver-Based Capability Composition
-Runtime capabilities SHALL be composed through host-provided drivers so filesystem, network, and child-process behavior are controlled by configured adapters rather than hardcoded runtime behavior. `NodeRuntime` construction SHALL require both a capability driver and an execution factory.
+Runtime capabilities SHALL be composed through host-provided system drivers so filesystem, network, and child-process behavior are controlled by configured adapters rather than hardcoded runtime behavior. `NodeRuntime` construction SHALL require both a capability-side `SystemDriver` and an execution-side `RuntimeDriverFactory`.
 
-#### Scenario: Node runtime uses configured adapters with explicit execution factory
-- **WHEN** `NodeRuntime` is created with a driver that defines filesystem, network, and command-execution adapters and with an execution factory
-- **THEN** sandboxed operations MUST route through those adapters for capability access and execution MUST be created through the provided factory
+#### Scenario: Node runtime uses configured adapters with explicit runtime driver factory
+- **WHEN** `NodeRuntime` is created with a `SystemDriver` that defines filesystem, network, and command-execution adapters and with a `RuntimeDriverFactory`
+- **THEN** sandboxed operations MUST route through those adapters for capability access and execution MUST be created through the provided runtime driver factory
 
 #### Scenario: Missing permissions deny capability access by default
-- **WHEN** a driver is configured without explicit permission allowance for a capability domain
+- **WHEN** a system driver is configured without explicit permission allowance for a capability domain
 - **THEN** operations in that capability domain MUST be denied by default
 
 #### Scenario: Omitted capability remains unavailable
-- **WHEN** a capability adapter is omitted from runtime configuration
+- **WHEN** a capability adapter is omitted from system-driver configuration
 - **THEN** corresponding sandbox operations MUST be unavailable or denied by the runtime contract
 
-#### Scenario: Runtime process/os config remains driver-owned
-- **WHEN** a caller provides runtime `process` and `os` configuration on the driver
-- **THEN** `NodeRuntime` MUST source and inject that configuration into execution creation
+#### Scenario: Runtime process/os config remains system-driver-owned
+- **WHEN** a caller provides runtime `process` and `os` configuration on the system driver
+- **THEN** `NodeRuntime` MUST source and inject that configuration into runtime-driver creation
 
 ### Requirement: Active Handle Completion for Async Operations
 The Node runtime SHALL wait for tracked active handles before finalizing execution results so callback-driven asynchronous work can complete.
