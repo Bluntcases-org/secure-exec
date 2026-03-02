@@ -1,5 +1,11 @@
 # Sandboxed Node Friction Log
 
+## 2026-03-02
+
+1. **[resolved]** Browser runtime execution was intentionally disabled during runtime-driver boundary refactor.
+   - Symptom: browser entrypoints threw deterministic unsupported errors, so runtime-driver integration coverage could only exercise Node execution paths.
+   - Fix: restored browser runtime through `NodeRuntime` driver composition (`createBrowserDriver` + `createBrowserRuntimeDriverFactory`), moved worker lifecycle/marshalling into browser runtime-driver implementation, and added shared node/browser runtime-contract integration suites plus browser runner wiring.
+
 ## 2026-03-01
 
 1. **[resolved]** `NodeRuntime` constructor ownership drifted between driver and direct adapter options.

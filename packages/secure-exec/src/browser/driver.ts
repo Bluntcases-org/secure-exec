@@ -2,13 +2,11 @@ import {
 	createCommandExecutorStub,
 	createFsStub,
 	createNetworkStub,
-	wrapCommandExecutor,
 	wrapFileSystem,
 	wrapNetworkAdapter,
 } from "../shared/permissions.js";
 import { createInMemoryFileSystem } from "../shared/in-memory-fs.js";
 import type {
-	CommandExecutor,
 	NetworkAdapter,
 	Permissions,
 	SystemDriver,
@@ -18,6 +16,19 @@ import { createEnosysError } from "../shared/errors.js";
 
 const S_IFREG = 0o100000;
 const S_IFDIR = 0o040000;
+
+const BROWSER_SYSTEM_DRIVER_OPTIONS = Symbol.for(
+	"secure-exec.browserSystemDriverOptions",
+);
+
+export interface BrowserRuntimeSystemOptions {
+	filesystem: "opfs" | "memory";
+	networkEnabled: boolean;
+}
+
+type BrowserSystemDriver = SystemDriver & {
+	[BROWSER_SYSTEM_DRIVER_OPTIONS]?: BrowserRuntimeSystemOptions;
+};
 
 function normalizePath(path: string): string {
 	if (!path) return "/";
@@ -227,9 +238,7 @@ export class OpfsFileSystem implements VirtualFileSystem {
 }
 
 export interface BrowserDriverOptions {
-	filesystem?: VirtualFileSystem;
-	networkAdapter?: NetworkAdapter;
-	commandExecutor?: CommandExecutor;
+	filesystem?: "opfs" | "memory";
 	permissions?: Permissions;
 	useDefaultNetwork?: boolean;
 }
@@ -308,38 +317,53 @@ export function createBrowserNetworkAdapter(): NetworkAdapter {
 	};
 }
 
+/** Recover runtime-driver options from a browser SystemDriver instance. */
+export function getBrowserSystemDriverOptions(
+	systemDriver: SystemDriver,
+): BrowserRuntimeSystemOptions {
+	const options = (systemDriver as BrowserSystemDriver)[
+		BROWSER_SYSTEM_DRIVER_OPTIONS
+	];
+	if (options) {
+		return options;
+	}
+	return {
+		filesystem: "opfs",
+		networkEnabled: Boolean(systemDriver.network),
+	};
+}
+
 /** Assemble a browser-side SystemDriver with permission-wrapped adapters. */
 export async function createBrowserDriver(
 	options: BrowserDriverOptions = {},
 ): Promise<SystemDriver> {
-	void options;
-	throw new Error(
-		"Browser runtime support is temporarily disabled. See change driver-owned-node-runtime.",
-	);
-	/*
 	const permissions = options.permissions;
+	const filesystemMode = options.filesystem ?? "opfs";
 	const filesystem =
-		options.filesystem ?? (await createOpfsFileSystem());
-	const networkAdapter = options.networkAdapter
-		? wrapNetworkAdapter(options.networkAdapter, permissions)
-		: options.useDefaultNetwork
-			? wrapNetworkAdapter(createBrowserNetworkAdapter(), permissions)
-			: undefined;
-	const commandExecutor = options.commandExecutor
-		? wrapCommandExecutor(options.commandExecutor, permissions)
+		filesystemMode === "memory"
+			? createInMemoryFileSystem()
+			: await createOpfsFileSystem();
+	const networkAdapter = options.useDefaultNetwork
+		? wrapNetworkAdapter(createBrowserNetworkAdapter(), permissions)
 		: undefined;
 
-	return {
+	const systemDriver: BrowserSystemDriver = {
 		filesystem: wrapFileSystem(filesystem, permissions),
 		network: networkAdapter,
-		commandExecutor,
+		commandExecutor: createCommandExecutorStub(),
 		permissions,
 		runtime: {
 			process: {},
 			os: {},
 		},
 	};
-	*/
+
+	systemDriver[BROWSER_SYSTEM_DRIVER_OPTIONS] = {
+		filesystem: filesystemMode,
+		networkEnabled: Boolean(networkAdapter),
+	};
+
+	return systemDriver;
 }
 
 export {

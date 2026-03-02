@@ -30,4 +30,26 @@ description: Get secure-exec running from TypeScript in a few minutes.
     await proc.dispose();
     ```
   </Step>
+  <Step title="Execute code in browser">
+    ```ts
+    import {
+      NodeRuntime,
+      createBrowserDriver,
+      createBrowserRuntimeDriverFactory,
+    } from "secure-exec/browser";
+
+    const runtime = new NodeRuntime({
+      systemDriver: await createBrowserDriver({
+        filesystem: "memory",
+      }),
+      runtimeDriverFactory: createBrowserRuntimeDriverFactory(),
+    });
+
+    const result = await runtime.exec("console.log('hello from browser runtime')");
+    if (result.errorMessage) {
+      throw new Error(result.errorMessage);
+    }
+    await runtime.terminate();
+    ```
+  </Step>
 </Steps>

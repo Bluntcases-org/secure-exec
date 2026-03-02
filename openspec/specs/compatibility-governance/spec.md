@@ -246,3 +246,43 @@ Any change that introduces or modifies runtime log-capture defaults or hook-base
 - **WHEN** logging/output behavior is changed in runtime or bridge paths
 - **THEN** the same change MUST include tests that assert high-volume log emission does not create unbounded host-memory accumulation
 
+### Requirement: Runtime Driver Contract Changes MUST Run Shared Cross-Target Integration Suites
+Any change that modifies runtime-driver behavior or runtime orchestration contracts MUST run shared integration suites against both node and browser runtime-driver targets.
+
+#### Scenario: Runtime/driver implementation changes trigger cross-target validation
+- **WHEN** a change modifies runtime contracts or driver behavior under `packages/secure-exec/src/index.ts`, `src/runtime-driver.ts`, `src/node/**`, or `src/browser/**`
+- **THEN** the change MUST execute shared integration suites for both node and browser targets before completion
+
+#### Scenario: Shared suites are reused between targets
+- **WHEN** runtime integration coverage is executed for node and browser
+- **THEN** both targets MUST run the same reusable `run*` contract suites rather than target-specific duplicated logic
+
+### Requirement: Browser Runtime Validation Workflow MUST Remain Available To Contributors
+Repository scripts and test wiring MUST provide a documented way to run browser runtime integration tests locally using the shared runtime-contract suites.
+
+#### Scenario: Contributor runs targeted browser integration validation
+- **WHEN** a contributor runs the documented browser integration command
+- **THEN** the runtime integration suite MUST execute in a real browser environment and report pass/fail for the shared contract suites
+
+### Requirement: Runtime-Driver Contract Changes MUST Validate Through Canonical Test-Suite Entrypoints
+Any change that modifies runtime-driver behavior, execution-driver behavior, or shared runtime test harness contracts MUST validate against canonical shared and driver-specific test entrypoints.
+
+#### Scenario: Shared runtime contract change triggers matrix suite validation
+- **WHEN** a change updates runtime contract behavior or shared suite orchestration under `packages/secure-exec/tests/test-suite.test.ts` or `packages/secure-exec/tests/test-suite/*.ts`
+- **THEN** the change MUST run the matrix suite command that executes `packages/secure-exec/tests/test-suite.test.ts`
+
+#### Scenario: Execution-driver-specific change triggers execution-driver suite validation
+- **WHEN** a change updates execution-driver-specific behavior or tests under `packages/secure-exec/tests/exec-driver/`
+- **THEN** the change MUST run the execution-driver targeted test command that executes `packages/secure-exec/tests/exec-driver/*.test.ts`
+
+#### Scenario: Runtime-driver-specific change triggers runtime-driver suite validation
+- **WHEN** a change updates runtime-driver-specific behavior or tests under `packages/secure-exec/tests/runtime-driver/`
+- **THEN** the change MUST run the runtime-driver targeted test command that executes `packages/secure-exec/tests/runtime-driver/*.test.ts`
+
+### Requirement: Shared Runtime Coverage MUST Not Depend On Legacy Or Duplicate Entrypoints
+Repository test wiring MUST keep `packages/secure-exec/tests/test-suite.test.ts` as the canonical shared runtime matrix entrypoint and MUST NOT require duplicated node/browser-only shared-suite entrypoints for ongoing validation.
+
+#### Scenario: Canonical shared runtime entrypoint remains singular
+- **WHEN** contributors update package scripts or Vitest include patterns for shared runtime coverage
+- **THEN** shared runtime matrix execution MUST remain anchored on `packages/secure-exec/tests/test-suite.test.ts` as the canonical entrypoint
+

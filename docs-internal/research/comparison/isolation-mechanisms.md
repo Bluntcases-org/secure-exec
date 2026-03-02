@@ -177,7 +177,7 @@ A comparison of sandboxing and isolation approaches relevant to running untruste
 - `eval()` in Workers is not isolated from the Worker's own globals
 - No memory limits — a Worker can consume arbitrary memory
 
-**libsandbox relevance:** This is libsandbox's browser isolation mechanism. The BrowserSandbox class creates a Web Worker and communicates via a request/response protocol over `postMessage`. Note that Worker isolation is weaker than isolated-vm — code in the Worker has full access to the Worker global scope.
+**libsandbox relevance:** This is libsandbox's browser isolation mechanism. `NodeRuntime` uses a browser runtime driver that creates a Web Worker and communicates via a request/response protocol over `postMessage`. Note that Worker isolation is weaker than isolated-vm — code in the Worker has full access to the Worker global scope.
 
 ---
 

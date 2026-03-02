@@ -8,6 +8,10 @@
     ".": {
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
+    },
+    "./browser": {
+      "import": "./dist/browser-runtime.js",
+      "types": "./dist/browser-runtime.d.ts"
     }
   },
   "scripts": {
@@ -20,6 +24,11 @@
     "build:generated": "pnpm run build:polyfills && pnpm run build:isolate-runtime",
     "build": "pnpm run build:bridge && pnpm run build:generated && tsc",
     "check-types:test": "pnpm run build:generated && vitest --typecheck --run tests/types/",
+    "test:test-suite": "pnpm run build:generated && vitest run tests/test-suite.test.ts",
+    "test:exec-driver": "pnpm run build:generated && vitest run tests/exec-driver/*.test.ts",
+    "test:runtime-driver": "pnpm run build:generated && vitest run tests/runtime-driver/*.test.ts",
+    "test:integration:node": "pnpm run test:test-suite && pnpm run test:exec-driver && pnpm run test:runtime-driver",
+    "test:integration:browser": "pnpm run build:generated && vitest run --config vitest.browser.config.ts tests/test-suite.test.ts tests/exec-driver/browser.test.ts tests/runtime-driver/browser.test.ts",
     "test:project-matrix": "pnpm run build:generated && vitest run tests/project-matrix.test.ts",
     "test": "pnpm run build:generated && vitest run",
     "test:watch": "pnpm run build:generated && vitest"
@@ -34,7 +43,9 @@
     "whatwg-url": "^15.1.0"
   },
   "devDependencies": {
+    "@vitest/browser": "^2.1.8",
     "@types/node": "^22.10.2",
+    "playwright": "^1.52.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"
