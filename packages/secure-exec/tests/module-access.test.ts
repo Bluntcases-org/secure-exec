@@ -3,10 +3,12 @@ import path from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
 import {
-	NodeProcess,
+	allowAllFs,
+	NodeRuntime,
 	createInMemoryFileSystem,
 	createNodeDriver,
 } from "../src/index.js";
+import { createTestNodeRuntime } from "./test-utils.js";
 
 type PackageFiles = Record<string, string | Uint8Array>;
 
@@ -35,6 +37,15 @@ function createConsoleCapture() {
 		stdout: () => formatConsoleChannel(events, "stdout"),
 		stderr: () => formatConsoleChannel(events, "stderr"),
 	};
+}
+
+function createModuleAccessDriver(
+	options: Parameters<typeof createNodeDriver>[0],
+) {
+	return createNodeDriver({
+		permissions: allowAllFs,
+		...options,
+	});
 }
 
 async function createTempProject(): Promise<string> {
@@ -79,7 +90,7 @@ async function writePackage(
 
 describe("moduleAccess overlay", () => {
 	const tempDirs: string[] = [];
-	let proc: NodeProcess | undefined;
+	let proc: NodeRuntime | undefined;
 
 	afterEach(async () => {
 		proc?.dispose();
@@ -109,13 +120,13 @@ describe("moduleAccess overlay", () => {
 			},
 		});
 
-		const driver = createNodeDriver({
+		const driver = createModuleAccessDriver({
 			moduleAccess: {
 				cwd: projectDir,
 			},
 		});
 		const capture = createConsoleCapture();
-		proc = new NodeProcess({ driver, onConsoleLog: capture.onConsoleLog });
+		proc = createTestNodeRuntime({ driver, onConsoleLog: capture.onConsoleLog });
 
 		const result = await proc.exec(
 			`const mod = require("allowed-root"); console.log(mod.value);`,
@@ -152,13 +163,13 @@ describe("moduleAccess overlay", () => {
 			},
 		});
 
-		const driver = createNodeDriver({
+		const driver = createModuleAccessDriver({
 			moduleAccess: {
 				cwd: projectDir,
 			},
 		});
 		const capture = createConsoleCapture();
-		proc = new NodeProcess({ driver, onConsoleLog: capture.onConsoleLog });
+		proc = createTestNodeRuntime({ driver, onConsoleLog: capture.onConsoleLog });
 
 		const result = await proc.exec(
 			`const mod = require("pkg-a"); console.log(mod.value);`,
@@ -182,14 +193,14 @@ describe("moduleAccess overlay", () => {
 		const baseFs = createInMemoryFileSystem();
 		await baseFs.writeFile("/workspace/host.txt", "host-file");
 
-		const driver = createNodeDriver({
+		const driver = createModuleAccessDriver({
 			filesystem: baseFs,
 			moduleAccess: {
 				cwd: projectDir,
 			},
 		});
 		const capture = createConsoleCapture();
-		proc = new NodeProcess({ driver, onConsoleLog: capture.onConsoleLog });
+		proc = createTestNodeRuntime({ driver, onConsoleLog: capture.onConsoleLog });
 
 		const result = await proc.exec(
 			`
@@ -215,13 +226,13 @@ describe("moduleAccess overlay", () => {
 			},
 		});
 
-		const driver = createNodeDriver({
+		const driver = createModuleAccessDriver({
 			moduleAccess: {
 				cwd: projectDir,
 			},
 		});
 		const capture = createConsoleCapture();
-		proc = new NodeProcess({ driver, onConsoleLog: capture.onConsoleLog });
+		proc = createTestNodeRuntime({ driver, onConsoleLog: capture.onConsoleLog });
 
 		const result = await proc.exec(
 			`
@@ -242,7 +253,7 @@ describe("moduleAccess overlay", () => {
 
 	it("rejects invalid moduleAccess configuration deterministically", async () => {
 		expect(() =>
-			createNodeDriver({
+			createModuleAccessDriver({
 				moduleAccess: {
 					cwd: "relative/path",
 				},
@@ -270,12 +281,12 @@ describe("moduleAccess overlay", () => {
 		const escapeLink = path.join(projectDir, "node_modules", "escape-pkg");
 		await symlink(outsidePackageRoot, escapeLink, "dir");
 
-		const driver = createNodeDriver({
+		const driver = createModuleAccessDriver({
 			moduleAccess: {
 				cwd: projectDir,
 			},
 		});
-		proc = new NodeProcess({ driver });
+		proc = createTestNodeRuntime({ driver });
 
 		const result = await proc.exec(`require("escape-pkg")`, {
 			cwd: "/app",
@@ -297,12 +308,12 @@ describe("moduleAccess overlay", () => {
 			},
 		});
 
-		const driver = createNodeDriver({
+		const driver = createModuleAccessDriver({
 			moduleAccess: {
 				cwd: projectDir,
 			},
 		});
-		proc = new NodeProcess({ driver });
+		proc = createTestNodeRuntime({ driver });
 
 		const result = await proc.exec(`require("native-addon-pkg")`, {
 			cwd: "/app",
@@ -322,13 +333,13 @@ describe("moduleAccess overlay", () => {
 			},
 		});
 
-		const driver = createNodeDriver({
+		const driver = createModuleAccessDriver({
 			moduleAccess: {
 				cwd: projectDir,
 			},
 		});
 		const capture = createConsoleCapture();
-		proc = new NodeProcess({
+		proc = createTestNodeRuntime({
 			driver,
 			permissions: {
 				fs: (request) => ({

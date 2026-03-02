@@ -17,13 +17,13 @@
 - None.
 
 ### Modified Capabilities
-- `runtime-execution-model`: tighten runtime construction contract (required driver), shift runtime ownership to driver-backed execution interface, and temporarily remove browser execution path requirements.
+- `node-runtime`: tighten runtime construction contract (required driver), shift runtime ownership to driver-backed execution interface, and temporarily remove browser execution path requirements.
 
 ## Impact
 
-- `packages/sandboxed-node/src/index.ts` (`NodeProcess` options/constructor contract, runtime orchestration boundary, browser exports and references)
-- `packages/sandboxed-node/src/node/driver.ts` (driver-owned runtime execution logic, deny-by-default permission defaults)
-- `packages/sandboxed-node/src/types.ts` (new generic runtime-driver interfaces and updated public constructor types)
-- `packages/sandboxed-node/src/browser/*` (commented-out or temporarily disabled integration surface)
-- `packages/sandboxed-node/tests/index.test.ts` and related call sites currently using `new NodeProcess()` or direct constructor adapters
+- `packages/secure-exec/src/index.ts` (`NodeProcess` options/constructor contract, runtime orchestration boundary, browser exports and references)
+- `packages/secure-exec/src/node/driver.ts` (driver-owned runtime execution logic, deny-by-default permission defaults)
+- `packages/secure-exec/src/types.ts` (new generic runtime-driver interfaces and updated public constructor types)
+- `packages/secure-exec/src/browser/*` (commented-out or temporarily disabled integration surface)
+- `packages/secure-exec/tests/index.test.ts` and related call sites currently using `new NodeProcess()` or direct constructor adapters
 - README/examples/docs referencing constructor patterns and browser runtime availability

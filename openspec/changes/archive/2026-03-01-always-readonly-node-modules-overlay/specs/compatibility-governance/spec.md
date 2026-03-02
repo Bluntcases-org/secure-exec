@@ -5,7 +5,7 @@ Any change that introduces or modifies driver-managed host module projection or 
 
 #### Scenario: Scoped node_modules projection or always-on overlay behavior is introduced or changed
 - **WHEN** runtime or driver behavior for projected module access changes (including scope boundary, always-on overlay defaults, read-only policy, or native-addon rejection)
-- **THEN** `docs-internal/friction/secure-exec.md` MUST document the compatibility trade-off and resolution notes in the same change
+- **THEN** `docs-internal/friction.md` MUST document the compatibility trade-off and resolution notes in the same change
 
 #### Scenario: Host trust-boundary assumptions for module loading change
 - **WHEN** module-loading trust boundaries change due to driver-managed host dependency projection or always-on `cwd/node_modules` overlay

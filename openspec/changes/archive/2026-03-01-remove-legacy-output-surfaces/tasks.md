@@ -16,7 +16,7 @@
 - [x] 3.1 Replace `tests/logging-load.test.ts` legacy buffering expectation with exploit-oriented assertions that high-volume logs do not accumulate runtime-managed buffers.
 - [x] 3.2 Update runtime tests/types to validate the new result contract (no `stdout`/`stderr`) and hook-based logging behavior.
 - [x] 3.3 Update docs examples (`docs/quickstart.mdx`, `docs/node-compatability.mdx`, `docs/security-model.mdx`) to remove `result.stdout`/`result.stderr` usage and show `onConsoleLog`.
-- [x] 3.4 Update `docs-internal/friction/secure-exec.md` with migration note and compatibility trade-offs.
+- [x] 3.4 Update `docs-internal/friction.md` with migration note and compatibility trade-offs.
 
 ## 4. Validation (Explicit Test Plan)
 

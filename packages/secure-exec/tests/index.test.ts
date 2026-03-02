@@ -4,10 +4,11 @@ import {
 	allowAllFs,
 	allowAllNetwork,
 	NodeFileSystem,
-	NodeProcess,
+	NodeRuntime,
 	createInMemoryFileSystem,
 	createNodeDriver,
 } from "../src/index.js";
+import { createTestNodeRuntime } from "./test-utils.js";
 import {
 	HARDENED_NODE_CUSTOM_GLOBALS,
 	MUTABLE_NODE_CUSTOM_GLOBALS,
@@ -50,8 +51,8 @@ function createConsoleCapture() {
 	};
 }
 
-describe("NodeProcess", () => {
-	let proc: NodeProcess | undefined;
+describe("NodeRuntime", () => {
+	let proc: NodeRuntime | undefined;
 
 	afterEach(() => {
 		proc?.dispose();
@@ -59,19 +60,19 @@ describe("NodeProcess", () => {
 	});
 
 	it("runs basic code and returns module.exports", async () => {
-		proc = new NodeProcess();
+		proc = createTestNodeRuntime();
 		const result = await proc.run(`module.exports = 1 + 1`);
 		expect(result.exports).toBe(2);
 	});
 
 	it("returns ESM default export namespace from run()", async () => {
-		proc = new NodeProcess();
+		proc = createTestNodeRuntime();
 		const result = await proc.run(`export default 42;`, "/entry.mjs");
 		expect(result.exports).toEqual({ default: 42 });
 	});
 
 	it("returns ESM named exports from run()", async () => {
-		proc = new NodeProcess();
+		proc = createTestNodeRuntime();
 		const result = await proc.run(
 			`
 	      export const message = 'hello';
@@ -83,7 +84,7 @@ describe("NodeProcess", () => {
 	});
 
 	it("returns mixed ESM default and named exports from run()", async () => {
-		proc = new NodeProcess();
+		proc = createTestNodeRuntime();
 		const result = await proc.run(
 			`
 	      export const named = 'value';
@@ -95,7 +96,7 @@ describe("NodeProcess", () => {
 	});
 
 	it("drops console output by default without a hook", async () => {
-		proc = new NodeProcess();
+		proc = createTestNodeRuntime();
 		const result = await proc.exec(`console.log('hello'); console.error('oops');`);
 		expect(result).not.toHaveProperty("stdout");
 		expect(result.errorMessage).toBeUndefined();
@@ -104,7 +105,7 @@ describe("NodeProcess", () => {
 
 	it("streams ordered stdout/stderr hook events", async () => {
 		const capture = createConsoleCapture();
-		proc = new NodeProcess({ onConsoleLog: capture.onConsoleLog });
+		proc = createTestNodeRuntime({ onConsoleLog: capture.onConsoleLog });
 		const result = await proc.exec(`
       console.log("first");
       console.warn("second");
@@ -124,7 +125,7 @@ describe("NodeProcess", () => {
 
 	it("continues execution when the host log hook throws", async () => {
 		const seen: CapturedConsoleEvent[] = [];
-		proc = new NodeProcess({
+		proc = createTestNodeRuntime({
 			onConsoleLog: (event) => {
 				seen.push(event);
 				throw new Error("hook-failure");
@@ -139,7 +140,7 @@ describe("NodeProcess", () => {
 
 	it("logs circular objects to hook without throwing", async () => {
 		const capture = createConsoleCapture();
-		proc = new NodeProcess({ onConsoleLog: capture.onConsoleLog });
+		proc = createTestNodeRuntime({ onConsoleLog: capture.onConsoleLog });
 		const result = await proc.exec(`
       const value = { name: 'root' };
       value.self = value;
@@ -152,7 +153,7 @@ describe("NodeProcess", () => {
 
 	it("logs null and undefined values to hook", async () => {
 		const capture = createConsoleCapture();
-		proc = new NodeProcess({ onConsoleLog: capture.onConsoleLog });
+		proc = createTestNodeRuntime({ onConsoleLog: capture.onConsoleLog });
 		const result = await proc.exec(`console.log(null, undefined);`);
 		expect(result.code).toBe(0);
 		expect(result).not.toHaveProperty("stdout");
@@ -161,7 +162,7 @@ describe("NodeProcess", () => {
 
 	it("logs circular objects to stderr hook without throwing", async () => {
 		const capture = createConsoleCapture();
-		proc = new NodeProcess({ onConsoleLog: capture.onConsoleLog });
+		proc = createTestNodeRuntime({ onConsoleLog: capture.onConsoleLog });
 		const result = await proc.exec(`
       const value = { name: 'root' };
       value.self = value;
@@ -174,7 +175,7 @@ describe("NodeProcess", () => {
 
 	it("bounds deep and large console payloads in hook mode", async () => {
 		const capture = createConsoleCapture();
-		proc = new NodeProcess({ onConsoleLog: capture.onConsoleLog });
+		proc = createTestNodeRuntime({ onConsoleLog: capture.onConsoleLog });
 		const result = await proc.exec(`
 	      const deep = { level: 0 };
 	      let cursor = deep;
@@ -200,7 +201,7 @@ describe("NodeProcess", () => {
 	});
 
 	it("drops high-volume logs by default without building stdout/stderr buffers", async () => {
-		proc = new NodeProcess();
+		proc = createTestNodeRuntime();
 		const result = await proc.exec(`
       for (let i = 0; i < 5000; i += 1) {
         console.log("line-" + i);
@@ -213,7 +214,7 @@ describe("NodeProcess", () => {
 	});
 
 	it("loads node stdlib polyfills", async () => {
-		proc = new NodeProcess();
+		proc = createTestNodeRuntime();
 		const result = await proc.run(`
 	      const path = require('path');
 	      module.exports = path.join('foo', 'bar');
@@ -223,7 +224,7 @@ describe("NodeProcess", () => {
 
 	it("provides host-backed crypto randomness APIs", async () => {
 		const capture = createConsoleCapture();
-		proc = new NodeProcess({ onConsoleLog: capture.onConsoleLog });
+		proc = createTestNodeRuntime({ onConsoleLog: capture.onConsoleLog });
 		const result = await proc.exec(`
 	      const bytes = new Uint8Array(16);
 	      crypto.getRandomValues(bytes);
@@ -238,7 +239,7 @@ describe("NodeProcess", () => {
 
 	it("prevents sandbox override of host entropy bridge hooks", async () => {
 		const capture = createConsoleCapture();
-		proc = new NodeProcess({ onConsoleLog: capture.onConsoleLog });
+		proc = createTestNodeRuntime({ onConsoleLog: capture.onConsoleLog });
 		const result = await proc.exec(`
 		      const originalFill = globalThis._cryptoRandomFill;
 		      const originalUuid = globalThis._cryptoRandomUUID;
@@ -267,7 +268,7 @@ describe("NodeProcess", () => {
 	});
 
 	it("does not shim third-party packages in require resolution", async () => {
-		proc = new NodeProcess();
+		proc = createTestNodeRuntime();
 		const result = await proc.exec(`require('chalk')`);
 		expect(result.code).toBe(1);
 		expect(result.errorMessage).toMatch(
@@ -276,7 +277,7 @@ describe("NodeProcess", () => {
 	});
 
 	it("loads tty/constants polyfills and v8 stub", async () => {
-		proc = new NodeProcess();
+		proc = createTestNodeRuntime();
 		const result = await proc.run(`
       const tty = require('tty');
       const constants = require('constants');
@@ -310,7 +311,7 @@ describe("NodeProcess", () => {
 	});
 
 	it("errors for unknown modules", async () => {
-		proc = new NodeProcess();
+		proc = createTestNodeRuntime();
 		const result = await proc.exec(`require('nonexistent-module')`);
 		expect(result.code).toBe(1);
 		expect(result.errorMessage).toMatch(
@@ -331,7 +332,7 @@ describe("NodeProcess", () => {
 		);
 
 		const capture = createConsoleCapture();
-		proc = new NodeProcess({
+		proc = createTestNodeRuntime({
 			filesystem: fs,
 			permissions: allowAllFs,
 			onConsoleLog: capture.onConsoleLog,
@@ -349,7 +350,7 @@ describe("NodeProcess", () => {
 		await fs.writeFile("/data/hello.txt", "hello world");
 
 		const capture = createConsoleCapture();
-		proc = new NodeProcess({
+		proc = createTestNodeRuntime({
 			filesystem: fs,
 			permissions: allowAllFs,
 			onConsoleLog: capture.onConsoleLog,
@@ -368,7 +369,7 @@ describe("NodeProcess", () => {
 		await fs.writeFile("/data/file.txt", "value");
 
 		const capture = createConsoleCapture();
-		proc = new NodeProcess({
+		proc = createTestNodeRuntime({
 			filesystem: fs,
 			permissions: allowAllFs,
 			onConsoleLog: capture.onConsoleLog,
@@ -393,7 +394,7 @@ describe("NodeProcess", () => {
 		await fs.writeFile("/data/large.txt", "x".repeat(1024 * 1024));
 
 		const capture = createConsoleCapture();
-		proc = new NodeProcess({
+		proc = createTestNodeRuntime({
 			filesystem: fs,
 			permissions: allowAllFs,
 			onConsoleLog: capture.onConsoleLog,
@@ -459,7 +460,7 @@ describe("NodeProcess", () => {
 		);
 
 		const capture = createConsoleCapture();
-		proc = new NodeProcess({
+		proc = createTestNodeRuntime({
 			filesystem: fs,
 			permissions: allowAllFs,
 			onConsoleLog: capture.onConsoleLog,
@@ -492,7 +493,7 @@ describe("NodeProcess", () => {
 		await fs.writeFile("/app/value.js", "export const value = 42;");
 
 		const capture = createConsoleCapture();
-		proc = new NodeProcess({
+		proc = createTestNodeRuntime({
 			filesystem: fs,
 			permissions: allowAllFs,
 			onConsoleLog: capture.onConsoleLog,
@@ -516,7 +517,7 @@ describe("NodeProcess", () => {
 		await fs.writeFile("/app/package.json", JSON.stringify({ type: "commonjs" }));
 		await fs.writeFile("/app/value.js", "module.exports = 9;");
 
-		proc = new NodeProcess({ filesystem: fs, permissions: allowAllFs });
+		proc = createTestNodeRuntime({ filesystem: fs, permissions: allowAllFs });
 		const result = await proc.run("module.exports = require('/app/value.js');", "/app/entry.js");
 		expect(result.exports).toBe(9);
 	});
@@ -543,7 +544,7 @@ describe("NodeProcess", () => {
 		);
 
 		const capture = createConsoleCapture();
-		proc = new NodeProcess({
+		proc = createTestNodeRuntime({
 			filesystem: fs,
 			permissions: allowAllFs,
 			onConsoleLog: capture.onConsoleLog,
@@ -568,7 +569,7 @@ describe("NodeProcess", () => {
 	});
 
 	it("returns builtin identifiers from require.resolve helpers", async () => {
-		proc = new NodeProcess();
+		proc = createTestNodeRuntime();
 		const result = await proc.run(`
 	      const Module = require('module');
 	      module.exports = {
@@ -585,7 +586,7 @@ describe("NodeProcess", () => {
 
 	it("supports default and named ESM imports for node:fs and node:path", async () => {
 		const capture = createConsoleCapture();
-		proc = new NodeProcess({ onConsoleLog: capture.onConsoleLog });
+		proc = createTestNodeRuntime({ onConsoleLog: capture.onConsoleLog });
 		const result = await proc.exec(
 			`
 	      import fs, { readFileSync } from 'node:fs';
@@ -617,7 +618,7 @@ describe("NodeProcess", () => {
 		);
 
 		const capture = createConsoleCapture();
-		proc = new NodeProcess({
+		proc = createTestNodeRuntime({
 			filesystem: fs,
 			permissions: allowAllFs,
 			onConsoleLog: capture.onConsoleLog,
@@ -650,7 +651,7 @@ describe("NodeProcess", () => {
 		);
 
 		const capture = createConsoleCapture();
-		proc = new NodeProcess({
+		proc = createTestNodeRuntime({
 			filesystem: fs,
 			permissions: allowAllFs,
 			onConsoleLog: capture.onConsoleLog,
@@ -685,7 +686,7 @@ describe("NodeProcess", () => {
 		);
 
 		const capture = createConsoleCapture();
-		proc = new NodeProcess({
+		proc = createTestNodeRuntime({
 			filesystem: fs,
 			permissions: allowAllFs,
 			onConsoleLog: capture.onConsoleLog,
@@ -719,7 +720,7 @@ describe("NodeProcess", () => {
 		await fs.mkdir("/app");
 
 		const capture = createConsoleCapture();
-		proc = new NodeProcess({
+		proc = createTestNodeRuntime({
 			filesystem: fs,
 			permissions: allowAllFs,
 			onConsoleLog: capture.onConsoleLog,
@@ -743,7 +744,7 @@ describe("NodeProcess", () => {
 		await fs.writeFile("/app/broken.mjs", "export const broken = ;");
 
 		const capture = createConsoleCapture();
-		proc = new NodeProcess({
+		proc = createTestNodeRuntime({
 			filesystem: fs,
 			permissions: allowAllFs,
 			onConsoleLog: capture.onConsoleLog,
@@ -770,7 +771,7 @@ describe("NodeProcess", () => {
 			"throw new Error('dynamic-import-eval-failure');",
 		);
 
-		proc = new NodeProcess({ filesystem: fs, permissions: allowAllFs });
+		proc = createTestNodeRuntime({ filesystem: fs, permissions: allowAllFs });
 		const result = await proc.exec(
 			`
 	      (async () => {
@@ -792,7 +793,7 @@ describe("NodeProcess", () => {
 		await fs.writeFile("/app/nullish.cjs", "module.exports = null;");
 
 		const capture = createConsoleCapture();
-		proc = new NodeProcess({
+		proc = createTestNodeRuntime({
 			filesystem: fs,
 			permissions: allowAllFs,
 			onConsoleLog: capture.onConsoleLog,
@@ -814,7 +815,7 @@ describe("NodeProcess", () => {
 	});
 
 	it("uses frozen timing values by default", async () => {
-		proc = new NodeProcess();
+		proc = createTestNodeRuntime();
 		const result = await proc.run(`
       module.exports = {
         dateFrozen: Date.now() === Date.now(),
@@ -833,7 +834,7 @@ describe("NodeProcess", () => {
 
 	it("restores advancing clocks when timing mitigation is off", async () => {
 		const capture = createConsoleCapture();
-		proc = new NodeProcess({
+		proc = createTestNodeRuntime({
 			timingMitigation: "off",
 			onConsoleLog: capture.onConsoleLog,
 		});
@@ -862,14 +863,14 @@ describe("NodeProcess", () => {
 	});
 
 	it("times out non-terminating CommonJS execution with cpuTimeLimitMs", async () => {
-		proc = new NodeProcess({ cpuTimeLimitMs: 100 });
+		proc = createTestNodeRuntime({ cpuTimeLimitMs: 100 });
 		const result = await proc.exec("while (true) {}");
 		expect(result.code).toBe(124);
 		expect(result.errorMessage).toContain("CPU time limit exceeded");
 	});
 
 	it("times out non-terminating ESM execution with cpuTimeLimitMs", async () => {
-		proc = new NodeProcess({ cpuTimeLimitMs: 100 });
+		proc = createTestNodeRuntime({ cpuTimeLimitMs: 100 });
 		const result = await proc.exec("while (true) {}", { filePath: "/entry.mjs" });
 		expect(result.code).toBe(124);
 		expect(result.errorMessage).toContain("CPU time limit exceeded");
@@ -880,7 +881,7 @@ describe("NodeProcess", () => {
 		await fs.mkdir("/app");
 		await fs.writeFile("/app/loop.mjs", "while (true) {}");
 
-		proc = new NodeProcess({
+		proc = createTestNodeRuntime({
 			filesystem: fs,
 			permissions: allowAllFs,
 			cpuTimeLimitMs: 100,
@@ -899,7 +900,7 @@ describe("NodeProcess", () => {
 
 	it("hardens all custom globals as non-writable and non-configurable", async () => {
 		const capture = createConsoleCapture();
-		proc = new NodeProcess({ onConsoleLog: capture.onConsoleLog });
+		proc = createTestNodeRuntime({ onConsoleLog: capture.onConsoleLog });
 		const result = await proc.exec(`
 		      const targets = ${JSON.stringify(HARDENED_NODE_CUSTOM_GLOBALS)};
 		      const failures = [];
@@ -940,7 +941,7 @@ describe("NodeProcess", () => {
 	it("keeps stdlib globals compatible and mutable runtime globals writable", async () => {
 		const capture = createConsoleCapture();
 		const fs = createFs();
-		proc = new NodeProcess({
+		proc = createTestNodeRuntime({
 			filesystem: fs,
 			permissions: allowAllFs,
 			onConsoleLog: capture.onConsoleLog,
@@ -998,7 +999,7 @@ describe("NodeProcess", () => {
 	});
 
 	it("enforces shared cpuTimeLimitMs deadline during active-handle wait", async () => {
-		proc = new NodeProcess({ cpuTimeLimitMs: 100 });
+		proc = createTestNodeRuntime({ cpuTimeLimitMs: 100 });
 		const result = await proc.run(`
 	      globalThis._registerHandle("test:stuck", "test unresolved handle");
 	      module.exports = 42;
@@ -1008,7 +1009,7 @@ describe("NodeProcess", () => {
 	});
 
 	it("keeps isolate usable after cpuTimeLimitMs timeout", async () => {
-		proc = new NodeProcess({ cpuTimeLimitMs: 100 });
+		proc = createTestNodeRuntime({ cpuTimeLimitMs: 100 });
 		const timedOut = await proc.exec("while (true) {}");
 		expect(timedOut.code).toBe(124);
 
@@ -1023,7 +1024,7 @@ describe("NodeProcess", () => {
 			useDefaultNetwork: true,
 			permissions: allowFsNetworkEnv,
 		});
-		proc = new NodeProcess({
+		proc = createTestNodeRuntime({
 			driver,
 			processConfig: {
 				cwd: "/",
@@ -1117,7 +1118,7 @@ describe("NodeProcess", () => {
 			useDefaultNetwork: true,
 			permissions: allowFsNetworkEnv,
 		});
-		proc = new NodeProcess({
+		proc = createTestNodeRuntime({
 			driver,
 			processConfig: {
 				cwd: "/",
@@ -1194,7 +1195,7 @@ describe("NodeProcess", () => {
 			useDefaultNetwork: true,
 			permissions: allowFsNetworkEnv,
 		});
-		proc = new NodeProcess({
+		proc = createTestNodeRuntime({
 			driver,
 			processConfig: {
 				cwd: "/",

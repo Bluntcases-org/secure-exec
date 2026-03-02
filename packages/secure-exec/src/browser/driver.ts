@@ -11,7 +11,7 @@ import type {
 	CommandExecutor,
 	NetworkAdapter,
 	Permissions,
-	SandboxDriver,
+	RuntimeDriver,
 	VirtualFileSystem,
 } from "../types.js";
 import { createEnosysError } from "../shared/errors.js";
@@ -308,10 +308,15 @@ export function createBrowserNetworkAdapter(): NetworkAdapter {
 	};
 }
 
-/** Assemble a browser-side SandboxDriver with permission-wrapped adapters. */
+/** Assemble a browser-side RuntimeDriver with permission-wrapped adapters. */
 export async function createBrowserDriver(
 	options: BrowserDriverOptions = {},
-): Promise<SandboxDriver> {
+): Promise<RuntimeDriver> {
+	void options;
+	throw new Error(
+		"Browser runtime support is temporarily disabled. See change driver-owned-node-runtime.",
+	);
+	/*
 	const permissions = options.permissions;
 	const filesystem =
 		options.filesystem ?? (await createOpfsFileSystem());
@@ -329,7 +334,12 @@ export async function createBrowserDriver(
 		network: networkAdapter,
 		commandExecutor,
 		permissions,
+		runtime: {
+			process: {},
+			os: {},
+		},
 	};
+	*/
 }
 
 export {

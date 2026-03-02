@@ -25,5 +25,5 @@
 ## 5. Validate, Document, and Track Friction
 
 - [x] 5.1 Run secure-exec typechecks and targeted runtime tests after the refactor and fix regressions.
-- [x] 5.2 Update `docs-internal/friction/secure-exec.md` with typing/layout friction notes and mark resolved with concrete fix details.
+- [x] 5.2 Update `docs-internal/friction.md` with typing/layout friction notes and mark resolved with concrete fix details.
 - [x] 5.3 Confirm OpenSpec artifacts remain consistent with implementation outcomes and update deltas if implementation decisions change.

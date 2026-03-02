@@ -6,7 +6,7 @@ import {
   allowAllFs,
   allowAllNetwork,
   NodeFileSystem,
-  NodeProcess,
+  NodeRuntime,
   createNodeDriver,
 } from "../../../../packages/secure-exec/src/index.ts";
 import {
@@ -16,10 +16,14 @@ import {
   waitForServer,
 } from "../../../shared/src/sandbox-runner-utils.ts";
 
-function createProcess(runnerRoot: string, runnerEntry: string): NodeProcess {
+function createProcess(runnerRoot: string, runnerEntry: string): NodeRuntime {
   const driver = createNodeDriver({
     filesystem: new NodeFileSystem(),
     useDefaultNetwork: true,
+    processConfig: {
+      cwd: runnerRoot,
+      argv: ["node", runnerEntry],
+    },
     permissions: {
       ...allowAllFs,
       ...allowAllNetwork,
@@ -27,12 +31,8 @@ function createProcess(runnerRoot: string, runnerEntry: string): NodeProcess {
     },
   });
 
-  return new NodeProcess({
+  return new NodeRuntime({
     driver,
-    processConfig: {
-      cwd: runnerRoot,
-      argv: ["node", runnerEntry],
-    },
   });
 }
 

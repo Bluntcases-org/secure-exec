@@ -34,6 +34,6 @@ Sandbox module loading still depends on whether a caller mounted a filesystem at
   - project-matrix fixture coverage for dependency loading parity
   - exploit-oriented tests for path escape and write-attempt denial under overlay
 - Affected docs/governance:
-  - `docs-internal/friction/secure-exec.md`
+  - `docs-internal/friction.md`
   - `docs/security-model.mdx`
   - `docs/node-compatability.mdx` (if user-visible runtime loading behavior callouts change)

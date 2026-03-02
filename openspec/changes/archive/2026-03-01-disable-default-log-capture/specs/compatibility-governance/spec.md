@@ -5,7 +5,7 @@ Any change that introduces or modifies runtime log-capture defaults or hook-base
 
 #### Scenario: Runtime switches default logging behavior
 - **WHEN** runtime logging defaults change (for example from buffered capture to log-drop)
-- **THEN** `docs-internal/friction/secure-exec.md` MUST document the compatibility impact and resource-exhaustion rationale in the same change
+- **THEN** `docs-internal/friction.md` MUST document the compatibility impact and resource-exhaustion rationale in the same change
 
 #### Scenario: Runtime introduces or changes log-stream hook behavior
 - **WHEN** runtime log-stream hook contract changes (event shape, ordering semantics, or failure behavior)

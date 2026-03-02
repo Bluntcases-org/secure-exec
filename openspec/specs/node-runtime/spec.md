@@ -4,34 +4,42 @@
 Define runtime execution contracts, module loading behavior, async completion semantics, and dynamic import behavior.
 ## Requirements
 ### Requirement: Unified Sandbox Execution Interface
-The project SHALL provide a stable sandbox execution interface for both Node and browser runtimes, with each runtime exposing an `exec` path for running untrusted code and returning structured execution results. The Node runtime SHALL also expose a `run` path that returns module export results (`module.exports` for CommonJS and namespace exports for ESM). Dynamic `import()` expressions within executed code SHALL evaluate lazily at call time rather than eagerly during setup.
+The project SHALL provide a stable Node sandbox execution interface, with `NodeRuntime` exposing an `exec` path for running untrusted code and returning structured execution results, and a `run` path that returns module exports. Browser runtime execution support SHALL be disabled for this change phase.
 
 #### Scenario: Execute code in Node runtime
-- **WHEN** a caller creates `NodeProcess` with a valid driver and invokes `exec`
+- **WHEN** a caller creates `NodeRuntime` with a valid driver and invokes `exec`
 - **THEN** the sandbox MUST run the provided code in an isolated execution context and return structured output for the caller
 
-#### Scenario: Execute code in browser runtime
-- **WHEN** a caller creates `BrowserSandbox` and invokes `exec`
-- **THEN** the sandbox MUST execute code in a Worker-backed isolated context and return structured output for the caller
+#### Scenario: Browser runtime is disabled for this phase
+- **WHEN** a caller attempts to use browser sandbox runtime entrypoints during this change phase
+- **THEN** browser runtime execution MUST be unavailable under the runtime contract until a follow-up change restores support
 
-#### Scenario: Run CommonJS module and retrieve exports
+#### Scenario: Run CJS module and retrieve exports
 - **WHEN** a caller invokes `run()` with CommonJS code that assigns to `module.exports`
-- **THEN** the result's `exports` field MUST contain the value assigned to `module.exports`
+- **THEN** the result's `exports` field MUST contain the value of `module.exports`
 
 #### Scenario: Run ESM module and retrieve namespace exports
-- **WHEN** a caller invokes `run()` with ESM code that declares named and/or default exports
-- **THEN** the result's `exports` field MUST contain an object with all exported bindings, including `default` when declared
+- **WHEN** a caller invokes `run()` with ESM code that uses `export` declarations
+- **THEN** the result's `exports` field MUST contain the module namespace object with all named exports and the `default` export (if declared)
 
-#### Scenario: Dynamic imports in executed code evaluate lazily
-- **WHEN** a caller invokes `exec` with code containing `import()` expressions
-- **THEN** the execution pipeline MUST defer module evaluation until the `import()` expression is reached during code execution, preserving correct side-effect ordering
+#### Scenario: Run ESM module with only a default export
+- **WHEN** a caller invokes `run()` with ESM code containing `export default <value>`
+- **THEN** the result's `exports` field MUST be an object with a `default` property holding that value
+
+#### Scenario: Run ESM module with named and default exports
+- **WHEN** a caller invokes `run()` with ESM code containing both `export default` and named `export` declarations
+- **THEN** the result's `exports` field MUST be an object containing both the `default` property and all named export properties
 
 ### Requirement: Driver-Based Capability Composition
-Runtime capabilities SHALL be composed through host-provided drivers so filesystem, network, and child-process behavior are controlled by configured adapters rather than hardcoded runtime behavior.
+Runtime capabilities SHALL be composed through host-provided drivers so filesystem, network, and child-process behavior are controlled by configured adapters rather than hardcoded runtime behavior. `NodeRuntime` construction SHALL require a driver.
 
 #### Scenario: Node process uses configured adapters
-- **WHEN** `NodeProcess` is created with a driver that defines filesystem, network, and command-execution adapters
+- **WHEN** `NodeRuntime` is created with a driver that defines filesystem, network, and command-execution adapters
 - **THEN** sandboxed operations MUST route through those adapters for capability access
+
+#### Scenario: Missing permissions deny capability access by default
+- **WHEN** a driver is configured without explicit permission allowance for a capability domain
+- **THEN** operations in that capability domain MUST be denied by default
 
 #### Scenario: Omitted capability remains unavailable
 - **WHEN** a capability adapter is omitted from runtime configuration
@@ -138,7 +146,7 @@ When execution exceeds a configured CPU budget, the runtime MUST recycle isolate
 
 #### Scenario: Timeout execution does not leak state into next run
 - **WHEN** an execution times out due to `cpuTimeLimitMs`
-- **THEN** the next execution on the same `NodeProcess` instance MUST start from a fresh isolate state
+- **THEN** the next execution on the same `NodeRuntime` instance MUST start from a fresh isolate state
 
 ### Requirement: Optional Timing Side-Channel Mitigation Profile
 The Node runtime MUST provide timing mitigation controls that reduce high-resolution timing signals exposed to sandboxed code, with security-first default behavior.
@@ -221,12 +229,12 @@ The Node runtime MUST measure isolate-originated JSON payload size using UTF-8 b
 The Node runtime MUST allow host configuration of isolate-boundary payload limits while enforcing bounded minimum/maximum safety constraints.
 
 #### Scenario: Host configures in-range payload limits
-- **WHEN** a host creates `NodeProcess` with payload-limit overrides within runtime safety bounds
+- **WHEN** a host creates `NodeRuntime` with payload-limit overrides within runtime safety bounds
 - **THEN** the runtime MUST apply those configured limits for base64 transfer and isolate-originated JSON parse checks
 
 #### Scenario: Host configures out-of-range payload limits
 - **WHEN** a host provides payload-limit overrides outside runtime safety bounds
-- **THEN** `NodeProcess` construction MUST fail with a deterministic validation error and MUST NOT disable payload-size enforcement
+- **THEN** `NodeRuntime` construction MUST fail with a deterministic validation error and MUST NOT disable payload-size enforcement
 
 ### Requirement: Runtime Bootstrap MUST Harden Custom Non-Stdlib Globals
 Runtime bootstrap paths that expose custom non-stdlib globals into the isolate MUST install those bindings using hardened descriptors (`writable: false`, `configurable: false`) by default.
@@ -366,7 +374,7 @@ The Node runtime SHALL expose an optional host hook for streaming console log ev
 The Node runtime SHALL always expose `/app/node_modules` as a read-only overlay sourced from `<overlay.cwd>/node_modules` (default `<overlay.cwd> = process.cwd()`), independent of whether a base `VirtualFileSystem` is mounted.
 
 #### Scenario: Overlay is available without base filesystem adapter
-- **WHEN** a caller creates `NodeProcess` without a base filesystem adapter and host `<overlay.cwd>/node_modules` contains package `left-pad`
+- **WHEN** a caller creates `NodeRuntime` without a base filesystem adapter and host `<overlay.cwd>/node_modules` contains package `left-pad`
 - **THEN** sandboxed code requiring `left-pad` from `/app` MUST resolve through `/app/node_modules` overlay content
 
 #### Scenario: Overlay remains available when base filesystem mount differs

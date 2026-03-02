@@ -10,8 +10,9 @@ import {
 	allowAllFs,
 	createNodeDriver,
 	NodeFileSystem,
-	NodeProcess,
+	NodeRuntime,
 } from "../src/index.js";
+import { createTestNodeRuntime } from "./test-utils.js";
 
 const execFileAsync = promisify(execFile);
 const TEST_TIMEOUT_MS = 55_000;
@@ -403,7 +404,7 @@ async function runSandboxExecution(
 	const entryPath = path.join(projectDir, entryRelativePath);
 	const entryCode = await readFile(entryPath, "utf8");
 	const capturedEvents: CapturedConsoleEvent[] = [];
-	const proc = new NodeProcess({
+	const proc = createTestNodeRuntime({
 		filesystem: new NodeFileSystem(),
 		permissions: fixturePermissions,
 		onConsoleLog: (event) => {
@@ -448,9 +449,10 @@ async function runOverlaySandboxExecution(
 		moduleAccess: {
 			cwd: projectDir,
 		},
+		permissions: fixturePermissions,
 	});
 	const sandboxEntry = `/app/${entryRelativePath.replace(/\\/g, "/").replace(/^\/+/, "")}`;
-	const proc = new NodeProcess({
+	const proc = createTestNodeRuntime({
 		driver,
 		onConsoleLog: (event) => {
 			capturedEvents.push(event);

@@ -9,8 +9,9 @@ import {
 	allowAllEnv,
 	allowAllFs,
 	NodeFileSystem,
-	NodeProcess,
+	NodeRuntime,
 } from "../src/index.js";
+import { createTestNodeRuntime } from "./test-utils.js";
 
 const execFileAsync = promisify(execFile);
 const TEST_TIMEOUT_MS = 55_000;
@@ -24,7 +25,7 @@ const allowFsNetworkEnv = {
 };
 
 describe("hono fetch external invocation", () => {
-	let proc: NodeProcess | undefined;
+	let proc: NodeRuntime | undefined;
 
 	afterEach(() => {
 		proc?.dispose();
@@ -35,7 +36,7 @@ describe("hono fetch external invocation", () => {
 		"calls router fetch directly from host-triggered executions multiple times",
 		async () => {
 			await ensureFixtureDependencies();
-			proc = new NodeProcess({
+			proc = createTestNodeRuntime({
 				filesystem: new NodeFileSystem(),
 				permissions: allowFsNetworkEnv,
 				processConfig: {
@@ -43,7 +44,7 @@ describe("hono fetch external invocation", () => {
 				},
 			});
 
-			const unsafeProc = proc as NodeProcess & {
+			const unsafeProc = proc as NodeRuntime & {
 				__unsafeIsoalte: ivm.Isolate;
 				__unsafeCreateContext(options: {
 					env?: Record<string, string>;

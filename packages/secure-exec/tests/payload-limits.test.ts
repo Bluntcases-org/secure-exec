@@ -2,10 +2,11 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
 	allowAllFs,
 	allowAllNetwork,
-	NodeProcess,
+	NodeRuntime,
 	createInMemoryFileSystem,
 } from "../src/index.js";
 import type { NetworkAdapter } from "../src/types.js";
+import { createTestNodeRuntime } from "./test-utils.js";
 
 const DEFAULT_BRIDGE_BASE64_TRANSFER_BYTES = 16 * 1024 * 1024;
 const DEFAULT_ISOLATE_JSON_PAYLOAD_BYTES = 4 * 1024 * 1024;
@@ -69,8 +70,8 @@ function createEchoNetworkAdapter(): NetworkAdapter {
 	};
 }
 
-describe("NodeProcess payload limits", () => {
-	let proc: NodeProcess | undefined;
+describe("NodeRuntime payload limits", () => {
+	let proc: NodeRuntime | undefined;
 
 	afterEach(() => {
 		proc?.dispose();
@@ -84,7 +85,7 @@ describe("NodeProcess payload limits", () => {
 		await fs.writeFile("/data/source.bin", payload);
 
 		const capture = createConsoleCapture();
-		proc = new NodeProcess({
+		proc = createTestNodeRuntime({
 			filesystem: fs,
 			permissions: allowAllFs,
 			onConsoleLog: capture.onConsoleLog,
@@ -112,7 +113,7 @@ describe("NodeProcess payload limits", () => {
 		await fs.mkdir("/data");
 		await fs.writeFile("/data/too-large-read.bin", new Uint8Array(oversizedRawBytes));
 
-		proc = new NodeProcess({ filesystem: fs, permissions: allowAllFs });
+		proc = createTestNodeRuntime({ filesystem: fs, permissions: allowAllFs });
 		const result = await proc.exec(`
       const fs = require('fs');
       fs.readFileSync('/data/too-large-read.bin');
@@ -130,7 +131,7 @@ describe("NodeProcess payload limits", () => {
 		);
 		await fs.mkdir("/data");
 
-		proc = new NodeProcess({ filesystem: fs, permissions: allowAllFs });
+		proc = createTestNodeRuntime({ filesystem: fs, permissions: allowAllFs });
 		const result = await proc.exec(`
       const fs = require('fs');
       fs.writeFileSync('/data/too-large-write.bin', Buffer.alloc(${oversizedRawBytes}));
@@ -144,7 +145,7 @@ describe("NodeProcess payload limits", () => {
 
 	it("preserves in-limit JSON bridge payload parsing behavior", async () => {
 		const capture = createConsoleCapture();
-		proc = new NodeProcess({
+		proc = createTestNodeRuntime({
 			networkAdapter: createEchoNetworkAdapter(),
 			permissions: allowAllNetwork,
 			onConsoleLog: capture.onConsoleLog,
@@ -165,7 +166,7 @@ describe("NodeProcess payload limits", () => {
 	});
 
 	it("rejects oversized JSON payloads before host JSON.parse", async () => {
-		proc = new NodeProcess({
+		proc = createTestNodeRuntime({
 			networkAdapter: createEchoNetworkAdapter(),
 			permissions: allowAllNetwork,
 		});
@@ -192,7 +193,7 @@ describe("NodeProcess payload limits", () => {
 		await fs.mkdir("/data");
 
 		const capture = createConsoleCapture();
-		proc = new NodeProcess({
+		proc = createTestNodeRuntime({
 			filesystem: fs,
 			permissions: allowAllFs,
 			onConsoleLog: capture.onConsoleLog,
@@ -215,7 +216,7 @@ describe("NodeProcess payload limits", () => {
 
 	it("allows larger JSON payloads with in-range configured limits", async () => {
 		const capture = createConsoleCapture();
-		proc = new NodeProcess({
+		proc = createTestNodeRuntime({
 			networkAdapter: createEchoNetworkAdapter(),
 			permissions: allowAllNetwork,
 			onConsoleLog: capture.onConsoleLog,
@@ -238,11 +239,11 @@ describe("NodeProcess payload limits", () => {
 
 	it("rejects out-of-range payload limit configuration", () => {
 		expect(
-			() => new NodeProcess({ payloadLimits: { jsonPayloadBytes: 0 } }),
+			() => createTestNodeRuntime({ payloadLimits: { jsonPayloadBytes: 0 } }),
 		).toThrow(RangeError);
 		expect(
 			() =>
-				new NodeProcess({
+				createTestNodeRuntime({
 					payloadLimits: {
 						base64TransferBytes: MAX_CONFIGURED_PAYLOAD_BYTES + 1,
 					},

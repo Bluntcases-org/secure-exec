@@ -6,20 +6,25 @@ import * as https from "node:https";
 import type { Server as HttpServer } from "node:http";
 import * as zlib from "node:zlib";
 import {
-	allowAll,
 	filterEnv,
 } from "../shared/permissions.js";
 import { ModuleAccessFileSystem } from "./module-access.js";
+import { createIsolate } from "../isolate.js";
+import { NodeExecutionDriver } from "./execution-driver.js";
+import type {
+	OSConfig,
+	ProcessConfig,
+} from "../shared/api-types.js";
 import type {
 	CommandExecutor,
 	NetworkAdapter,
 	Permissions,
-	SandboxDriver,
+	RuntimeDriver,
 	VirtualFileSystem,
 } from "../types.js";
 import type { ModuleAccessOptions } from "./module-access.js";
 
-/** Options for assembling a Node.js-backed SandboxDriver. */
+/** Options for assembling a Node.js-backed RuntimeDriver. */
 export interface NodeDriverOptions {
 	filesystem?: VirtualFileSystem;
 	moduleAccess?: ModuleAccessOptions;
@@ -27,6 +32,8 @@ export interface NodeDriverOptions {
 	commandExecutor?: CommandExecutor;
 	permissions?: Permissions;
 	useDefaultNetwork?: boolean;
+	processConfig?: ProcessConfig;
+	osConfig?: OSConfig;
 }
 
 /** Thin VFS adapter that delegates directly to `node:fs/promises`. */
@@ -356,24 +363,16 @@ export function createDefaultNetworkAdapter(): NetworkAdapter {
 }
 
 /**
- * Assemble a SandboxDriver from Node.js-native adapters. Wraps the filesystem
- * in a ModuleAccessFileSystem overlay and applies permissive defaults when any
- * adapter is explicitly provided.
+ * Assemble a RuntimeDriver from Node.js-native adapters. Wraps the filesystem
+ * in a ModuleAccessFileSystem overlay and keeps capabilities deny-by-default
+ * unless explicit permissions are provided.
  */
-export function createNodeDriver(options: NodeDriverOptions = {}): SandboxDriver {
+export function createNodeDriver(options: NodeDriverOptions = {}): RuntimeDriver {
 	const filesystem = new ModuleAccessFileSystem(
 		options.filesystem,
 		options.moduleAccess ?? {},
 	);
-	const hasExplicitAdapter =
-		Boolean(options.filesystem) ||
-		Boolean(options.networkAdapter) ||
-		Boolean(options.commandExecutor) ||
-		Boolean(options.useDefaultNetwork) ||
-		Boolean(options.moduleAccess);
-	// Set up permissive defaults for direct driver construction.
-	const permissions =
-		options.permissions ?? (hasExplicitAdapter ? allowAll : undefined);
+	const permissions = options.permissions;
 	const networkAdapter = options.networkAdapter
 		? options.networkAdapter
 		: options.useDefaultNetwork
@@ -385,8 +384,21 @@ export function createNodeDriver(options: NodeDriverOptions = {}): SandboxDriver
 		network: networkAdapter,
 		commandExecutor: options.commandExecutor,
 		permissions,
+		runtime: {
+			process: {
+				...(options.processConfig ?? {}),
+			},
+			os: {
+				...(options.osConfig ?? {}),
+			},
+		},
+		runtimeHooks: {
+			createIsolate: (memoryLimit) => createIsolate(memoryLimit),
+			createExecutionDriver: (runtimeOptions) =>
+				new NodeExecutionDriver(runtimeOptions),
+		},
 	};
 }
 
-export { filterEnv };
+export { filterEnv, NodeExecutionDriver };
 export type { ModuleAccessOptions };

@@ -6,17 +6,8 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "browser": "./dist/browser/index.js",
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
-    },
-    "./browser": {
-      "import": "./dist/browser/index.js",
-      "types": "./dist/index.d.ts"
-    },
-    "./worker": {
-      "browser": "./dist/browser/worker.js",
-      "import": "./dist/browser/worker.js"
     }
   },
   "scripts": {

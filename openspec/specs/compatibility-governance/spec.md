@@ -45,7 +45,7 @@ Work touching secure-exec behavior SHALL keep follow-up work tracked in OpenSpec
 - **THEN** a new OpenSpec task or follow-up change MUST be added immediately with enough detail to guide follow-up work
 
 ### Requirement: Maintain Friction Log for Development Issues
-Unexpected issues, workarounds, and integration friction encountered during secure-exec development MUST be recorded in `docs-internal/friction/secure-exec.md`, and resolved items MUST be marked as resolved with fix notes.
+Unexpected issues, workarounds, and integration friction encountered during secure-exec development MUST be recorded in `docs-internal/friction.md`, and resolved items MUST be marked as resolved with fix notes.
 
 #### Scenario: Workaround is introduced during implementation
 - **WHEN** a change requires a workaround to unblock progress
@@ -107,7 +107,7 @@ Any runtime timing-hardening behavior that intentionally diverges from default N
 
 #### Scenario: Hardened timing mode is introduced or changed
 - **WHEN** a change adds or modifies timing hardening behavior (for example frozen clocks or disabled timing primitives)
-- **THEN** the change MUST update `docs-internal/friction/secure-exec.md` with the deviation and fix/intent notes
+- **THEN** the change MUST update `docs-internal/friction.md` with the deviation and fix/intent notes
 
 #### Scenario: Security-first default intentionally diverges from Node timing
 - **WHEN** timing hardening is enabled by default for sandbox execution
@@ -122,7 +122,7 @@ Any change that introduces or modifies the secure-exec CPU time limit contract M
 
 #### Scenario: CPU timeout contract is introduced or changed
 - **WHEN** runtime behavior for configured CPU limits changes (including option names, failure codes, or timeout stderr contract)
-- **THEN** `docs-internal/friction/secure-exec.md` MUST be updated with the behavior change and resolution notes
+- **THEN** `docs-internal/friction.md` MUST be updated with the behavior change and resolution notes
 
 #### Scenario: Research guidance reflects current CPU limit design
 - **WHEN** CPU limit implementation guidance is revised
@@ -163,7 +163,7 @@ Any change that introduces or modifies isolate-boundary payload size limits MUST
 
 #### Scenario: Boundary limit contract changes
 - **WHEN** runtime or bridge payload-size limits are introduced or changed for isolate-originated data
-- **THEN** `docs-internal/friction/secure-exec.md` MUST be updated with the behavior change, rationale, and resolution notes
+- **THEN** `docs-internal/friction.md` MUST be updated with the behavior change, rationale, and resolution notes
 
 #### Scenario: Security model reflects boundary guardrails
 - **WHEN** isolate-boundary payload limits are introduced or changed
@@ -196,7 +196,7 @@ Any intentional deviation from default Node.js behavior for filesystem metadata 
 
 #### Scenario: Driver cannot provide atomic rename semantics
 - **WHEN** a runtime/driver path cannot satisfy Node-like atomic rename behavior
-- **THEN** `docs-internal/friction/secure-exec.md` MUST record the limitation and supported behavior contract in the same change
+- **THEN** `docs-internal/friction.md` MUST record the limitation and supported behavior contract in the same change
 
 #### Scenario: Metadata behavior intentionally differs from Node expectations
 - **WHEN** filesystem metadata behavior diverges from default Node semantics for performance or platform constraints
@@ -225,7 +225,7 @@ Any change that introduces or modifies driver-managed host module projection or 
 
 #### Scenario: Scoped node_modules projection or always-on overlay behavior is introduced or changed
 - **WHEN** runtime or driver behavior for projected module access changes (including scope boundary, always-on overlay defaults, read-only policy, or native-addon rejection)
-- **THEN** `docs-internal/friction/secure-exec.md` MUST document the compatibility trade-off and resolution notes in the same change
+- **THEN** `docs-internal/friction.md` MUST document the compatibility trade-off and resolution notes in the same change
 
 #### Scenario: Host trust-boundary assumptions for module loading change
 - **WHEN** module-loading trust boundaries change due to driver-managed host dependency projection or always-on `cwd/node_modules` overlay
@@ -236,7 +236,7 @@ Any change that introduces or modifies runtime log-capture defaults or hook-base
 
 #### Scenario: Runtime switches default logging behavior
 - **WHEN** runtime logging defaults change (for example from buffered capture to log-drop)
-- **THEN** `docs-internal/friction/secure-exec.md` MUST document the compatibility impact and resource-exhaustion rationale in the same change
+- **THEN** `docs-internal/friction.md` MUST document the compatibility impact and resource-exhaustion rationale in the same change
 
 #### Scenario: Runtime introduces or changes log-stream hook behavior
 - **WHEN** runtime log-stream hook contract changes (event shape, ordering semantics, or failure behavior)

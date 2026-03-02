@@ -7,7 +7,7 @@ This example uses a loader/runner split:
   - `src/fetch-handler.ts` exports only `fetch`.
   - `src/server.ts` boots a real HTTP server using `@hono/node-server`.
 - `loader/` verifies the running sandbox server by calling `sandbox.network.fetch(...)`
-  (`NodeProcess.network.fetch(...)`) and then terminates the sandbox from the host.
+  (`NodeRuntime.network.fetch(...)`) and then terminates the sandbox from the host.
   - It also executes a probe that imports the exported fetch handler directly.
 - shared loader helpers live in `examples/shared/src/sandbox-runner-utils.ts`.
 

@@ -25,7 +25,7 @@
   - Add Node driver implementation backed by `node:http` (`packages/secure-exec/src/node/driver.ts`, `packages/secure-exec/src/types.ts`, `packages/secure-exec/src/shared/permissions.ts`).
 
 - [x] Expose host-side request path to sandbox servers via `sandbox.network.fetch(...)`.
-  - Provide a NodeProcess-level network facade and document concurrent run/fetch pattern (`packages/secure-exec/src/index.ts`, `README.md`, `examples/hono/README.md`).
+  - Provide a NodeRuntime-level network facade and document concurrent run/fetch pattern (`packages/secure-exec/src/index.ts`, `README.md`, `examples/hono/README.md`).
   - Validate end-to-end from loader to runner (`examples/hono/loader/src/index.ts`, `examples/hono/runner/src/index.ts`).
 
 - [x] Fix `run()` ESM semantics to match docs (return module exports/default instead of evaluation result).

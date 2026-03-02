@@ -5,7 +5,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
-import { NodeProcess, createNodeDriver } from "../src/index.js";
+import { NodeRuntime, allowAllFs, createNodeDriver } from "../src/index.js";
+import { createTestNodeRuntime } from "./test-utils.js";
 
 const execFileAsync = promisify(execFile);
 const TEST_TIMEOUT_MS = 55_000;
@@ -38,7 +39,7 @@ function formatErrorOutput(errorMessage: string | undefined): string {
 
 describe("moduleAccess compatibility fixture", () => {
 	const tempDirs: string[] = [];
-	let proc: NodeProcess | undefined;
+	let proc: NodeRuntime | undefined;
 
 	afterEach(async () => {
 		proc?.dispose();
@@ -85,9 +86,10 @@ describe("moduleAccess compatibility fixture", () => {
 				moduleAccess: {
 					cwd: projectDir,
 				},
+				permissions: allowAllFs,
 			});
 			const capturedEvents: CapturedConsoleEvent[] = [];
-			proc = new NodeProcess({
+			proc = createTestNodeRuntime({
 				driver: sandboxDriver,
 				onConsoleLog: (event) => {
 					capturedEvents.push(event);

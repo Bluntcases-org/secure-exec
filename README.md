@@ -1,6 +1,6 @@
 # Secure Exec SDK
 
-Run sandboxed Node.js code in both Node and the browser using a driver-based runtime.
+Run sandboxed Node.js code using a driver-based runtime.
 
 ## Features
 
@@ -10,8 +10,8 @@ Run sandboxed Node.js code in both Node and the browser using a driver-based run
 
 TODO:
 
-- **Node + Browser**: Same sandbox API on Node (isolated-vm) and browser (Worker isolate).
+- **Node runtime**: isolated-vm backed sandbox execution with driver-owned capability wiring.
+- **Browser runtime**: temporarily disabled during the driver-owned runtime refactor.
 - **Driver-based**: Provide a driver to map filesystem, network, and child_process.
 - **Permissions**: Gate syscalls with custom allow/deny functions.
 - **Opt-in system features**: Disable network/child_process/FS by omission.
-

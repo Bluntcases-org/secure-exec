@@ -36,5 +36,5 @@ Validation results:
 ## 4. Documentation And Governance Sync
 
 - [x] 4.1 Update `docs/security-model.mdx` with always-on `/app/node_modules` overlay boundary and strict `<cwd>/node_modules` containment assumptions.
-- [x] 4.2 Update `docs-internal/friction/secure-exec.md` with compatibility/security trade-offs from removing allowlist-scoped projection defaults.
+- [x] 4.2 Update `docs-internal/friction.md` with compatibility/security trade-offs from removing allowlist-scoped projection defaults.
 - [x] 4.3 Update `docs/node-compatability.mdx` with user-visible module-loading behavior changes (overlay availability and read-only path behavior) if matrix-facing behavior changed.

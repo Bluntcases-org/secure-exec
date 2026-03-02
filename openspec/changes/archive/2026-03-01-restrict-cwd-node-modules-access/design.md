@@ -77,7 +77,7 @@ Alternatives considered:
 2. Implement host-side closure discovery with strict `<cwd>/node_modules` containment checks and `.node` rejection.
 3. Materialize the closure into sandbox `/app/node_modules` and enforce read-only module-path policy.
 4. Add runtime and permissions tests plus compatibility fixture coverage for allowlisted success and non-allowlisted failure.
-5. Update `docs/security-model.mdx` and `docs-internal/friction/secure-exec.md` with boundary behavior and known trade-offs.
+5. Update `docs/security-model.mdx` and `docs-internal/friction.md` with boundary behavior and known trade-offs.
 
 Rollback:
 - If regressions appear, disable `moduleAccess` path and continue requiring explicit caller-provided sandbox filesystem population.

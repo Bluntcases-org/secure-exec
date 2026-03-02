@@ -20,7 +20,7 @@
 
 ## 4. Documentation And Validation
 
-- [x] 4.1 Update `docs-internal/friction/secure-exec.md` with the security rationale and compatibility trade-off for default log-drop behavior.
+- [x] 4.1 Update `docs-internal/friction.md` with the security rationale and compatibility trade-off for default log-drop behavior.
 - [x] 4.2 Update `docs/security-model.mdx` and `docs/node-compatability.mdx` with the new logging contract (default ignore + explicit streaming hook).
 - [x] 4.3 Run required checks and record results in this task file: `pnpm -C packages/secure-exec check-types`, targeted `vitest` suites for logging behavior, and `pnpm turbo build --filter secure-exec`.
   - `pnpm -C packages/secure-exec check-types` ✅

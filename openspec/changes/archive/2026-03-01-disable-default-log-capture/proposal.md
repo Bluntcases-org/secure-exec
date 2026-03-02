@@ -31,6 +31,6 @@ The current runtime buffers all console output in host memory (`stdout`/`stderr`
   - new tests for default log-drop and streaming-hook emission semantics
   - any fixture/tests depending on buffered stdout/stderr from secure-exec runtime
 - Affected docs/governance:
-  - `docs-internal/friction/secure-exec.md`
+  - `docs-internal/friction.md`
   - `docs/security-model.mdx`
   - `docs/node-compatability.mdx` (if user-facing compatibility matrix/logging behavior callouts are impacted)

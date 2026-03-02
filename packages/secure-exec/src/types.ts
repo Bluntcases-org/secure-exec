@@ -234,9 +234,10 @@ export interface Permissions {
 	env?: PermissionCheck<EnvAccessRequest>;
 }
 
-export interface SandboxDriver {
-	filesystem?: VirtualFileSystem;
-	network?: NetworkAdapter;
-	commandExecutor?: CommandExecutor;
-	permissions?: Permissions;
-}
+export type {
+	DriverRuntimeConfig,
+	DriverRuntimeHooks,
+	RuntimeExecutionDriver,
+	RuntimeExecutionDriverOptions,
+	RuntimeDriver,
+} from "./runtime-driver.js";

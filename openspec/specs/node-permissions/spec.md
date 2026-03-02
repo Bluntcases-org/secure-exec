@@ -37,7 +37,7 @@ The `filterEnv` function SHALL return an empty object `{}` when no `permissions.
 The system SHALL export an `allowAll` constant of type `Permissions` where every domain checker (`fs`, `network`, `childProcess`, `env`) returns `{ allow: true }`.
 
 #### Scenario: Sandbox created with allowAll permits all operations
-- **WHEN** a `NodeProcess` is created with `permissions: allowAll` and a filesystem adapter
+- **WHEN** a `NodeRuntime` is created with `permissions: allowAll` and a filesystem adapter
 - **THEN** all filesystem operations SHALL succeed without `EACCES` errors
 
 #### Scenario: allowAll is a valid Permissions object
@@ -48,7 +48,7 @@ The system SHALL export an `allowAll` constant of type `Permissions` where every
 The system SHALL export per-domain allow helpers: `allowAllFs`, `allowAllNetwork`, `allowAllChildProcess`, `allowAllEnv`. Each SHALL be a partial `Permissions` object containing only the corresponding domain checker returning `{ allow: true }`.
 
 #### Scenario: Compose per-domain helpers for selective access
-- **WHEN** a `NodeProcess` is created with `permissions: { ...allowAllFs, ...allowAllNetwork }` and both filesystem and network adapters
+- **WHEN** a `NodeRuntime` is created with `permissions: { ...allowAllFs, ...allowAllNetwork }` and both filesystem and network adapters
 - **THEN** filesystem and network operations SHALL succeed, while child-process and env operations SHALL throw `EACCES`
 
 ### Requirement: Explicit deny overrides adapter presence

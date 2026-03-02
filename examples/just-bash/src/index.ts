@@ -1,6 +1,7 @@
 import { Bash, InMemoryFs, type IFileSystem } from "just-bash";
 import {
-  NodeProcess,
+  allowAll,
+  NodeRuntime,
   createNodeDriver,
   type CommandExecutor,
   type SpawnedProcess,
@@ -85,9 +86,13 @@ async function main(): Promise<void> {
 
   const virtualFs = createVirtualFs(bashFs);
   const commandExecutor = new JustBashCommandExecutor(bash);
-  const driver = createNodeDriver({ filesystem: virtualFs, commandExecutor });
+  const driver = createNodeDriver({
+    filesystem: virtualFs,
+    commandExecutor,
+    permissions: allowAll,
+  });
 
-  const proc = new NodeProcess({ driver });
+  const proc = new NodeRuntime({ driver });
   const result = await proc.exec(`
     const { execSync } = require('child_process');
     const output = execSync('echo hello from bash');

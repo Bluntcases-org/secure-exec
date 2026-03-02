@@ -22,4 +22,4 @@
 
 - [x] 4.1 Add or update runtime tests to confirm require/bridge/bootstrap behavior remains parity-consistent after isolate-runtime extraction.
 - [x] 4.2 Run secure-exec verification commands: `pnpm -C packages/secure-exec check-types`, `pnpm -C packages/secure-exec test`, and `pnpm turbo build --filter secure-exec`.
-- [x] 4.3 Update `docs-internal/friction/secure-exec.md` with migration notes and mark resolved friction related to dynamic isolate code assembly.
+- [x] 4.3 Update `docs-internal/friction.md` with migration notes and mark resolved friction related to dynamic isolate code assembly.

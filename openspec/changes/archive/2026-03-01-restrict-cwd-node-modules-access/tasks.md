@@ -20,7 +20,7 @@
 ## 4. Compatibility Coverage And Documentation
 
 - [x] 4.1 Add/update black-box compatibility fixture project(s) under `packages/secure-exec/tests/projects/` to validate host-node vs secure-exec parity for allowed-module loading behavior.
-- [x] 4.2 Update `docs-internal/friction/secure-exec.md` with scoped-projection trade-offs and mark resolved friction entries with fix notes where applicable.
+- [x] 4.2 Update `docs-internal/friction.md` with scoped-projection trade-offs and mark resolved friction entries with fix notes where applicable.
 - [x] 4.3 Update `docs/security-model.mdx` to document module-loading trust boundaries, including enforced `<cwd>/node_modules` containment.
 - [x] 4.4 Run required verification for this change (`pnpm -C packages/secure-exec check-types`, targeted vitest coverage, and `pnpm turbo build --filter secure-exec`) and record results in task notes.
   - `2026-02-28`: `pnpm -C packages/secure-exec check-types` passed.

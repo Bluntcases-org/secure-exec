@@ -36,5 +36,5 @@ secure-exec currently requires callers to pre-populate sandbox `node_modules` in
   - permission and filesystem write-denial coverage in `packages/secure-exec/tests/permissions.test.ts`
   - compatibility fixtures under `packages/secure-exec/tests/projects/`
 - Docs/governance:
-  - `docs-internal/friction/secure-exec.md`
+  - `docs-internal/friction.md`
   - `docs/security-model.mdx` (module trust-boundary clarification)

@@ -2,18 +2,26 @@
 
 ## 2026-03-01
 
-1. **[resolved]** Default console capture buffered unbounded host memory.
+1. **[resolved]** `NodeRuntime` constructor ownership drifted between driver and direct adapter options.
+   - Symptom: runtime capability and config ownership was split across `NodeRuntime` fallbacks and `createNodeDriver`, which made permission defaults and runtime injection behavior harder to reason about.
+   - Fix: `NodeRuntime` now requires a `driver`, reads `processConfig`/`osConfig` from `driver.runtime`, and no longer accepts direct constructor adapters/permissions.
+   - Follow-up: a dedicated pass should continue moving remaining `isolated-vm` execution internals from `NodeRuntime` into the Node driver implementation.
+2. **[resolved]** Browser runtime surface needed temporary de-scope during driver boundary refactor.
+   - Symptom: maintaining Worker/browser runtime paths during Node driver ownership changes increased refactor risk and cross-runtime drift.
+   - Fix: browser package exports were removed for this phase and browser entrypoints now return deterministic unsupported errors until follow-up restoration.
+
+3. **[resolved]** Default console capture buffered unbounded host memory.
    - Symptom: runtime execution accumulated console output in host-managed `stdout`/`stderr` arrays by default, enabling memory amplification under high-volume logs.
    - Fix: runtime now drops console output by default and exposes an explicit streaming hook (`onConsoleLog`) for host-controlled log handling.
    - Compatibility trade-off: `exec()`/`run()` no longer mirror Node stdout/stderr buffering by default; result payloads no longer expose `stdout`/`stderr` fields, so consumers that need logs must opt into hook-based streaming.
    - Migration note: switch any `result.stderr` checks to `result.errorMessage` for runtime error assertions.
-2. **[resolved]** Node module loading depended on allowlist projection setup and split filesystem paths.
+4. **[resolved]** Node module loading depended on allowlist projection setup and split filesystem paths.
    - Symptom: sandbox `node_modules` availability varied by `moduleAccess.allowPackages` setup and base filesystem mount location, which added resolver complexity and setup fragility.
    - Fix: Node driver now always composes a read-only `/app/node_modules` overlay from `<cwd>/node_modules`, even without a base filesystem adapter. Overlay reads are canonical-path scoped to `<cwd>/node_modules`; writes/mutations remain denied; `.node` native addons are rejected.
    - Compatibility trade-off: allowlist-scoped dependency visibility was removed in favor of scoped full-overlay readability under `<cwd>/node_modules`; callers needing stricter package-level exposure must enforce it outside runtime for now.
-3. TODO: document extension attack vectors and hardening guidance.
+5. TODO: document extension attack vectors and hardening guidance.
    - Symptom: extension-oriented threat scenarios are not documented as a consolidated runtime/bridge/driver risk model.
-   - Next step: add extension-focused vectors and mitigations to `docs-internal/todo/attack-vectors.md`, including memory amplification/buffering abuse, CPU amplification, timer/event-rate amplification, and extension host-hook abuse paths.
+   - Next step: add extension-focused vectors and mitigations to `docs-internal/attack-vectors.md`, including memory amplification/buffering abuse, CPU amplification, timer/event-rate amplification, and extension host-hook abuse paths.
 
 ## 2026-02-28
 
@@ -87,7 +95,7 @@
 
 2. **[resolved]** Needed host-driven verification path for sandbox HTTP servers.
    - Symptom: Hono runner self-tested using in-sandbox `fetch`, which did not verify host-to-sandbox request path.
-   - Fix: added host-side `NodeProcess.network.fetch(...)` facade and updated `examples/hono/loader` to issue requests and terminate from loader.
+   - Fix: added host-side `NodeRuntime.network.fetch(...)` facade and updated `examples/hono/loader` to issue requests and terminate from loader.
 
 3. **[resolved]** Bridge bundle could go stale when non-entry bridge files changed.
    - Symptom: runtime still used old `dist/bridge.js` behavior (for example `http.createServer` still throwing) after editing `src/bridge/network.ts`.

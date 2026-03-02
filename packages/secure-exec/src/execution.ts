@@ -37,7 +37,7 @@ type ExecuteOptions = {
 
 /**
  * Abstraction over the runtime environment that `executeWithRuntime` depends on.
- * The `NodeProcess` class implements this interface, providing all the
+ * The `NodeRuntime` class implements this interface, providing all the
  * isolate setup, module loading, and bridge wiring that the generic
  * execution loop delegates to.
  */

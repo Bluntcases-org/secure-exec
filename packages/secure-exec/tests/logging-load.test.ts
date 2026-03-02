@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { NodeProcess } from "../src/index.js";
+import { NodeRuntime } from "../src/index.js";
+import { createTestNodeRuntime } from "./test-utils.js";
 
 describe("logging load", () => {
-	let proc: NodeProcess | undefined;
+	let proc: NodeRuntime | undefined;
 
 	afterEach(() => {
 		proc?.dispose();
@@ -12,7 +13,7 @@ describe("logging load", () => {
 	it(
 		"drops high-volume logs without exposing buffered stdout/stderr fields",
 		async () => {
-			proc = new NodeProcess();
+			proc = createTestNodeRuntime();
 			const lineCount = 40_000;
 			const payloadChars = 256;
 

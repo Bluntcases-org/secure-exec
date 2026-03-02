@@ -13,13 +13,18 @@
 
 - use `docs-internal/glossary.md` for canonical definitions of isolate, runtime, bridge, and driver
 
+## Node Architecture
+
+- read `docs-internal/arch/overview.md` for the component map (NodeProcess, SandboxDriver, NodeDriver, NodeExecutionDriver, ModuleAccessFileSystem, Permissions)
+- keep it up to date when adding, removing, or significantly changing components
+
 ## Specs Source of Truth
 
 - bridge/runtime/governance requirements are canonical in `openspec/specs/`
 - for secure-exec runtime behavior, target Node.js semantics as close to 1:1 as practical
 - any intentional deviation from Node.js behavior must be explicitly documented in OpenSpec deltas and reflected in compatibility/friction docs
 - use `openspec/specs/README.md` for how to reference baseline capabilities in new change proposals
-- track development friction in `docs-internal/friction/secure-exec.md` (mark resolved items with fix notes)
+- track development friction in `docs-internal/friction.md` (mark resolved items with fix notes)
 - OpenSpec proposals/design/tasks MUST explicitly list the concrete tests to add or update for the change
 
 ## Compatibility Project-Matrix Policy
