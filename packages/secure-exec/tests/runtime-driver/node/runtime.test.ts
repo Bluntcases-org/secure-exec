@@ -40,7 +40,9 @@ describe("runtime driver specific: node", () => {
 			createNodeRuntimeDriverFactory();
 		const runtime = new NodeRuntime({
 			memoryLimit: 128,
-			cpuTimeLimitMs: 250,
+			// Keep the default runtime limit low enough to exercise node-only
+			// construction options without depending on machine-specific startup jitter.
+			cpuTimeLimitMs: 500,
 			timingMitigation: "off",
 			payloadLimits: {
 				base64TransferBytes: 4096,
