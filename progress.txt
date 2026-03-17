@@ -75,6 +75,7 @@ PRD: ralph/kernel-hardening (46 stories)
 - Per-execution budget state: `budgetState` object reset via `resetBudgetState()` before each context creation (executeInternal and __unsafeCreateContext)
 - Kernel maxProcesses: check `processTable.runningCount() >= maxProcesses` in spawnInternal before PID allocation; throws EAGAIN
 - ERR_RESOURCE_BUDGET_EXCEEDED is the error code for all bridge resource budget violations
+- maxBuffer enforcement: host-side for sync paths (spawnSyncRef tracks bytes, kills, returns maxBufferExceeded flag), bridge-side for async paths (exec/execFile track bytes, kill child); default 1MB for exec/execSync/execFile/execFileSync, unlimited for spawnSync
 
 ---
 
@@ -478,4 +479,20 @@ PRD: ralph/kernel-hardening (46 stories)
   - Per-execution budget state must be reset before each context creation (both executeInternal and __unsafeCreateContext paths)
   - Timer budget uses concurrent count (_timers.size + _intervals.size) — setTimeout entries are removed when they fire, setInterval entries persist until clearInterval
   - Kernel maxProcesses uses processTable.runningCount() which counts only "running" status entries — exited processes don't consume slots
+---
+
+## 2026-03-17 - US-032
+- What was implemented: maxBuffer enforcement on child-process output buffering for execSync, spawnSync, exec, execFile, and execFileSync
+- Files changed:
+  - packages/secure-exec/src/node/execution-driver.ts — spawnSyncRef now accepts maxBuffer in options, tracks stdout/stderr bytes, kills process and returns maxBufferExceeded flag when exceeded
+  - packages/secure-exec/src/bridge/child-process.ts — exec() tracks output bytes with default 1MB maxBuffer, kills child on exceed; execSync() passes maxBuffer through RPC, checks maxBufferExceeded in response; spawnSync() passes maxBuffer through RPC, returns error in result; execFile() same pattern as exec(); execFileSync() passes maxBuffer to spawnSync, throws on exceed
+  - packages/secure-exec/tests/runtime-driver/node/maxbuffer.test.ts — new test file with 10 tests: execSync within/exceeding/small/default maxBuffer, spawnSync stdout/stderr independent enforcement and no-enforcement-when-unset, execFileSync within/exceeding limits
+  - prd.json — marked US-032 as passes: true
+- **Learnings for future iterations:**
+  - Host-side spawnSyncRef is where maxBuffer enforcement must happen for sync paths — the host buffers all output before returning to bridge
+  - maxBuffer passed through JSON options in the RPC call ({cwd, env, maxBuffer}); host returns {maxBufferExceeded: true} flag
+  - Default maxBuffer 1MB applies to execSync/execFileSync (Node.js convention); spawnSync has no default (unlimited unless explicitly set)
+  - Async exec/execFile maxBuffer enforcement happens bridge-side — data arrives via _childProcessDispatch, bridge tracks bytes and kills child via host kill reference
+  - Async exec tests timeout in mock executor setup because streaming dispatch (host→isolate applySync) requires real kernel integration; sync paths are fully testable with mock executors
+  - ERR_CHILD_PROCESS_STDIO_MAXBUFFER is the standard Node.js error code for this condition
 ---

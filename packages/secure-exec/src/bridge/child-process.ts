@@ -344,21 +344,45 @@ function exec(
   child.spawnargs = ["bash", "-c", command];
   child.spawnfile = "bash";
 
-  // Collect output and invoke callback
+  // Collect output and invoke callback with maxBuffer enforcement
+  const maxBuffer = (options as nodeChildProcess.ExecOptions | undefined)?.maxBuffer ?? 1024 * 1024;
   let stdout = "";
   let stderr = "";
+  let stdoutBytes = 0;
+  let stderrBytes = 0;
+  let maxBufferExceeded = false;
 
   child.stdout.on("data", (data: unknown) => {
-    stdout += String(data);
+    const chunk = String(data);
+    stdout += chunk;
+    stdoutBytes += chunk.length;
+    if (stdoutBytes > maxBuffer && !maxBufferExceeded) {
+      maxBufferExceeded = true;
+      child.kill("SIGTERM");
+    }
   });
 
   child.stderr.on("data", (data: unknown) => {
-    stderr += String(data);
+    const chunk = String(data);
+    stderr += chunk;
+    stderrBytes += chunk.length;
+    if (stderrBytes > maxBuffer && !maxBufferExceeded) {
+      maxBufferExceeded = true;
+      child.kill("SIGTERM");
+    }
   });
 
   child.on("close", (code: number) => {
     if (callback) {
-      if (code !== 0) {
+      if (maxBufferExceeded) {
+        const err: ExecError = new Error("stdout maxBuffer length exceeded");
+        err.code = "ERR_CHILD_PROCESS_STDIO_MAXBUFFER" as unknown as number;
+        err.killed = true;
+        err.cmd = command;
+        err.stdout = stdout;
+        err.stderr = stderr;
+        callback(err, stdout, stderr);
+      } else if (code !== 0) {
         const err: ExecError = new Error("Command failed: " + command);
         err.code = code;
         err.killed = false;
@@ -398,13 +422,24 @@ function execSync(
     throw new Error("child_process.execSync requires CommandExecutor to be configured");
   }
 
+  // Default maxBuffer 1MB (Node.js convention)
+  const maxBuffer = opts.maxBuffer ?? 1024 * 1024;
+
   // Use synchronous bridge call - result is JSON string
   const jsonResult = _childProcessSpawnSync.applySyncPromise(undefined, [
     "bash",
     JSON.stringify(["-c", command]),
-    JSON.stringify({ cwd: opts.cwd, env: opts.env as Record<string, string> }),
+    JSON.stringify({ cwd: opts.cwd, env: opts.env as Record<string, string>, maxBuffer }),
   ]);
-  const result = JSON.parse(jsonResult) as { stdout: string; stderr: string; code: number };
+  const result = JSON.parse(jsonResult) as { stdout: string; stderr: string; code: number; maxBufferExceeded?: boolean };
+
+  if (result.maxBufferExceeded) {
+    const err: ExecError = new Error("stdout maxBuffer length exceeded");
+    err.code = "ERR_CHILD_PROCESS_STDIO_MAXBUFFER" as unknown as number;
+    err.stdout = result.stdout;
+    err.stderr = result.stderr;
+    throw err;
+  }
 
   if (result.code !== 0) {
     const err: ExecError = new Error("Command failed: " + command);
@@ -555,16 +590,33 @@ function spawnSync(
     // This ensures process.chdir() changes are reflected in child processes
     const effectiveCwd = opts.cwd ?? (typeof process !== "undefined" ? process.cwd() : "/");
 
+    // Pass maxBuffer through to host for enforcement
+    const maxBuffer = opts.maxBuffer as number | undefined;
+
     // Args passed as JSON string for transferability
     const jsonResult = _childProcessSpawnSync.applySyncPromise(undefined, [
       command,
       JSON.stringify(argsArray),
-      JSON.stringify({ cwd: effectiveCwd, env: opts.env as Record<string, string> }),
+      JSON.stringify({ cwd: effectiveCwd, env: opts.env as Record<string, string>, maxBuffer }),
     ]);
-    const result = JSON.parse(jsonResult) as { stdout: string; stderr: string; code: number };
+    const result = JSON.parse(jsonResult) as { stdout: string; stderr: string; code: number; maxBufferExceeded?: boolean };
 
     const stdoutBuf = typeof Buffer !== "undefined" ? Buffer.from(result.stdout) : result.stdout;
     const stderrBuf = typeof Buffer !== "undefined" ? Buffer.from(result.stderr) : result.stderr;
+
+    if (result.maxBufferExceeded) {
+      const err: ExecError = new Error("stdout maxBuffer length exceeded");
+      err.code = "ERR_CHILD_PROCESS_STDIO_MAXBUFFER" as unknown as number;
+      return {
+        pid: Math.floor(Math.random() * 10000) + 1000,
+        output: [null, stdoutBuf as string | Buffer, stderrBuf as string | Buffer],
+        stdout: stdoutBuf as string | Buffer,
+        stderr: stderrBuf as string | Buffer,
+        status: result.code,
+        signal: null,
+        error: err,
+      };
+    }
 
     return {
       pid: Math.floor(Math.random() * 10000) + 1000,
@@ -613,22 +665,45 @@ function execFile(
     cb = callback;
   }
 
-  // execFile is like spawn but with callback
+  // execFile is like spawn but with callback, with maxBuffer enforcement
+  const maxBuffer = opts.maxBuffer ?? 1024 * 1024;
   const child = spawn(file, argsArray, opts as nodeChildProcess.SpawnOptions);
 
   let stdout = "";
   let stderr = "";
+  let stdoutBytes = 0;
+  let stderrBytes = 0;
+  let maxBufferExceeded = false;
 
   child.stdout.on("data", (data: unknown) => {
-    stdout += String(data);
+    const chunk = String(data);
+    stdout += chunk;
+    stdoutBytes += chunk.length;
+    if (stdoutBytes > maxBuffer && !maxBufferExceeded) {
+      maxBufferExceeded = true;
+      child.kill("SIGTERM");
+    }
   });
   child.stderr.on("data", (data: unknown) => {
-    stderr += String(data);
+    const chunk = String(data);
+    stderr += chunk;
+    stderrBytes += chunk.length;
+    if (stderrBytes > maxBuffer && !maxBufferExceeded) {
+      maxBufferExceeded = true;
+      child.kill("SIGTERM");
+    }
   });
 
   child.on("close", (code: number) => {
     if (cb) {
-      if (code !== 0) {
+      if (maxBufferExceeded) {
+        const err: ExecError = new Error("stdout maxBuffer length exceeded");
+        err.code = "ERR_CHILD_PROCESS_STDIO_MAXBUFFER" as unknown as number;
+        err.killed = true;
+        err.stdout = stdout;
+        err.stderr = stderr;
+        cb(err, stdout, stderr);
+      } else if (code !== 0) {
         const err: ExecError = new Error("Command failed: " + file);
         err.code = code;
         err.stdout = stdout;
@@ -665,7 +740,13 @@ function execFileSync(
     opts = options || {};
   }
 
-  const result = spawnSync(file, argsArray, opts as nodeChildProcess.SpawnSyncOptions);
+  // Default maxBuffer 1MB for execFileSync (Node.js convention)
+  const maxBuffer = opts.maxBuffer ?? 1024 * 1024;
+  const result = spawnSync(file, argsArray, { ...opts, maxBuffer } as nodeChildProcess.SpawnSyncOptions);
+
+  if (result.error && String((result.error as ExecError).code) === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") {
+    throw result.error;
+  }
 
   if (result.status !== 0) {
     const err: ExecError = new Error("Command failed: " + file);

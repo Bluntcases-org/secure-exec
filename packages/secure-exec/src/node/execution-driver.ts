@@ -1277,19 +1277,38 @@ export class NodeExecutionDriver implements RuntimeDriver {
 					const options = this.parseJsonWithLimit<{
 						cwd?: string;
 						env?: Record<string, string>;
+						maxBuffer?: number;
 					}>("child_process.spawnSync options", optionsJson);
 
-					// Collect stdout/stderr
+					// Collect stdout/stderr with optional maxBuffer enforcement
+					const maxBuffer = options.maxBuffer;
 					const stdoutChunks: Uint8Array[] = [];
 					const stderrChunks: Uint8Array[] = [];
+					let stdoutBytes = 0;
+					let stderrBytes = 0;
+					let maxBufferExceeded = false;
 
 					const proc = executor.spawn(command, args, {
 						cwd: options.cwd,
 						env: options.env,
 						onStdout: (data) => {
+							if (maxBufferExceeded) return;
+							stdoutBytes += data.length;
+							if (maxBuffer !== undefined && stdoutBytes > maxBuffer) {
+								maxBufferExceeded = true;
+								proc.kill(15);
+								return;
+							}
 							stdoutChunks.push(data);
 						},
 						onStderr: (data) => {
+							if (maxBufferExceeded) return;
+							stderrBytes += data.length;
+							if (maxBuffer !== undefined && stderrBytes > maxBuffer) {
+								maxBufferExceeded = true;
+								proc.kill(15);
+								return;
+							}
 							stderrChunks.push(data);
 						},
 					});
@@ -1302,7 +1321,7 @@ export class NodeExecutionDriver implements RuntimeDriver {
 					const stdout = stdoutChunks.map((c) => decoder.decode(c)).join("");
 					const stderr = stderrChunks.map((c) => decoder.decode(c)).join("");
 
-					return JSON.stringify({ stdout, stderr, code: exitCode });
+					return JSON.stringify({ stdout, stderr, code: exitCode, maxBufferExceeded });
 				},
 			);
 
