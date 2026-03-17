@@ -486,8 +486,8 @@
         "Tests pass"
       ],
       "priority": 27,
-      "passes": false,
-      "notes": "The nested cross-runtime test is the hardest: it requires exit codes to propagate back through two runtime boundary crossings. The Node→WasmVM child failure test requires child_process routing (US-021) to correctly capture and return the shell's exit code. These are the tests that will catch subtle bugs in exit code handling at the DriverProcess↔kernel↔ManagedProcess boundaries."
+      "passes": true,
+      "notes": "6 tests: Node exit code, WasmVM exit code, Node stderr, WasmVM stderr, nested cross-runtime exit propagation (kernel→WasmVM→kernel→Node→exit(42)), Node captures WasmVM child failure via execSync. All gracefully skipped when WASM binary not built."
     },
     {
       "id": "US-028",

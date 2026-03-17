@@ -436,3 +436,16 @@ Started: 2026-03-16
   - `neverExit: true` config makes MockRuntimeDriver processes hang until explicitly killed — useful for dispose/timeout tests
   - Integration dispose tests need 10s vitest timeout (second arg to it()) since processes may take time to clean up
 ---
+
+## 2026-03-16 - US-027
+- Created error-propagation.test.ts with 6 tests covering cross-runtime error and exit code propagation
+- Tests: Node exit(42) propagation, WasmVM "exit 7" propagation, Node stderr capture, WasmVM stderr redirect capture, nested cross-runtime exit (sh→node→exit(42)), Node execSync catching WasmVM child failure
+- All tests use createIntegrationKernel({ runtimes: ['wasmvm', 'node'] })
+- Gracefully skipped when WASM binary not built (describe.skipIf)
+- Files changed: packages/secure-exec/tests/kernel/error-propagation.test.ts (new)
+- 157 secure-exec tests pass (6 error-propagation tests skipped — WASM not built), typecheck passes
+- **Learnings for future iterations:**
+  - kernel.exec() returns { exitCode, stdout, stderr } — stderr is a string, check with toContain()
+  - For nested cross-runtime tests, shell quoting requires escaped inner quotes: `sh -c "node -e \\"process.exit(42)\\""`
+  - child_process.execSync error objects have `.status` property containing the exit code
+---
