@@ -1,8 +1,9 @@
 import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { FDTable, FILETYPE_REGULAR_FILE, ERRNO_SUCCESS, ERRNO_EBADF, ERRNO_EINVAL,
-  RIGHT_FD_READ, RIGHT_FD_WRITE, RIGHT_FD_SEEK } from '../src/fd-table.ts';
-import { VFS } from '../src/vfs.ts';
+  RIGHT_FD_READ, RIGHT_FD_WRITE, RIGHT_FD_SEEK } from './helpers/test-fd-table.ts';
+import { VFS } from './helpers/test-vfs.ts';
+import { createStandaloneFileIO, createStandaloneProcessIO } from './helpers/test-bridges.ts';
 import { WasiPolyfill, WasiProcExit, ERRNO_ENOSYS, ERRNO_ESPIPE } from '../src/wasi-polyfill.ts';
 
 // --- Test helpers ---
@@ -45,7 +46,11 @@ function createTestSetup(options: Record<string, unknown> = {}) {
   const fdTable = new FDTable();
   const vfs = new VFS();
   const memory = createMockMemory();
-  const wasi = new WasiPolyfill(fdTable, vfs, { memory, ...options });
+  const args = (options.args as string[] | undefined) ?? [];
+  const env = (options.env as Record<string, string> | undefined) ?? {};
+  const fileIO = createStandaloneFileIO(fdTable, vfs);
+  const processIO = createStandaloneProcessIO(fdTable, args, env);
+  const wasi = new WasiPolyfill(fdTable, vfs, { fileIO, processIO, memory, ...options });
   return { fdTable, vfs, memory, wasi };
 }
 

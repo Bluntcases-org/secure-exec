@@ -7,8 +7,9 @@ import { FDTable, FILETYPE_REGULAR_FILE, FILETYPE_DIRECTORY, FILETYPE_CHARACTER_
   RIGHT_PATH_OPEN, RIGHT_PATH_CREATE_DIRECTORY, RIGHT_PATH_UNLINK_FILE,
   RIGHT_PATH_REMOVE_DIRECTORY, RIGHT_PATH_RENAME_SOURCE, RIGHT_PATH_RENAME_TARGET,
   RIGHT_PATH_SYMLINK, RIGHT_PATH_READLINK, RIGHT_PATH_FILESTAT_GET,
-  RIGHT_PATH_FILESTAT_SET_TIMES, RIGHT_PATH_CREATE_FILE } from '../src/fd-table.ts';
-import { VFS } from '../src/vfs.ts';
+  RIGHT_PATH_FILESTAT_SET_TIMES, RIGHT_PATH_CREATE_FILE } from './helpers/test-fd-table.ts';
+import { VFS } from './helpers/test-vfs.ts';
+import { createStandaloneFileIO, createStandaloneProcessIO } from './helpers/test-bridges.ts';
 import { WasiPolyfill, ERRNO_ESPIPE, ERRNO_EISDIR, ERRNO_ENOENT, ERRNO_EEXIST,
   ERRNO_ENOTDIR, ERRNO_ENOTEMPTY } from '../src/wasi-polyfill.ts';
 
@@ -55,7 +56,11 @@ function createTestSetup(options: Record<string, unknown> = {}) {
   const fdTable = new FDTable();
   const vfs = new VFS();
   const memory = createMockMemory();
-  const wasi = new WasiPolyfill(fdTable, vfs, { memory, ...options });
+  const args = (options.args as string[] | undefined) ?? [];
+  const env = (options.env as Record<string, string> | undefined) ?? {};
+  const fileIO = createStandaloneFileIO(fdTable, vfs);
+  const processIO = createStandaloneProcessIO(fdTable, args, env);
+  const wasi = new WasiPolyfill(fdTable, vfs, { fileIO, processIO, memory, ...options });
   return { fdTable, vfs, memory, wasi };
 }
 

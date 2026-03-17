@@ -5,12 +5,7 @@
   "type": "module",
   "main": "src/index.ts",
   "exports": {
-    ".": "./src/index.ts",
-    "./worker": {
-      "browser": "./src/worker-entry.browser.ts",
-      "import": "./src/worker-entry.ts",
-      "default": "./src/worker-entry.ts"
-    }
+    ".": "./src/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

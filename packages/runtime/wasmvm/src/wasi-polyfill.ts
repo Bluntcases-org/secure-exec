@@ -45,22 +45,19 @@ import {
   ERRNO_SUCCESS,
   ERRNO_EBADF,
   ERRNO_EINVAL,
-  FDTable,
-} from './fd-table.ts';
+} from './wasi-constants.ts';
 
+import { VfsError } from './wasi-types.ts';
 import type {
   WasiFiletype,
   FDEntry,
   FDResource,
-} from './fd-table.ts';
-
-import type { VFS } from './vfs.ts';
-import { VfsError } from './vfs.ts';
-import type { VfsErrorCode } from './vfs.ts';
+  VfsErrorCode,
+  WasiFDTable,
+  WasiVFS,
+} from './wasi-types.ts';
 import type { WasiFileIO } from './wasi-file-io.ts';
-import { createStandaloneFileIO } from './wasi-file-io.ts';
 import type { WasiProcessIO } from './wasi-process-io.ts';
-import { createStandaloneProcessIO } from './wasi-process-io.ts';
 
 // Additional WASI errno codes
 export const ERRNO_ESPIPE: number = 70;
@@ -182,14 +179,16 @@ type StdoutWriter = (buf: Uint8Array, offset: number, length: number) => number;
 
 /** Options for constructing a WasiPolyfill instance. */
 export interface WasiOptions {
+  fileIO: WasiFileIO;
+  processIO: WasiProcessIO;
   args?: string[];
   env?: Record<string, string>;
   stdin?: Uint8Array | string | null;
   memory?: { buffer: ArrayBuffer } | null;
 }
 
-/** VFS inode as returned by getInodeByIno -- inferred from VFS class. */
-type VfsInode = NonNullable<ReturnType<VFS['getInodeByIno']>>;
+/** VFS inode as returned by WasiVFS.getInodeByIno(). */
+type VfsInode = NonNullable<ReturnType<WasiVFS['getInodeByIno']>>;
 
 /** The wasi_snapshot_preview1 import object shape. */
 export type WasiImports = Record<string, Function>;
@@ -217,8 +216,8 @@ function concatBytes(arrays: Uint8Array[]): Uint8Array {
  * Additional operations added in US-008, US-009.
  */
 export class WasiPolyfill {
-  fdTable: FDTable;
-  vfs: VFS;
+  fdTable: WasiFDTable;
+  vfs: WasiVFS;
   args: string[];
   env: Record<string, string>;
   memory: { buffer: ArrayBuffer } | null;
@@ -235,13 +234,13 @@ export class WasiPolyfill {
   private _stderrChunks: Uint8Array[];
   private _preopens: Map<number, string>;
 
-  constructor(fdTable: FDTable, vfs: VFS, options: WasiOptions = {}) {
+  constructor(fdTable: WasiFDTable, vfs: WasiVFS, options: WasiOptions) {
     this.fdTable = fdTable;
     this.vfs = vfs;
-    this._fileIO = createStandaloneFileIO(fdTable, vfs);
+    this._fileIO = options.fileIO;
     this.args = options.args ?? [];
     this.env = options.env ?? {};
-    this._processIO = createStandaloneProcessIO(fdTable, this.args, this.env);
+    this._processIO = options.processIO;
     this.memory = options.memory ?? null;
     this.exitCode = null;
 

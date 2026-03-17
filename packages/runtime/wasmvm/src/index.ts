@@ -1,8 +1,39 @@
 /**
  * wasmVM WasmCore host runtime.
  *
+ * Exports the WASI polyfill and supporting types. The polyfill delegates
+ * all OS-layer state (VFS, FD table, process table) to the kernel.
+ *
  * @module @wasmvm/host
  */
 
-export { WasmOS } from './wasm-os.ts';
-export { default } from './wasm-os.ts';
+export { WasiPolyfill, WasiProcExit } from './wasi-polyfill.ts';
+export type { WasiOptions, WasiImports } from './wasi-polyfill.ts';
+export type { WasiFileIO } from './wasi-file-io.ts';
+export type { WasiProcessIO } from './wasi-process-io.ts';
+export { UserManager } from './user.ts';
+export type { UserManagerOptions, HostUserImports } from './user.ts';
+
+// Re-export WASI constants and types for downstream consumers
+export * from './wasi-constants.ts';
+export {
+  VfsError,
+  FDEntry,
+  FileDescription,
+} from './wasi-types.ts';
+export type {
+  WasiFiletype,
+  VfsErrorCode,
+  WasiVFS,
+  WasiFDTable,
+  WasiInode,
+  VfsStat,
+  VfsSnapshotEntry,
+  FDResource,
+  StdioResource,
+  VfsFileResource,
+  PreopenResource,
+  PipeBuffer,
+  PipeResource,
+  FDOpenOptions,
+} from './wasi-types.ts';

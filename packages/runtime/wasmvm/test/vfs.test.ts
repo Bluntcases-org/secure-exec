@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { VFS, VfsError } from '../src/vfs.ts';
+import { VFS, VfsError } from './helpers/test-vfs.ts';
 
 describe('VFS', () => {
   describe('initial layout', () => {

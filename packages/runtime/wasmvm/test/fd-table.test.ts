@@ -14,7 +14,7 @@ import {
   RIGHT_PATH_OPEN,
   ERRNO_SUCCESS,
   ERRNO_EBADF,
-} from '../src/fd-table.ts';
+} from './helpers/test-fd-table.ts';
 
 describe('FDTable', () => {
   describe('stdio pre-allocation', () => {

@@ -6,7 +6,7 @@ import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { UserManager } from '../src/user.ts';
 import { FDTable, FILETYPE_CHARACTER_DEVICE, FILETYPE_REGULAR_FILE, FILETYPE_UNKNOWN,
-         RIGHT_FD_READ, RIGHT_FD_WRITE } from '../src/fd-table.ts';
+         RIGHT_FD_READ, RIGHT_FD_WRITE } from './helpers/test-fd-table.ts';
 
 // Helper: create a WASM-like Memory with ArrayBuffer
 function createMockMemory(size = 1024): { buffer: ArrayBuffer } {

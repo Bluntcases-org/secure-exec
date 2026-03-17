@@ -6,7 +6,8 @@
  * getuid, getgid, geteuid, getegid, isatty, getpwuid.
  */
 
-import { FILETYPE_CHARACTER_DEVICE, FDTable } from './fd-table.ts';
+import { FILETYPE_CHARACTER_DEVICE } from './wasi-constants.ts';
+import type { WasiFDTable } from './wasi-types.ts';
 
 const ERRNO_SUCCESS = 0;
 const ERRNO_EBADF = 8;
@@ -14,7 +15,7 @@ const ERRNO_ENOSYS = 52;
 
 export interface UserManagerOptions {
   getMemory: () => WebAssembly.Memory | null;
-  fdTable?: FDTable;
+  fdTable?: WasiFDTable;
   uid?: number;
   gid?: number;
   euid?: number;
@@ -40,7 +41,7 @@ export interface HostUserImports {
  */
 export class UserManager {
   private _getMemory: () => WebAssembly.Memory | null;
-  private _fdTable: FDTable | null;
+  private _fdTable: WasiFDTable | null;
   private _uid: number;
   private _gid: number;
   private _euid: number;

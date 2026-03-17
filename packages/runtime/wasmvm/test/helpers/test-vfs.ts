@@ -1,26 +1,15 @@
 /**
- * In-memory virtual filesystem with inode-based storage.
+ * In-memory virtual filesystem with inode-based storage (test helper).
  *
+ * Concrete implementation of the WasiVFS interface for unit testing.
  * Supports directories, regular files, symlinks, and special device nodes.
  * Pre-populated with standard Unix layout.
  */
 
-/** VFS error codes matching POSIX errno names. */
-export type VfsErrorCode = 'ENOENT' | 'EEXIST' | 'ENOTDIR' | 'EISDIR' | 'ENOTEMPTY' | 'EACCES' | 'EBADF' | 'EINVAL' | 'EPERM';
-
-/**
- * Structured error for VFS operations.
- * Carries a machine-readable `code` so callers can map to errno without string matching.
- */
-export class VfsError extends Error {
-  readonly code: VfsErrorCode;
-
-  constructor(code: VfsErrorCode, message: string) {
-    super(`${code}: ${message}`);
-    this.code = code;
-    this.name = 'VfsError';
-  }
-}
+import type { VfsStat, VfsSnapshotEntry, WasiVFS, WasiInode } from '../../src/wasi-types.ts';
+export { VfsError } from '../../src/wasi-types.ts';
+export type { VfsErrorCode } from '../../src/wasi-types.ts';
+import { VfsError } from '../../src/wasi-types.ts';
 
 // Inode types
 const INODE_FILE = 'file' as const;
@@ -40,33 +29,10 @@ const DEFAULT_SYMLINK_MODE: number = 0o777;
 // Max symlink follow depth to prevent loops
 const MAX_SYMLINK_DEPTH: number = 40;
 
-/** Snapshot entry used for serializing/deserializing VFS state. */
-export interface VfsSnapshotEntry {
-  type: string;
-  path: string;
-  data?: Uint8Array;
-  mode?: number;
-  target?: string;
-}
-
-/** Stat result for a filesystem object. */
-export interface VfsStat {
-  ino: number;
-  type: InodeType;
-  mode: number;
-  uid: number;
-  gid: number;
-  nlink: number;
-  size: number;
-  atime: number;
-  mtime: number;
-  ctime: number;
-}
-
 /**
  * An inode representing a filesystem object.
  */
-class Inode {
+class Inode implements WasiInode {
   type: InodeType;
   mode: number;
   uid: number;
@@ -116,7 +82,7 @@ class Inode {
 /**
  * In-memory virtual filesystem.
  */
-export class VFS {
+export class VFS implements WasiVFS {
   private _inodes: Map<number, Inode>;
   private _nextIno: number;
   private _root: number;

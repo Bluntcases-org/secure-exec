@@ -10,6 +10,10 @@ Started: 2026-03-16
 - WASI polyfill file I/O goes through WasiFileIO bridge (wasi-file-io.ts); stdio/pipe handling stays in the polyfill
 - WASI polyfill process/FD-stat goes through WasiProcessIO bridge (wasi-process-io.ts); proc_exit exception still thrown by polyfill
 - WASI error precedence: check filetype before rights (e.g., ESPIPE before EBADF in fd_seek)
+- WasmVM src/ has NO standalone OS-layer code; WASI constants in wasi-constants.ts, interfaces in wasi-types.ts
+- WasmVM polyfill constructor requires { fileIO, processIO } in options — callers must provide bridge implementations
+- Concrete VFS/FDTable/bridge implementations live in test/helpers/ (test infrastructure only)
+- WasmVM package name is `@secure-exec/runtime-wasmvm` (not `@secure-exec/wasmvm`)
 
 ---
 
@@ -113,4 +117,38 @@ Started: 2026-03-16
   - Bridge pattern: interface returns raw data, polyfill handles WASM memory serialization
   - proc_exit has two concerns: recording exit (bridge) and unwinding WASM stack (exception, stays in polyfill)
   - fd_fdstat_set_flags is a mutation, not a stat read — it stays in the polyfill until a broader FD mutation bridge is needed
+---
+
+## 2026-03-16 - US-014
+- Deleted 7 standalone OS-layer source files from packages/runtime/wasmvm/src/:
+  - vfs.ts (762 lines) — standalone in-memory VFS with device nodes and /bin population
+  - fd-table.ts (415 lines) — standalone WASI FD table
+  - process.ts (925 lines) — standalone ProcessManager with Worker spawning
+  - pipeline.ts (293 lines) — standalone PipelineOrchestrator
+  - wasm-os.ts (176 lines) — standalone WasmOS top-level orchestrator
+  - worker-entry.ts (247 lines) — standalone worker bootstrap (dead code without ProcessManager/Pipeline)
+  - worker-entry.browser.ts (222 lines) — standalone browser worker bootstrap
+- Created new src/ files:
+  - wasi-constants.ts — all WASI protocol constants (FILETYPE_*, ERRNO_*, RIGHT_*, FDFLAG_*)
+  - wasi-types.ts — interfaces (WasiFDTable, WasiVFS, WasiInode), types (FDEntry, FDResource, etc.), VfsError class
+- Refactored src/ files:
+  - wasi-file-io.ts → interface only (deleted createStandaloneFileIO)
+  - wasi-process-io.ts → interface only (deleted createStandaloneProcessIO)
+  - wasi-polyfill.ts → imports from new files, constructor requires { fileIO, processIO } bridge options
+  - user.ts → imports from wasi-constants.ts and wasi-types.ts
+  - index.ts → exports new types/interfaces
+  - package.json → removed ./worker export (deleted worker-entry files)
+- Moved concrete implementations to test/helpers/:
+  - test-vfs.ts — VFS class implementing WasiVFS interface
+  - test-fd-table.ts — FDTable class implementing WasiFDTable interface
+  - test-bridges.ts — createStandaloneFileIO and createStandaloneProcessIO
+  - index.ts — re-exports for convenience
+- Deleted 16 test files for deleted source (process, pipeline, wasm-os, worker-entry, 12 integration tests)
+- Updated 4 test files to import from test/helpers/ and pass bridge options
+- 340 WasmVM tests pass, 36 kernel tests pass, typecheck passes
+- **Learnings for future iterations:**
+  - WasmVM polyfill uses synchronous VFS ops — kernel VFS is async, so US-017 needs SAB bridge or sync adapter
+  - VFS.getInodeByIno() and getIno() are implementation-specific methods needed by polyfill for filestat_set_times — future cleanup should replace with utimes()
+  - Integration tests (awk, coreutils, etc.) depend on WasmOS → Pipeline → worker-entry chain; will be recreated as kernel integration tests in US-020+
+  - Test helpers re-export from wasi-constants and wasi-types so existing tests can import from one file
 ---
