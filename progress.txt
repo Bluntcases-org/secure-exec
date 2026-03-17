@@ -84,6 +84,7 @@ PRD: ralph/kernel-hardening (46 stories)
 - Fastify fixture uses `app.routing(req, res)` for programmatic dispatch — avoids light-my-request's deep ServerResponse dependency; `app.server.emit("request")` won't work because sandbox Server lacks full EventEmitter
 - Sandbox Server class needs `setTimeout`, `keepAliveTimeout`, `requestTimeout` properties for framework compatibility — added as no-ops
 - Moving a module from Unsupported (Tier 5) to Deferred (Tier 4) requires changes in: module-resolver.ts, require-setup.ts, node-stdlib.md contract, and adding BUILTIN_NAMED_EXPORTS entry
+- `declare module` for untyped npm packages must live in a `.d.ts` file (not `.ts`) — TypeScript treats it as augmentation in `.ts` files and fails with TS2665
 
 ---
 
@@ -612,4 +613,16 @@ PRD: ralph/kernel-hardening (46 stories)
   - Both project-matrix.test.ts and e2e-project-matrix.test.ts have parallel prep logic that must be kept in sync
   - npm creates flat node_modules (same structure as bun) — good proxy for testing bun layout without requiring bun installed
   - Cache key must include the package manager name and version to avoid cross-PM cache collisions
+---
+
+## 2026-03-17 - US-039
+- Removed @ts-nocheck from polyfills.ts and os.ts
+- Files changed:
+  - packages/secure-exec/src/bridge/polyfills.ts — removed @ts-nocheck, module declaration moved to .d.ts
+  - packages/secure-exec/src/bridge/text-encoding-utf-8.d.ts — NEW: type declaration for untyped text-encoding-utf-8 package
+  - packages/secure-exec/src/bridge/os.ts — removed @ts-nocheck, used type assertions for partial polyfill types
+- **Learnings for future iterations:**
+  - `declare module` for untyped packages cannot go in `.ts` files (treated as augmentation, fails TS2665); must use separate `.d.ts` file
+  - os.ts is a polyfill providing a Linux subset — Node.js types include Windows WSA* errno constants and RTLD_DEEPBIND that don't apply; cast sub-objects rather than adding unused constants
+  - userInfo needs `nodeOs.UserInfoOptions` parameter type (not raw `{ encoding: BufferEncoding }`) to match overloaded signatures
 ---
