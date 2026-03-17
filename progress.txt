@@ -166,3 +166,14 @@ PRD: ralph/kernel-hardening (46 stories)
   - fdStat(pid, fd).filetype can verify FD type (FILETYPE_PIPE vs FILETYPE_CHARACTER_DEVICE) without needing internal table access
   - Pipe data flow tests (write→read across pid boundaries) are the strongest verification that wiring is correct — filetype alone doesn't prove the right description was installed
 ---
+
+## 2026-03-17 - US-010
+- What was implemented: Added concurrent PID stress tests spawning 100 processes — verifies PID uniqueness and exit code capture under high concurrency
+- Files changed:
+  - packages/kernel/test/kernel-integration.test.ts — added "concurrent PID stress (100 processes)" describe block with 2 tests: PID uniqueness and exit code correctness
+  - prd.json — marked US-010 as passes: true
+- **Learnings for future iterations:**
+  - 100 concurrent mock processes complete in ~30ms — MockRuntimeDriver's queueMicrotask-based exit is effectively instant
+  - Exit codes can be varied per command via configs (i % 256) to verify each process's exit is captured individually, not just "all exited 0"
+  - ProcessTable.allocatePid() handles 100+ concurrent spawns without PID collision — atomic allocation works correctly
+---
