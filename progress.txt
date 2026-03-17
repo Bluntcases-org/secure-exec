@@ -76,6 +76,9 @@ PRD: ralph/kernel-hardening (46 stories)
 - Kernel maxProcesses: check `processTable.runningCount() >= maxProcesses` in spawnInternal before PID allocation; throws EAGAIN
 - ERR_RESOURCE_BUDGET_EXCEEDED is the error code for all bridge resource budget violations
 - maxBuffer enforcement: host-side for sync paths (spawnSyncRef tracks bytes, kills, returns maxBufferExceeded flag), bridge-side for async paths (exec/execFile track bytes, kill child); default 1MB for exec/execSync/execFile/execFileSync, unlimited for spawnSync
+- Adding a new bridge fs operation requires 10+ file changes: types.ts, all 4 VFS impls, permissions.ts, bridge-contract.ts, global-exposure.ts, setup-fs-facade.ts, runtime-globals.d.ts, execution-driver.ts, bridge/fs.ts, and runtime-node adapters
+- Bridge fs.ts `bridgeCall()` helper wraps applySyncPromise calls with ENOENT/EACCES/EEXIST error re-creation — use it for ALL new bridge fs methods
+- runtime-node has two VFS adapters (createKernelVfsAdapter, createHostFallbackVfs) that both need new VFS methods forwarded
 
 ---
 
@@ -521,4 +524,30 @@ PRD: ralph/kernel-hardening (46 stories)
   - StatsFs type in Node.js @types expects number fields (not bigint) — use `as unknown as nodeFs.StatsFs` cast for synthetic return
   - Glob implementation uses late-bound references (`_globReadDir`, `_globStat`) assigned after `fs` object definition to avoid circular reference issues
   - readvSync follows writev pattern: iterate buffers, call readSync per buffer, advance position, stop on partial read (EOF)
+---
+
+## 2026-03-17 - US-035
+- What was implemented: Wired deferred fs APIs (chmod, chown, link, symlink, readlink, truncate, utimes) through the bridge to VFS
+- Files changed:
+  - packages/secure-exec/src/types.ts — Added new VFS methods + FsAccessRequest ops
+  - packages/secure-exec/src/shared/in-memory-fs.ts — Added symlink/readlink/lstat/link/chmod/chown/utimes/truncate implementations with symlink resolution
+  - packages/secure-exec/src/node/driver.ts (NodeFileSystem) — Delegated to node:fs/promises
+  - packages/secure-exec/src/node/module-access.ts (ModuleAccessFileSystem) — Delegated to base VFS with read-only projection guards
+  - packages/secure-exec/src/browser/driver.ts (OpfsFileSystem) — Added stubs (ENOSYS for unsupported, no-op for metadata)
+  - packages/secure-exec/src/shared/permissions.ts — Added permission wrappers, fsOpToSyscall cases, stubs for new ops
+  - packages/secure-exec/src/shared/bridge-contract.ts — Added 8 new host bridge keys, types, facade interface members
+  - packages/secure-exec/src/shared/global-exposure.ts — Added inventory entries
+  - packages/secure-exec/isolate-runtime/src/inject/setup-fs-facade.ts — Added refs to facade
+  - packages/secure-exec/isolate-runtime/src/common/runtime-globals.d.ts — Added global type declarations
+  - packages/secure-exec/src/node/execution-driver.ts — Wired 8 new ivm References to VFS methods
+  - packages/secure-exec/src/bridge/fs.ts — Replaced "not supported" throws with real sync/async/callback/promises implementations; updated watch/watchFile message to include "use polling"
+  - packages/runtime/node/src/driver.ts — Added new methods to kernel VFS adapters
+  - .agent/contracts/node-stdlib.md — Updated deferred API classification
+  - tests/runtime-driver/node/index.test.ts — Added 12 tests covering sync/async/callback/promises/permissions
+- **Learnings for future iterations:**
+  - Adding a new bridge fs operation requires changes in 10+ files: types.ts (VFS+FsAccessRequest), all 4 VFS implementations, permissions.ts, bridge-contract.ts, global-exposure.ts, setup-fs-facade.ts, runtime-globals.d.ts, execution-driver.ts, bridge/fs.ts, and runtime-node adapter
+  - Bridge errors that cross the isolate boundary lose their .code property — new bridge methods MUST use bridgeCall() wrapper for ENOENT/EACCES/EEXIST error re-creation
+  - InMemoryFileSystem needs explicit symlink tracking (Map<string, string>) and a resolveSymlink() helper with max-depth loop detection
+  - VirtualStat.isSymbolicLink must be optional (?) since older code doesn't set it
+  - runtime-node has two VFS adapters (createKernelVfsAdapter, createHostFallbackVfs) that both need updating for new VFS methods
 ---
