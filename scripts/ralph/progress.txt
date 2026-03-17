@@ -46,3 +46,17 @@ Started: Tue Mar 17 02:30:23 AM PDT 2026
   - Post-review resets may not require code changes if the prior implementation already meets the updated criteria — always verify before reimplementing
   - vi.useFakeTimers() with vi.advanceTimersByTime() is the pattern for testing timer-based cleanup in this codebase
 ---
+
+## 2026-03-17 16:48 PDT - US-049
+- **Verified**: pnpm layout fixture already has real pnpm-installed structure from prior commit (7acca5a)
+- pnpm-lock.yaml, .pnpm/ directory, left-pad symlink all present
+- secure-exec project-matrix passes pnpm-layout-pass
+- **Files changed**: `scripts/ralph/prd.json` — marked passes: true
+---
+
+## 2026-03-17 16:48 PDT - US-050
+- **Verified**: bun layout fixture already has real bun-installed structure from prior commit (35fe8b1)
+- bun.lock (modern text format, replaces bun.lockb), fixture.json has packageManager: bun
+- secure-exec project-matrix passes bun-layout-pass
+- **Files changed**: `scripts/ralph/prd.json` — marked passes: true
+---

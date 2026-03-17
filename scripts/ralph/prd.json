@@ -827,7 +827,7 @@
         "Tests pass"
       ],
       "priority": 49,
-      "passes": false,
+      "passes": true,
       "notes": "P9 \u2014 US-038 pnpm fixture was a stub with no .pnpm/ structure or pnpm-lock.yaml. packages/secure-exec/tests/projects/pnpm-layout-pass/"
     },
     {
@@ -845,7 +845,7 @@
         "Tests pass"
       ],
       "priority": 50,
-      "passes": false,
+      "passes": true,
       "notes": "P9 \u2014 US-038 bun fixture was misnamed. fixture.json said npm, no bun.lockb. packages/secure-exec/tests/projects/bun-layout-pass/"
     },
     {
