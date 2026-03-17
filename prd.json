@@ -709,7 +709,7 @@
         "Tests pass"
       ],
       "priority": 42,
-      "passes": false,
+      "passes": true,
       "notes": "P7 — packages/secure-exec/isolate-runtime/src/inject/bridge-initial-globals.ts. Currently uses JSON.stringify/parse."
     },
     {

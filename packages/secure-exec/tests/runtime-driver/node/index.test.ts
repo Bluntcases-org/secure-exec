@@ -323,6 +323,164 @@ describe("NodeRuntime", () => {
 		expect(exports.heapSizeLimitType).toBe("number");
 	});
 
+	it("v8.serialize roundtrips Map", async () => {
+		proc = createTestNodeRuntime();
+		const result = await proc.run(`
+			const v8 = require('v8');
+			const m = new Map([['a', 1], ['b', 2]]);
+			const buf = v8.serialize(m);
+			const out = v8.deserialize(buf);
+			module.exports = {
+				isMap: out instanceof Map,
+				size: out.size,
+				a: out.get('a'),
+				b: out.get('b'),
+			};
+		`);
+		const e = result.exports as Record<string, unknown>;
+		expect(e.isMap).toBe(true);
+		expect(e.size).toBe(2);
+		expect(e.a).toBe(1);
+		expect(e.b).toBe(2);
+	});
+
+	it("v8.serialize roundtrips Set", async () => {
+		proc = createTestNodeRuntime();
+		const result = await proc.run(`
+			const v8 = require('v8');
+			const s = new Set([1, 2, 3]);
+			const buf = v8.serialize(s);
+			const out = v8.deserialize(buf);
+			module.exports = {
+				isSet: out instanceof Set,
+				size: out.size,
+				has1: out.has(1),
+				has2: out.has(2),
+				has3: out.has(3),
+			};
+		`);
+		const e = result.exports as Record<string, unknown>;
+		expect(e.isSet).toBe(true);
+		expect(e.size).toBe(3);
+		expect(e.has1).toBe(true);
+		expect(e.has2).toBe(true);
+		expect(e.has3).toBe(true);
+	});
+
+	it("v8.serialize roundtrips RegExp", async () => {
+		proc = createTestNodeRuntime();
+		const result = await proc.run(`
+			const v8 = require('v8');
+			const r = /foo/gi;
+			const buf = v8.serialize(r);
+			const out = v8.deserialize(buf);
+			module.exports = {
+				isRegExp: out instanceof RegExp,
+				source: out.source,
+				flags: out.flags,
+			};
+		`);
+		const e = result.exports as Record<string, unknown>;
+		expect(e.isRegExp).toBe(true);
+		expect(e.source).toBe("foo");
+		expect(e.flags).toBe("gi");
+	});
+
+	it("v8.serialize roundtrips Date", async () => {
+		proc = createTestNodeRuntime();
+		const result = await proc.run(`
+			const v8 = require('v8');
+			const d = new Date(0);
+			const buf = v8.serialize(d);
+			const out = v8.deserialize(buf);
+			module.exports = {
+				isDate: out instanceof Date,
+				time: out.getTime(),
+			};
+		`);
+		const e = result.exports as Record<string, unknown>;
+		expect(e.isDate).toBe(true);
+		expect(e.time).toBe(0);
+	});
+
+	it("v8.serialize roundtrips circular references", async () => {
+		proc = createTestNodeRuntime();
+		const result = await proc.run(`
+			const v8 = require('v8');
+			const obj = { a: 1 };
+			obj.self = obj;
+			const buf = v8.serialize(obj);
+			const out = v8.deserialize(buf);
+			module.exports = {
+				a: out.a,
+				selfIsObj: out.self === out,
+			};
+		`);
+		const e = result.exports as Record<string, unknown>;
+		expect(e.a).toBe(1);
+		expect(e.selfIsObj).toBe(true);
+	});
+
+	it("v8.serialize preserves undefined, NaN, Infinity, -Infinity, BigInt", async () => {
+		proc = createTestNodeRuntime();
+		const result = await proc.run(`
+			const v8 = require('v8');
+			function rt(v) { return v8.deserialize(v8.serialize(v)); }
+			const undef = rt(undefined);
+			const nan = rt(NaN);
+			const inf = rt(Infinity);
+			const ninf = rt(-Infinity);
+			const big = rt(42n);
+			module.exports = {
+				undefIsUndefined: undef === undefined,
+				nanIsNaN: Number.isNaN(nan),
+				infIsInfinity: inf === Infinity,
+				ninfIsNegInfinity: ninf === -Infinity,
+				bigIsBigInt: typeof big === 'bigint',
+				bigValue: Number(big),
+			};
+		`);
+		const e = result.exports as Record<string, unknown>;
+		expect(e.undefIsUndefined).toBe(true);
+		expect(e.nanIsNaN).toBe(true);
+		expect(e.infIsInfinity).toBe(true);
+		expect(e.ninfIsNegInfinity).toBe(true);
+		expect(e.bigIsBigInt).toBe(true);
+		expect(e.bigValue).toBe(42);
+	});
+
+	it("v8.serialize preserves ArrayBuffer and typed arrays", async () => {
+		proc = createTestNodeRuntime();
+		const result = await proc.run(`
+			const v8 = require('v8');
+			const ab = new ArrayBuffer(4);
+			new Uint8Array(ab).set([1, 2, 3, 4]);
+			const abOut = v8.deserialize(v8.serialize(ab));
+
+			const u8 = new Uint8Array([10, 20, 30]);
+			const u8Out = v8.deserialize(v8.serialize(u8));
+
+			const f32 = new Float32Array([1.5, 2.5]);
+			const f32Out = v8.deserialize(v8.serialize(f32));
+
+			module.exports = {
+				abIsArrayBuffer: abOut instanceof ArrayBuffer,
+				abBytes: Array.from(new Uint8Array(abOut)),
+				u8IsUint8Array: u8Out instanceof Uint8Array,
+				u8Values: Array.from(u8Out),
+				f32IsFloat32Array: f32Out instanceof Float32Array,
+				f32Len: f32Out.length,
+			};
+		`);
+		const e = result.exports as Record<string, unknown>;
+		expect(e.abIsArrayBuffer).toBe(true);
+		expect(e.abBytes).toEqual([1, 2, 3, 4]);
+		expect(e.u8IsUint8Array).toBe(true);
+		expect(e.u8Values).toEqual([10, 20, 30]);
+		expect(e.f32IsFloat32Array).toBe(true);
+		expect(e.f32Len).toBe(2);
+	});
+
 	it("errors for unknown modules", async () => {
 		proc = createTestNodeRuntime();
 		const result = await proc.exec(`require('nonexistent-module')`);

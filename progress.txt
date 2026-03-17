@@ -651,3 +651,17 @@ PRD: ralph/kernel-hardening (46 stories)
   - The `whatwg-url` package (v15) has no built-in types — needs a local `.d.ts` module declaration
   - For `_addListener`/`_removeListener` helper functions that return `process` (forward reference), use `unknown` return type to break the cycle
 ---
+
+## 2026-03-17 - US-042
+- What was implemented: Replaced JSON-based v8.serialize/deserialize with structured clone serializer supporting Map, Set, RegExp, Date, BigInt, circular refs, undefined, NaN, ±Infinity, ArrayBuffer, and typed arrays
+- Files changed:
+  - packages/secure-exec/isolate-runtime/src/inject/bridge-initial-globals.ts — added __scEncode/__scDecode functions implementing tagged JSON structured clone format; serialize wraps in {$v8sc:1,d:...} envelope, deserialize detects envelope and falls back to legacy JSON
+  - packages/secure-exec/src/generated/isolate-runtime.ts — rebuilt by build-isolate-runtime.mjs
+  - packages/secure-exec/tests/runtime-driver/node/index.test.ts — added 7 roundtrip tests: Map, Set, RegExp, Date, circular refs, special primitives (undefined/NaN/Infinity/-Infinity/BigInt), ArrayBuffer and typed arrays
+  - prd.json — marked US-042 as passes: true
+- **Learnings for future iterations:**
+  - isolate-runtime code is compiled by esbuild into IIFE and stored in src/generated/isolate-runtime.ts — run `node scripts/build-isolate-runtime.mjs` from packages/secure-exec after modifying any file in isolate-runtime/src/inject/
+  - To avoid ambiguity in the tagged JSON format, all non-primitive values (including plain objects and arrays) must be tagged — prevents confusion between a tagged type `{t:"map",...}` and a plain object that happens to have a `t` key
+  - Legacy JSON format fallback in deserialize ensures backwards compatibility if older serialized buffers exist
+  - v8.serialize tests must roundtrip inside the isolate (serialize + deserialize in same run) since the Buffer format is sandbox-specific, not compatible with real V8 wire format
+---
