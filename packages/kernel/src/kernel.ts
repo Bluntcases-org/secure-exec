@@ -20,6 +20,7 @@ import type {
 	FDStat,
 	OpenShellOptions,
 	ShellHandle,
+	ConnectTerminalOptions,
 } from "./types.js";
 import type { VirtualFileSystem, VirtualStat } from "./vfs.js";
 import { createDeviceLayer } from "./device-layer.js";
@@ -250,6 +251,50 @@ class KernelImpl implements Kernel {
 			},
 			wait: () => proc.wait(),
 		};
+	}
+
+	async connectTerminal(options?: ConnectTerminalOptions): Promise<number> {
+		this.assertNotDisposed();
+
+		const shell = this.openShell(options);
+
+		const stdin = process.stdin;
+		const stdout = process.stdout;
+		const isTTY = stdin.isTTY;
+
+		// Set raw mode so keypresses pass through directly
+		if (isTTY) stdin.setRawMode(true);
+
+		// Forward stdin to shell
+		const onStdinData = (data: Buffer) => shell.write(data);
+		stdin.on("data", onStdinData);
+		stdin.resume();
+
+		// Forward shell output to stdout or custom handler
+		const outputHandler = options?.onData
+			?? ((data: Uint8Array) => { stdout.write(data); });
+		shell.onData = outputHandler;
+
+		// Handle terminal resize
+		const onResize = () => {
+			shell.resize(stdout.columns || 80, stdout.rows || 24);
+		};
+		if (stdout.isTTY) stdout.on("resize", onResize);
+
+		// Set initial terminal size
+		if (stdout.isTTY) {
+			shell.resize(stdout.columns || 80, stdout.rows || 24);
+		}
+
+		try {
+			return await shell.wait();
+		} finally {
+			// Restore terminal
+			stdin.removeListener("data", onStdinData);
+			stdin.pause();
+			if (isTTY) stdin.setRawMode(false);
+			if (stdout.isTTY) stdout.removeListener("resize", onResize);
+		}
 	}
 
 	// Filesystem convenience wrappers

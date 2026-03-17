@@ -2364,4 +2364,70 @@ describe("kernel + MockRuntimeDriver integration", () => {
 			shell.kill();
 		});
 	});
+
+	// -----------------------------------------------------------------------
+	// connectTerminal
+	// -----------------------------------------------------------------------
+
+	describe("connectTerminal", () => {
+		it("returns shell exit code 0", async () => {
+			const driver = new MockRuntimeDriver(["sh"]);
+			({ kernel } = await createTestKernel({ drivers: [driver] }));
+
+			const code = await kernel.connectTerminal();
+			expect(code).toBe(0);
+		});
+
+		it("returns custom shell exit code", async () => {
+			const driver = new MockRuntimeDriver(["sh"], {
+				sh: { exitCode: 42 },
+			});
+			({ kernel } = await createTestKernel({ drivers: [driver] }));
+
+			const code = await kernel.connectTerminal();
+			expect(code).toBe(42);
+		});
+
+		it("forwards command and args to openShell", async () => {
+			const driver = new MockRuntimeDriver(["bash"], {
+				bash: { exitCode: 7 },
+			});
+			({ kernel } = await createTestKernel({ drivers: [driver] }));
+
+			const code = await kernel.connectTerminal({
+				command: "bash",
+				args: ["--norc"],
+			});
+			expect(code).toBe(7);
+		});
+
+		it("onData override receives shell output", async () => {
+			const driver = new MockRuntimeDriver(["sh"], {
+				sh: { readStdinFromKernel: true, survivableSignals: [2, 20, 28] },
+			});
+			({ kernel } = await createTestKernel({ drivers: [driver] }));
+
+			const chunks: Uint8Array[] = [];
+			const connectPromise = kernel.connectTerminal({
+				onData: (data) => chunks.push(new Uint8Array(data)),
+			});
+
+			// Send data through stdin → PTY master → line discipline → slave → mock reads → writes back → master → onData
+			await new Promise((r) => setTimeout(r, 10));
+			process.stdin.emit("data", Buffer.from("hi\n"));
+
+			// Send ^D on empty line to exit the shell
+			await new Promise((r) => setTimeout(r, 10));
+			process.stdin.emit("data", Buffer.from("\x04"));
+
+			const code = await connectPromise;
+			expect(code).toBe(0);
+
+			// Shell output should contain the echoed input (from PTY echo) and the program output
+			const output = new TextDecoder().decode(
+				new Uint8Array(chunks.reduce((acc, c) => [...acc, ...c], [] as number[])),
+			);
+			expect(output).toContain("hi");
+		});
+	});
 });

@@ -39,6 +39,7 @@ export type {
 	TermiosCC,
 	OpenShellOptions,
 	ShellHandle,
+	ConnectTerminalOptions,
 } from "./types.js";
 
 // Structured kernel error and termios defaults

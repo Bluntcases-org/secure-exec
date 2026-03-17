@@ -50,6 +50,13 @@ export interface Kernel {
 	 */
 	openShell(options?: OpenShellOptions): ShellHandle;
 
+	/**
+	 * Wire openShell() to process.stdin/stdout for an interactive terminal session.
+	 * Sets raw mode, forwards input/output, handles resize, restores terminal on exit.
+	 * Returns the shell exit code.
+	 */
+	connectTerminal(options?: ConnectTerminalOptions): Promise<number>;
+
 	// Filesystem convenience wrappers
 	readFile(path: string): Promise<Uint8Array>;
 	writeFile(path: string, content: string | Uint8Array): Promise<void>;
@@ -133,6 +140,15 @@ export interface ShellHandle {
 	kill(signal?: number): void;
 	/** Wait for the shell to exit. Returns exit code. */
 	wait(): Promise<number>;
+}
+
+/**
+ * Options for connectTerminal().
+ * Extends OpenShellOptions with an optional output handler override.
+ */
+export interface ConnectTerminalOptions extends OpenShellOptions {
+	/** Custom output handler. Defaults to writing to process.stdout. */
+	onData?: (data: Uint8Array) => void;
 }
 
 // ---------------------------------------------------------------------------
