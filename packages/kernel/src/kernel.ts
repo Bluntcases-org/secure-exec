@@ -787,6 +787,10 @@ class KernelImpl implements Kernel {
 				const table = this.getTable(pid);
 				const entry = table.get(fd);
 				if (!entry) throw new KernelError("EBADF", `bad file descriptor ${fd}`);
+				// Validate target PGID refers to an existing process group
+				if (!this.processTable.hasProcessGroup(pgid)) {
+					throw new KernelError("ESRCH", `no such process group ${pgid}`);
+				}
 				this.ptyManager.setForegroundPgid(entry.description.id, pgid);
 			},
 			tcgetpgrp: (pid, fd) => {

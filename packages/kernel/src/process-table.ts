@@ -231,6 +231,14 @@ export class ProcessTable {
 		return entry.ppid;
 	}
 
+	/** Check if any running process belongs to the given process group. */
+	hasProcessGroup(pgid: number): boolean {
+		for (const entry of this.entries.values()) {
+			if (entry.pgid === pgid && entry.status !== "exited") return true;
+		}
+		return false;
+	}
+
 	/** Get a read-only view of process info for all processes. */
 	listProcesses(): Map<number, ProcessInfo> {
 		const result = new Map<number, ProcessInfo>();

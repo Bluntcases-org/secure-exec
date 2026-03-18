@@ -2993,6 +2993,47 @@ describe("kernel + MockRuntimeDriver integration", () => {
 			parent.kill();
 		});
 
+		it("tcsetpgrp with non-existent pgid throws ESRCH", async () => {
+			const driver = new MockRuntimeDriver(["proc"], {
+				proc: { neverExit: true },
+			});
+			({ kernel } = await createTestKernel({ drivers: [driver] }));
+
+			const ki = driver.kernelInterface!;
+			const proc = kernel.spawn("proc", []);
+			const { masterFd } = ki.openpty(proc.pid);
+
+			// pgid 9999 does not match any running process group
+			expect(() => ki.tcsetpgrp(proc.pid, masterFd, 9999)).toThrow(
+				expect.objectContaining({ code: "ESRCH" }),
+			);
+			proc.kill();
+		});
+
+		it("tcsetpgrp with valid pgid succeeds", async () => {
+			const driver = new MockRuntimeDriver(["parent", "child"], {
+				parent: { neverExit: true },
+				child: { neverExit: true },
+			});
+			({ kernel } = await createTestKernel({ drivers: [driver] }));
+
+			const ki = driver.kernelInterface!;
+			const parent = kernel.spawn("parent", []);
+			const child = kernel.spawn("child", []);
+
+			// Put child in its own process group
+			ki.setpgid(child.pid, child.pid);
+
+			const { masterFd } = ki.openpty(parent.pid);
+
+			// Setting foreground to a valid group should work
+			ki.tcsetpgrp(parent.pid, masterFd, child.pid);
+			expect(ki.tcgetpgrp(parent.pid, masterFd)).toBe(child.pid);
+
+			parent.kill();
+			child.kill();
+		});
+
 		it("tcgetattr returns a copy — mutation does not affect PTY", async () => {
 			const driver = new MockRuntimeDriver(["proc"], {
 				proc: { neverExit: true },
