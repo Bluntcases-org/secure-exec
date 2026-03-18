@@ -1064,3 +1064,14 @@ PRD: ralph/kernel-hardening (46 stories)
   - TypeScript `readonly string[]` only prevents compile-time mutation — use Object.freeze() for runtime immutability
   - Private fields can be accessed via `(driver as any)._fieldName` for testing option storage
 ---
+
+## 2026-03-17 - US-064
+- Rewrote 'proc_spawn routes through kernel.spawn()' test with spy driver pattern
+- Added MockRuntimeDriver class to wasmvm driver.test.ts (same pattern as node driver tests)
+- Spy driver registers 'spycmd', WasmVM shell runs 'spycmd arg1 arg2', spy records the call
+- Assertions verify spy.calls.length, command, args, and callerPid — proving kernel routing
+- Files changed: packages/runtime/wasmvm/test/driver.test.ts
+- **Learnings for future iterations:**
+  - MockRuntimeDriver stdout doesn't flow through kernel pipes for proc_spawned processes — spy.calls assertions are the reliable way to verify routing
+  - brush-shell proc_spawn dispatches any command not in WASMVM_COMMANDS through the kernel — mount a spy driver for an unlisted command name to test routing
+---

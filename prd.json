@@ -1089,7 +1089,7 @@
         "Tests pass"
       ],
       "priority": 64,
-      "passes": false,
+      "passes": true,
       "notes": "Audit F6. Current test just runs 'echo hello' with no spy. Compare to node driver test which correctly uses spy driver."
     },
     {
