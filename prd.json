@@ -1759,7 +1759,7 @@
         "Tests pass"
       ],
       "priority": 104,
-      "passes": false,
+      "passes": true,
       "notes": "MEDIUM \u2014 kernel.ts:487-494. Every fdRead calls vfs.readFile (full file), slices to range. 1-byte read of 1GB file allocates 1GB."
     },
     {
