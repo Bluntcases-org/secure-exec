@@ -81,6 +81,9 @@ PRD: ralph/kernel-hardening (46 stories)
 - Bridge module loader (require-setup.ts) only supports CJS — ESM packages (with "type": "module") fail with "Cannot use import statement outside a module" when loaded via require
 - Pi's Anthropic provider hardcodes baseURL in model config, ignoring ANTHROPIC_BASE_URL env var — use fetch-intercept.cjs preload to redirect API calls to mock server
 - Pi blocks when spawned via child_process without closing stdin — always call child.stdin.end() when running Pi in print mode
+- PtyHarness (pi-interactive.test.ts) spawns host processes with real PTY via `script -qefc "command" /dev/null` — use for any CLI tool needing isTTY=true
+- Pi TUI submits with Enter (`\r` in PTY), adds newline with Shift+Enter; send `\r` not `\n` for Enter through PTY
+- Pi TUI boot indicator is model name in status bar (e.g., "claude-sonnet") — no `>` prompt character
 - Pi hangs in --print mode without --verbose — always pass --verbose to bypass quiet startup blocking
 - PTY is bidirectional: master write→slave read (input), slave write→master read (output); isatty() is true only for slave FDs
 - Adding a new FD-managed resource (like PTY) requires updating: fdRead, fdWrite, fdClose, fdSeek, isStdioPiped, cleanupProcessFDs in kernel.ts
@@ -1876,4 +1879,30 @@ PRD: ralph/kernel-hardening (46 stories)
   - Pi --print mode hangs without --verbose flag (quiet startup blocks on something)
   - Pi --mode json outputs NDJSON (multiple JSON lines), not a single JSON object
   - Mock LLM server must use "event: <type>\ndata: <json>\n\n" SSE format (event + data prefix required by Pi's SDK)
+---
+
+## 2026-03-18 - US-098
+- Created Pi interactive PTY E2E tests at packages/secure-exec/tests/cli-tools/pi-interactive.test.ts
+- Built PtyHarness class: spawns host process inside real PTY via Linux `script -qefc`, wires output to @xterm/headless Terminal for screen-state assertions
+- PtyHarness provides same API as kernel TerminalHarness: type(), waitFor(), screenshotTrimmed(), line(), wait(), dispose()
+- 5 tests covering Pi TUI interactive mode:
+  - Pi TUI renders — screen shows separator lines and model status bar after boot
+  - Input appears on screen — typed text visible in editor area
+  - Submit prompt renders response — Enter submits, mock LLM response appears on screen
+  - ^C interrupts — single Ctrl+C during response, Pi survives and editor remains usable
+  - Exit cleanly — ^D on empty editor, Pi exits with code 0
+- Added @xterm/headless as devDependency to packages/secure-exec
+- Tests gated with skipUnlessPiInstalled()
+- Files changed:
+  - packages/secure-exec/tests/cli-tools/pi-interactive.test.ts (new)
+  - packages/secure-exec/package.json (@xterm/headless devDependency)
+  - pnpm-lock.yaml
+- **Learnings for future iterations:**
+  - Pi TUI uses Enter (`\r` in PTY) for submit and Shift+Enter for newLine — in PTY mode, send `\r` (CR) not `\n` (LF) for Enter
+  - Pi TUI has no `>` prompt — TUI shows help text, separator lines (`────`), editor area, and status bar with model name
+  - Pi boot indicator is the model name in status bar (e.g., "claude-sonnet") — use this for waitFor after boot
+  - Pi keybindings: Ctrl+D exits on empty editor, Ctrl+C twice exits (single ^C interrupts gracefully), Escape interrupts current operation
+  - Linux `script -qefc "command" /dev/null` creates a real PTY for host processes — use for any CLI tool needing isTTY=true
+  - PtyHarness SETTLE_MS=100 (vs 50 for kernel TerminalHarness) — host process output is less predictable in timing
+  - @xterm/headless must be explicitly added as devDependency to packages that import it directly (not inherited through relative imports to kernel's TerminalHarness)
 ---

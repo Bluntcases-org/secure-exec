@@ -2308,7 +2308,7 @@
         "Tests pass"
       ],
       "priority": 136,
-      "passes": false,
+      "passes": true,
       "notes": "CLI E2E Phase 2. Depends on US-080 (TerminalHarness), US-095 (isTTY). Pi uses custom pi-tui with differential rendering and synchronized output sequences (CSI ?2026h/l). API tokens (ANTHROPIC_API_KEY, OPENAI_API_KEY) available at ~/misc/env.txt \u2014 source it before running tests that need real or mock-pointed API keys."
     },
     {
