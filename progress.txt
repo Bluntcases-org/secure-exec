@@ -1517,3 +1517,15 @@ PRD: ralph/kernel-hardening (46 stories)
   - Creating ~136k VFS files for readDir overflow test is fast with InMemoryFileSystem (writeFile auto-creates parents)
   - httpRequest sandbox test uses http.request() with callback pattern (not fetch) to exercise the separate httpRequest adapter path
 ---
+
+## 2026-03-18 - US-129
+- Moved module-level ID counters to per-instance counters in FDTableManager, PipeManager, and PtyManager
+- FDTableManager now owns `nextDescriptionId` counter and provides `DescriptionAllocator` to ProcessFDTable instances
+- PipeManager `nextPipeId`/`nextDescId` are now instance fields instead of module globals
+- PtyManager `nextPtyId`/`nextPtyDescId` are now instance fields instead of module globals
+- Files changed: packages/kernel/src/fd-table.ts, packages/kernel/src/pipe-manager.ts, packages/kernel/src/pty.ts, packages/kernel/test/resource-exhaustion.test.ts
+- **Learnings for future iterations:**
+  - ProcessFDTable constructor now requires a DescriptionAllocator — tests creating ProcessFDTable directly must pass one
+  - The DescriptionAllocator type is exported from fd-table.ts for test use
+  - Separate kernel instances now have independent ID counters — IDs from different instances may overlap, which is correct since they are scoped to their kernel
+---
