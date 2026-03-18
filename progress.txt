@@ -1169,3 +1169,18 @@ PRD: ralph/kernel-hardening (46 stories)
   - ProcessFDTable starts nextFd at 3 (0-2 reserved for stdio) — initStdio() must be called explicitly; without it, FD 0 doesn't exist
   - EMFILE is the POSIX error for "too many open files" — must be added to KernelErrorCode union type
 ---
+
+## 2026-03-17 - US-073
+- Added cross-thread ring buffer tests using real worker_threads with SharedArrayBuffer
+- Added wraparound test: 256 bytes through 16-byte buffer across threads (16 full cycles)
+- Added interleaved read/write at buffer boundary test (single-thread, verifies wrap correctness)
+- Added zero-length read test (returns 0 without consuming data)
+- Files changed:
+  - packages/runtime/wasmvm/test/ring-buffer.test.ts (4 new test cases)
+  - packages/runtime/wasmvm/test/fixtures/ring-buffer-worker.js (new worker fixture)
+- **Learnings for future iterations:**
+  - Ring buffer cross-thread tests need two separate workers (writer + reader) since Atomics.wait blocks the calling thread's event loop — avoid blocking the main vitest thread
+  - Worker fixtures for ring buffer tests use raw Atomics protocol (no TypeScript imports) matching the layout in ring-buffer.ts: [writePos, readPos, closed, reserved] header + data payload at offset 16
+  - Existing echo-worker.js pattern: import from node:worker_threads, parentPort.on('message'), use join(__dirname, 'fixtures/...') for worker paths
+  - Zero-length read (Uint8Array(0)) returns 0 without consuming data — readPos stays unchanged; this matches POSIX read(fd, buf, 0) semantics
+---
