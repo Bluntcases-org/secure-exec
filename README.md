@@ -13,35 +13,37 @@ npm install secure-exec
 Expose secure-exec as a tool with the Vercel AI SDK. Your agent can execute arbitrary code without risking your infrastructure.
 
 ```typescript
-import { generateText, tool } from "ai";
+import { generateText, stepCountIs, tool } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { NodeRuntime, createNodeDriver, createNodeRuntimeDriverFactory } from "secure-exec";
 import { z } from "zod";
 
 const runtime = new NodeRuntime({
-  systemDriver: createNodeDriver({ permissions: { fs: true, network: true } }),
+  systemDriver: createNodeDriver({
+    permissions: {
+      fs: () => ({ allow: true }),
+      network: () => ({ allow: true }),
+    },
+  }),
   runtimeDriverFactory: createNodeRuntimeDriverFactory(),
   memoryLimit: 64,
   cpuTimeLimitMs: 5000,
 });
 
-const result = await generateText({
-  model: anthropic("claude-sonnet-4-20250514"),
+const { text } = await generateText({
+  model: anthropic("claude-sonnet-4-6"),
+  prompt: "Calculate the first 20 fibonacci numbers",
+  stopWhen: stepCountIs(5),
   tools: {
     execute: tool({
-      description: "Run JavaScript in a secure sandbox",
-      parameters: z.object({ code: z.string() }),
-      execute: async ({ code }) => {
-        const logs: string[] = [];
-        const res = await runtime.exec(code, {
-          onStdio: (e) => logs.push(e.message),
-        });
-        return { exitCode: res.code, output: logs.join("\n") };
-      },
+      description: "Run JavaScript in a secure sandbox. Assign the result to module.exports to return data.",
+      inputSchema: z.object({ code: z.string() }),
+      execute: async ({ code }) => runtime.run(code),
     }),
   },
-  prompt: "Calculate the first 20 fibonacci numbers",
 });
+
+console.log(text);
 ```
 
 ## Why Secure Exec
