@@ -3,6 +3,10 @@ Started: 2026-03-17
 PRD: ralph/kernel-hardening (46 stories)
 
 ## Codebase Patterns
+- @secure-exec/core package at packages/secure-exec-core/ owns shared types, utilities, and generated isolate-runtime sources — build it first (turbo ^build handles this)
+- When adding exports to shared modules in core, update BOTH core/src/index.ts AND the corresponding re-export file in secure-exec/src/shared/
+- build-isolate-runtime.mjs syncs generated manifest to both secure-exec and secure-exec-core — until US-053 moves the build script to core
+- Source-grep tests (isolate-runtime-injection-policy) may need to read from core's src/ after code moves there
 - Kernel errors use `KernelError(code, message)` from types.ts — always use structured codes, not plain Error with embedded code in message
 - ERRNO_MAP in wasmvm/src/wasi-constants.ts is the single source of truth for POSIX→WASI errno mapping
 - Bridge ServerResponseBridge.write/end must treat null as no-op (Node.js convention: res.end(null) ends without writing; Fastify's sendTrailer calls res.end(null, null, null))
@@ -830,4 +834,22 @@ PRD: ralph/kernel-hardening (46 stories)
   - Fastify v5 calls res.end(null, null, null) in sendTrailer to avoid V8's ArgumentsAdaptorTrampoline — this is a common Node.js pattern
   - When debugging sandbox HTTP failures, check the bridge's ServerResponseBridge.write/end for type handling gaps
   - Express fixture passes with basic http bridge; Fastify needs null-safe write/end due to internal stream handling
+---
+
+## 2026-03-17 - US-052
+- Created @secure-exec/core package (packages/secure-exec-core/) with shared types, utilities, and constants
+- Moved types.ts, runtime-driver.ts, and all shared/* files to core/src/
+- Extracted TIMEOUT_EXIT_CODE and TIMEOUT_ERROR_MESSAGE from isolate.ts into core/src/shared/constants.ts
+- Replaced secure-exec originals with re-export shims from @secure-exec/core
+- Added @secure-exec/core workspace dependency to secure-exec package.json
+- Updated build-isolate-runtime.mjs to sync generated manifest to core package
+- Updated isolate-runtime-injection-policy test to read require-setup.ts from core's source
+- Files changed: 32 files (16 new in core, 16 modified in secure-exec)
+- **Learnings for future iterations:**
+  - pnpm-workspace.yaml `packages/*` glob automatically picks up packages/secure-exec-core/
+  - turbo.json `^build` dependency automatically builds upstream workspace deps — no config changes needed
+  - TypeScript can't resolve `@secure-exec/core` until core's dist/ exists — must build core first
+  - Re-export files must include ALL exports from the original module (check for missing exports by running tsc)
+  - Source-grep tests that read shared files must be updated to point to core's canonical source location
+  - The generated/isolate-runtime.ts must exist in core for require-setup.ts to compile — copy it during build
 ---
