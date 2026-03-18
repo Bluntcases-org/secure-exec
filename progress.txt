@@ -1455,3 +1455,13 @@ PRD: ralph/kernel-hardening (46 stories)
   - fdOpen flags: 0=RDONLY, 2=RDWR — use 2 for write tests
   - vfsWrite does async read-modify-write: reads current VFS content, merges at cursor, writes back — be aware of potential race conditions with concurrent writes
 ---
+
+## 2026-03-18 - US-123
+- Resolved PTY read waiter on same-end close — closing slave now resolves pending slave reads (inputWaiters) with null, and closing master now resolves pending master reads (outputWaiters) with null
+- Previously, only the opposite end's waiters were resolved on close, leaving same-end readers hanging forever
+- Added 2 tests: slave read + slave close → EOF, master read + master close → EOF
+- Files changed: packages/kernel/src/pty.ts, packages/kernel/test/kernel-integration.test.ts
+- **Learnings for future iterations:**
+  - Kernel fdRead converts PTY null returns to empty Uint8Array (data ?? new Uint8Array(0)) — test for `.length === 0` not `toBeNull()`
+  - PTY close() must resolve BOTH same-end and opposite-end waiters — master close affects outputWaiters (same) + inputWaiters (opposite)
+---
