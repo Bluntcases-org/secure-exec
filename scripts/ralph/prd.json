@@ -1220,7 +1220,7 @@
         "Tests pass"
       ],
       "priority": 72,
-      "passes": false,
+      "passes": true,
       "notes": "Audit M10, M11. CLAUDE.md flags 'host memory buildup and CPU amplification as critical risks'. Zero tests for this."
     },
     {
@@ -1236,7 +1236,7 @@
         "Tests pass"
       ],
       "priority": 73,
-      "passes": false,
+      "passes": true,
       "notes": "Audit M13, M14. All current ring buffer tests run single-threaded. Core value prop (blocking cross-thread pipe) is untested."
     },
     {
@@ -1253,7 +1253,7 @@
         "Tests pass"
       ],
       "priority": 74,
-      "passes": false,
+      "passes": true,
       "notes": "Audit U1. packages/kernel/src/user.ts has ZERO test coverage."
     },
     {
@@ -1270,7 +1270,7 @@
         "Tests pass"
       ],
       "priority": 75,
-      "passes": false,
+      "passes": true,
       "notes": "Audit M15, M16. drainBuffer chunk-splitting has zero coverage. VFS snapshot/restore used for thread transfer but untested."
     },
     {

@@ -1172,3 +1172,18 @@ PRD: ralph/kernel-hardening (46 stories)
   - Tests are fast (~286ms total) — the V8 isolate enforces limits efficiently without needing large tolerances
   - createTestNodeRuntime() accepts memoryLimit and cpuTimeLimitMs directly via the spread into nodeProcessOptions
 ---
+
+## 2026-03-17 - US-075
+- Added pipe partial read tests: read 10 of 100 bytes, verify correct first 10 returned and remaining 90 available; multiple 10-byte incremental reads drain 50 bytes exactly
+- Added VFS snapshot tests: snapshot() captures files/dirs/symlinks, fromSnapshot() restores correctly with permissions, applySnapshot() replaces in-place, round-trip preserves symlinks
+- Also marked US-072, US-073, US-074 as passes: true (already implemented in prior commits but PRD wasn't updated)
+- Files changed:
+  - packages/kernel/test/pipe-manager.test.ts — added 2 partial read tests
+  - packages/runtime/wasmvm/test/vfs.test.ts — added 7 snapshot tests
+  - scripts/ralph/prd.json — marked US-072, US-073, US-074, US-075 as passes: true
+- **Learnings for future iterations:**
+  - PipeManager.read(descId, length) returns exactly `length` bytes when available, preserving remainder via chunk.subarray() — drainBuffer handles partial chunk splitting
+  - VFS.applySnapshot() is a replace, not a merge — it resets all inodes and re-initializes default layout before applying entries
+  - VFS.snapshot() omits device nodes (e.g., /dev/null) since the VFS constructor recreates them
+  - Prior iteration commits updated root-level prd.json but the active PRD is at scripts/ralph/prd.json — always update the correct file
+---
