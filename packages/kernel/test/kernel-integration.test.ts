@@ -875,6 +875,28 @@ describe("kernel + MockRuntimeDriver integration", () => {
 			await kernel.dispose();
 			await expect(kernel.exec("echo hello")).rejects.toThrow("disposed");
 		});
+
+		it("terminateAll escalates to SIGKILL for SIGTERM survivors", async () => {
+			const killSignals: number[] = [];
+			const driver = new MockRuntimeDriver(["stubborn"], {
+				stubborn: {
+					neverExit: true,
+					killSignals,
+					survivableSignals: [15], // Ignores SIGTERM
+				},
+			});
+			({ kernel } = await createTestKernel({ drivers: [driver] }));
+
+			const proc = kernel.spawn("stubborn", []);
+			expect(kernel.processes.get(proc.pid)?.status).toBe("running");
+
+			await kernel.dispose();
+
+			// Process should have received SIGTERM then SIGKILL
+			expect(killSignals).toContain(15);
+			expect(killSignals).toContain(9);
+			expect(kernel.processes.get(proc.pid)?.status).toBe("exited");
+		}, 10_000);
 	});
 
 	// -----------------------------------------------------------------------
@@ -2114,6 +2136,47 @@ describe("kernel + MockRuntimeDriver integration", () => {
 
 			const ki = driver.kernelInterface!;
 			expect(() => ki.kill(-9999, 15)).toThrow(/ESRCH/);
+		});
+
+		it("setpgid rejects joining a process group in a different session", async () => {
+			const driver = new MockRuntimeDriver(["parent", "childA", "childB", "grandchild"], {
+				parent: { neverExit: true },
+				childA: { neverExit: true },
+				childB: { neverExit: true },
+				grandchild: { neverExit: true },
+			});
+			({ kernel } = await createTestKernel({ drivers: [driver] }));
+
+			const ki = driver.kernelInterface!;
+			const parent = kernel.spawn("parent", []);
+
+			// Spawn childA — inherits parent's pgid (not a group leader), so setsid works
+			const childA = ki.spawn("childA", [], { ppid: parent.pid, env: {}, cwd: "/" });
+			expect(ki.getpgid(childA.pid)).toBe(parent.pid); // inherited
+
+			// childA creates a new session (session B)
+			ki.setsid(childA.pid);
+			expect(ki.getsid(childA.pid)).toBe(childA.pid);
+
+			// Spawn grandchild under childA so it joins session B
+			const grandchild = ki.spawn("grandchild", [], { ppid: childA.pid, env: {}, cwd: "/" });
+			expect(ki.getsid(grandchild.pid)).toBe(childA.pid);
+
+			// Spawn childB under parent — stays in session A
+			const childB = ki.spawn("childB", [], { ppid: parent.pid, env: {}, cwd: "/" });
+			expect(ki.getsid(childB.pid)).toBe(parent.pid);
+
+			// childB tries to join childA's group (different session) — EPERM
+			expect(() => ki.setpgid(childB.pid, childA.pid)).toThrow(/EPERM/);
+
+			// Same-session group join still works: grandchild joins childA's group (same session)
+			ki.setpgid(grandchild.pid, childA.pid);
+			expect(ki.getpgid(grandchild.pid)).toBe(childA.pid);
+
+			parent.kill();
+			childA.kill();
+			childB.kill();
+			grandchild.kill();
 		});
 	});
 

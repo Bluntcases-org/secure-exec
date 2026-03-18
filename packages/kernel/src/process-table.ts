@@ -174,6 +174,10 @@ export class ProcessTable {
 			let groupExists = false;
 			for (const e of this.entries.values()) {
 				if (e.pgid === targetPgid && e.status !== "exited") {
+					// Reject cross-session group joining (POSIX)
+					if (e.sid !== entry.sid) {
+						throw new KernelError("EPERM", `cannot join process group in different session`);
+					}
 					groupExists = true;
 					break;
 				}
@@ -264,7 +268,7 @@ export class ProcessTable {
 				// Best effort
 			}
 		}
-		// Wait briefly for exits
+		// Wait briefly for graceful exits
 		await Promise.allSettled(
 			running.map((e) =>
 				Promise.race([
@@ -273,5 +277,25 @@ export class ProcessTable {
 				]),
 			),
 		);
+
+		// Escalate to SIGKILL for processes that survived SIGTERM
+		const survivors = running.filter((e) => e.status === "running");
+		for (const entry of survivors) {
+			try {
+				entry.driverProcess.kill(9); // SIGKILL
+			} catch {
+				// Best effort
+			}
+		}
+		if (survivors.length > 0) {
+			await Promise.allSettled(
+				survivors.map((e) =>
+					Promise.race([
+						e.driverProcess.wait(),
+						new Promise((r) => setTimeout(r, 500)),
+					]),
+				),
+			);
+		}
 	}
 }
