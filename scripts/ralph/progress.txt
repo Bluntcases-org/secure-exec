@@ -1514,3 +1514,16 @@ PRD: ralph/kernel-hardening (46 stories)
   - DNS rebinding is documented as a known limitation — would require pinning resolved IPs to the connection, not possible with native fetch
   - 5 pre-existing test failures in index.test.ts (http.Agent, upgrade, server termination) are NOT caused by SSRF changes — they fail identically on the pre-SSRF commit
 ---
+
+## 2026-03-18 - US-114
+- Implemented process.env isolation: child processes spawned without explicit env now receive the init-time filtered env instead of inheriting undefined (which could allow host env leakage)
+- Modified both streaming spawn (spawnStartRef) and synchronous spawn (spawnSyncRef) in bridge-setup.ts to fall back to `deps.processConfig.env` when `options.env` is undefined
+- Combined with existing `stripDangerousEnv()`, this provides defense-in-depth: sandbox env mutations never reach children, and dangerous keys are always stripped
+- Files changed:
+  - packages/secure-exec-node/src/bridge-setup.ts (init-time env fallback for both spawn paths)
+  - packages/secure-exec/tests/runtime-driver/node/env-leakage.test.ts (2 new tests)
+- **Learnings for future iterations:**
+  - Two-layer env defense: permission-based filterEnv() at init + stripDangerousEnv() per-spawn — both layers needed
+  - `deps.processConfig.env` is the init-time filtered env (already filtered by `filterEnv()` in execution-driver.ts) — safe to use as fallback
+  - When `options.env` is undefined, `stripDangerousEnv(undefined)` returns undefined — the fallback must happen BEFORE the strip call
+---
