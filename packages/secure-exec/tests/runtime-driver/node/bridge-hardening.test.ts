@@ -1,6 +1,6 @@
 import ivm from "isolated-vm";
 import { afterEach, describe, expect, it } from "vitest";
-import { allowAllFs, createInMemoryFileSystem } from "../../../src/index.js";
+import { allowAllFs, createInMemoryFileSystem, createDefaultNetworkAdapter } from "../../../src/index.js";
 import type { NodeRuntime } from "../../../src/index.js";
 import { createTestNodeRuntime } from "../../test-utils.js";
 
@@ -323,6 +323,42 @@ describe("bridge-side resource hardening", () => {
 			}
 			// Even if timeout killed it, we prove it didn't spin infinitely
 			expect(result.code === 0 || result.code !== undefined).toBe(true);
+		});
+	});
+
+	// -------------------------------------------------------------------
+	// HTTP server 500 error sanitization — handler errors must not leak
+	// -------------------------------------------------------------------
+
+	describe("HTTP server error sanitization", () => {
+		it("500 response uses generic message, not handler error.message", async () => {
+			const adapter = createDefaultNetworkAdapter();
+			const secretPath = "/host/secret/dir/credentials.json";
+
+			let serverPort: number | undefined;
+			try {
+				const result = await adapter.httpServerListen!({
+					serverId: 999,
+					port: 0,
+					onRequest: () => {
+						throw new Error(`secret path ${secretPath}`);
+					},
+				});
+				serverPort = result.address?.port ?? undefined;
+				expect(serverPort).toBeDefined();
+
+				const response = await fetch(`http://127.0.0.1:${serverPort}/test`);
+				const body = await response.text();
+
+				expect(response.status).toBe(500);
+				expect(body).not.toContain(secretPath);
+				expect(body).not.toContain("secret");
+				expect(body).toBe("Internal Server Error");
+			} finally {
+				if (serverPort !== undefined) {
+					await adapter.httpServerClose!(999);
+				}
+			}
 		});
 	});
 

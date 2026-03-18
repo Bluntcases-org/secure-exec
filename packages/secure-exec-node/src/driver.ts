@@ -241,13 +241,9 @@ export function createDefaultNetworkAdapter(): NetworkAdapter {
 					} else {
 						res.end();
 					}
-				} catch (error) {
+				} catch {
 					res.statusCode = 500;
-					res.end(
-						error instanceof Error
-							? error.message
-							: "Sandbox HTTP server bridge error",
-					);
+					res.end("Internal Server Error");
 				}
 			});
 
