@@ -1778,7 +1778,7 @@
         "Tests pass"
       ],
       "priority": 105,
-      "passes": false,
+      "passes": true,
       "notes": "MEDIUM — process-table.ts:164-185,267-275. setpgid allows cross-session group joining; terminateAll waits 1s with no SIGKILL escalation."
     },
     {

@@ -1407,3 +1407,11 @@ PRD: ralph/kernel-hardening (46 stories)
   - NodeFileSystem.pread uses fs.open() + handle.read(buf, 0, length, offset) for true OS-level positional read
   - device-layer pread for /dev/zero returns exactly `length` zero bytes (unlike readFile which returns fixed 4096)
 ---
+
+## 2026-03-18 - US-133
+- Already implemented in prior iteration: setpgid cross-session EPERM check (process-table.ts:184-186) and terminateAll SIGKILL escalation (process-table.ts:288-306)
+- Tests already exist: kernel-integration.test.ts lines 934-954 (terminateAll SIGKILL) and 2196-2235 (setpgid cross-session)
+- Marked passes: true in prd.json
+- **Learnings for future iterations:**
+  - None new — patterns already documented
+---
