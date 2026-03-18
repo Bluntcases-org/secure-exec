@@ -166,6 +166,24 @@ export class ProcessExitError extends Error {
 // Make available globally
 exposeCustomGlobal("ProcessExitError", ProcessExitError);
 
+// Signal name → number mapping (POSIX standard)
+const _signalNumbers: Record<string, number> = {
+  SIGHUP: 1, SIGINT: 2, SIGQUIT: 3, SIGILL: 4, SIGTRAP: 5, SIGABRT: 6,
+  SIGBUS: 7, SIGFPE: 8, SIGKILL: 9, SIGUSR1: 10, SIGSEGV: 11, SIGUSR2: 12,
+  SIGPIPE: 13, SIGALRM: 14, SIGTERM: 15, SIGCHLD: 17, SIGCONT: 18,
+  SIGSTOP: 19, SIGTSTP: 20, SIGTTIN: 21, SIGTTOU: 22, SIGURG: 23,
+  SIGXCPU: 24, SIGXFSZ: 25, SIGVTALRM: 26, SIGPROF: 27, SIGWINCH: 28,
+  SIGIO: 29, SIGPWR: 30, SIGSYS: 31,
+};
+
+function _resolveSignal(signal?: string | number): number {
+  if (signal === undefined || signal === null) return 15; // default SIGTERM
+  if (typeof signal === "number") return signal;
+  const num = _signalNumbers[signal];
+  if (num !== undefined) return num;
+  throw new Error("Unknown signal: " + signal);
+}
+
 // EventEmitter implementation for process
 type EventListener = (...args: unknown[]) => void;
 const _processListeners: Record<string, EventListener[]> = {};
@@ -722,11 +740,10 @@ const process: Record<string, unknown> & {
       err.syscall = "kill";
       throw err;
     }
-    // Self-kill - treat as exit
-    if (!signal || signal === "SIGTERM" || signal === 15) {
-      (process as unknown as { exit: (code: number) => never }).exit(143);
-    }
-    return true;
+    // Resolve signal name to number (default SIGTERM)
+    const sigNum = _resolveSignal(signal);
+    // Self-kill - exit with 128 + signal number (POSIX convention)
+    return (process as unknown as { exit: (code: number) => never }).exit(128 + sigNum);
   },
 
   // EventEmitter methods

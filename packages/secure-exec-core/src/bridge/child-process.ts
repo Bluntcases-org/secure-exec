@@ -127,6 +127,9 @@ function checkStreamMaxListeners(stream: OutputStreamStub, event: string): void 
   }
 }
 
+// Monotonic counter for unique ChildProcess PIDs
+let _nextChildPid = 1000;
+
 /**
  * Polyfill of Node.js `ChildProcess`. Provides event-emitting stdin/stdout/stderr
  * streams. In streaming mode, data arrives via the `_childProcessDispatch` global
@@ -138,7 +141,7 @@ class ChildProcess {
   private _maxListeners = 10;
   private _maxListenersWarned = new Set<string>();
 
-  pid: number = Math.floor(Math.random() * 10000) + 1000;
+  pid: number = _nextChildPid++;
   killed = false;
   exitCode: number | null = null;
   signalCode: NodeJS.Signals | null = null;
@@ -643,7 +646,7 @@ function spawnSync(
 
   if (typeof _childProcessSpawnSync === "undefined") {
     return {
-      pid: 0,
+      pid: _nextChildPid++,
       output: [null, "", "child_process.spawnSync requires CommandExecutor to be configured"],
       stdout: "",
       stderr: "child_process.spawnSync requires CommandExecutor to be configured",
@@ -676,7 +679,7 @@ function spawnSync(
       const err: ExecError = new Error("stdout maxBuffer length exceeded");
       err.code = "ERR_CHILD_PROCESS_STDIO_MAXBUFFER" as unknown as number;
       return {
-        pid: Math.floor(Math.random() * 10000) + 1000,
+        pid: _nextChildPid++,
         output: [null, stdoutBuf as string | Buffer, stderrBuf as string | Buffer],
         stdout: stdoutBuf as string | Buffer,
         stderr: stderrBuf as string | Buffer,
@@ -687,7 +690,7 @@ function spawnSync(
     }
 
     return {
-      pid: Math.floor(Math.random() * 10000) + 1000,
+      pid: _nextChildPid++,
       output: [null, stdoutBuf as string | Buffer, stderrBuf as string | Buffer],
       stdout: stdoutBuf as string | Buffer,
       stderr: stderrBuf as string | Buffer,
@@ -700,7 +703,7 @@ function spawnSync(
     const stderrBuf = typeof Buffer !== "undefined" ? Buffer.from(errMsg) : errMsg;
 
     return {
-      pid: 0,
+      pid: _nextChildPid++,
       output: [null, "", stderrBuf as string | Buffer],
       stdout: typeof Buffer !== "undefined" ? Buffer.from("") : "",
       stderr: stderrBuf as string | Buffer,

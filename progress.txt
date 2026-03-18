@@ -1605,3 +1605,22 @@ PRD: ralph/kernel-hardening (46 stories)
   - createDefaultNetworkAdapter() is directly testable for HTTP server behavior without going through the full runtime
   - Security error tests should verify BOTH that the error is raised AND that it doesn't leak sensitive information
 ---
+
+## 2026-03-18 - US-137
+- Implemented three bridge hardening fixes:
+  1. ChildProcess.pid: replaced Math.random() with monotonic counter (`_nextChildPid++`) in ChildProcess class and all spawnSync return paths
+  2. process.kill: added signal name→number mapping table and `_resolveSignal()` helper; all signals now produce correct 128+signum exit codes (not just SIGTERM)
+  3. v8.deserialize: moved buffer size check before `buffer.toString()` to prevent full string allocation on oversized payloads
+- Files changed:
+  - packages/secure-exec-core/src/bridge/child-process.ts (monotonic PID counter)
+  - packages/secure-exec-core/src/bridge/process.ts (signal map + _resolveSignal)
+  - packages/secure-exec-core/isolate-runtime/src/inject/bridge-initial-globals.ts (buffer.length check before toString)
+  - packages/secure-exec-core/dist/bridge.js (rebuilt)
+  - packages/secure-exec-core/src/generated/isolate-runtime.ts (rebuilt)
+  - packages/secure-exec/tests/runtime-driver/node/bridge-hardening.test.ts (4 new tests)
+- **Learnings for future iterations:**
+  - Bridge refs (_childProcessSpawnStart etc.) may be defined but point to ENOSYS stubs when no command executor is configured — spawn() throws synchronously in that case
+  - spawnSync has FOUR return paths that each need a PID: success, maxBufferExceeded, catch(err), and _childProcessSpawnSync-undefined — all must use the counter
+  - process.exit() in the bridge fires the "exit" event and throws ProcessExitError — don't bypass it with a direct throw
+  - The isolate-runtime bridge-initial-globals.ts must be rebuilt via `pnpm -C packages/secure-exec-core run build:isolate-runtime` after changes
+---

@@ -1,6 +1,6 @@
 import ivm from "isolated-vm";
 import { afterEach, describe, expect, it } from "vitest";
-import { allowAllFs, createInMemoryFileSystem, createDefaultNetworkAdapter } from "../../../src/index.js";
+import { allowAllFs, allowAllChildProcess, createInMemoryFileSystem, createDefaultNetworkAdapter } from "../../../src/index.js";
 import type { NodeRuntime } from "../../../src/index.js";
 import { createTestNodeRuntime } from "../../test-utils.js";
 
@@ -413,6 +413,126 @@ describe("bridge-side resource hardening", () => {
 			const result2 = await ctx2.eval(`globalThis.__result`);
 			expect(result2).toBe("v2");
 			ctx2.release();
+		});
+	});
+
+	// -------------------------------------------------------------------
+	// ChildProcess.pid uniqueness — monotonic counter, not random
+	// -------------------------------------------------------------------
+
+	describe("ChildProcess.pid uniqueness", () => {
+		it("spawnSync returns unique monotonic PIDs for 100 calls", async () => {
+			proc = createTestNodeRuntime({
+				permissions: { ...allowAllFs, ...allowAllChildProcess },
+			});
+
+			// spawnSync always returns a result (with pid) even when the command fails.
+			// Use it to verify the PID counter produces unique, monotonic values.
+			const result = await proc.run(`
+				const cp = require('child_process');
+				const pids = [];
+				for (let i = 0; i < 100; i++) {
+					const r = cp.spawnSync('echo', ['test']);
+					pids.push(r.pid);
+				}
+				const unique = new Set(pids);
+				module.exports = {
+					total: pids.length,
+					unique: unique.size,
+					allUnique: unique.size === pids.length,
+					monotonic: pids.every((p, i) => i === 0 || p > pids[i - 1]),
+				};
+			`);
+
+			const e = result.exports as Record<string, unknown>;
+			expect(e.total).toBe(100);
+			expect(e.allUnique).toBe(true);
+			expect(e.monotonic).toBe(true);
+		});
+	});
+
+	// -------------------------------------------------------------------
+	// process.kill signal handling — SIGINT and other signals
+	// -------------------------------------------------------------------
+
+	describe("process.kill signal handling", () => {
+		it("process.kill(process.pid, 'SIGINT') exits with 130", async () => {
+			const capture = createConsoleCapture();
+			proc = createTestNodeRuntime({ onStdio: capture.onStdio });
+
+			const result = await proc.exec(`
+				process.kill(process.pid, 'SIGINT');
+			`);
+
+			// SIGINT = signal 2, exit code = 128 + 2 = 130
+			expect(result.code).toBe(130);
+		});
+
+		it("process.kill(process.pid, 'SIGTERM') exits with 143", async () => {
+			const capture = createConsoleCapture();
+			proc = createTestNodeRuntime({ onStdio: capture.onStdio });
+
+			const result = await proc.exec(`
+				process.kill(process.pid, 'SIGTERM');
+			`);
+
+			// SIGTERM = signal 15, exit code = 128 + 15 = 143
+			expect(result.code).toBe(143);
+		});
+
+		it("process.kill(process.pid) defaults to SIGTERM (143)", async () => {
+			const capture = createConsoleCapture();
+			proc = createTestNodeRuntime({ onStdio: capture.onStdio });
+
+			const result = await proc.exec(`
+				process.kill(process.pid);
+			`);
+
+			expect(result.code).toBe(143);
+		});
+
+		it("process.kill(process.pid, 9) exits with 137 (SIGKILL)", async () => {
+			const capture = createConsoleCapture();
+			proc = createTestNodeRuntime({ onStdio: capture.onStdio });
+
+			const result = await proc.exec(`
+				process.kill(process.pid, 9);
+			`);
+
+			// SIGKILL = signal 9, exit code = 128 + 9 = 137
+			expect(result.code).toBe(137);
+		});
+	});
+
+	// -------------------------------------------------------------------
+	// v8.deserialize buffer size check — reject before string allocation
+	// -------------------------------------------------------------------
+
+	describe("v8.deserialize size limit", () => {
+		it("rejects buffer exceeding limit without full string allocation", async () => {
+			const capture = createConsoleCapture();
+			proc = createTestNodeRuntime({ onStdio: capture.onStdio });
+
+			const result = await proc.exec(`
+				const v8 = require('v8');
+				const results = {};
+				// Create a buffer larger than the default 4MB limit
+				const big = Buffer.alloc(5 * 1024 * 1024, 0x41);
+				try {
+					v8.deserialize(big);
+					results.threw = false;
+				} catch (e) {
+					results.threw = true;
+					results.message = e.message;
+					results.hasPayloadCode = e.message.includes('ERR_SANDBOX_PAYLOAD_TOO_LARGE');
+				}
+				console.log(JSON.stringify(results));
+			`);
+
+			expect(result.code).toBe(0);
+			const results = JSON.parse(capture.stdout().trim());
+			expect(results.threw).toBe(true);
+			expect(results.hasPayloadCode).toBe(true);
 		});
 	});
 });

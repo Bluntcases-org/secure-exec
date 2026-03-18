@@ -1812,7 +1812,7 @@
         "Tests pass"
       ],
       "priority": 107,
-      "passes": false,
+      "passes": true,
       "notes": "LOW \u2014 child-process.ts:121, process.ts:677-689, bridge-initial-globals.ts:239-248."
     },
     {
