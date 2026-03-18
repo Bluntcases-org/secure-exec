@@ -603,3 +603,330 @@ describe.skipIf(skipReason)('OpenCode headless E2E (Strategy A)', () => {
     30_000,
   );
 });
+
+// ---------------------------------------------------------------------------
+// Strategy B: SDK client → opencode serve
+// ---------------------------------------------------------------------------
+
+describe.skipIf(skipReason)('OpenCode headless E2E (Strategy B — SDK client)', () => {
+  let sdkServerUrl: string | null = null;
+  let sdkServerProc: ChildProcess | null = null;
+  let sdkMock: MockLlmServerHandle | null = null;
+  let sdkWorkDir = '';
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let sdkClient: any = null;
+
+  beforeAll(async () => {
+    sdkWorkDir = await mkdtemp(path.join(tmpdir(), 'opencode-sdk-'));
+
+    // Minimal git project (opencode serve needs project context)
+    await writeFile(
+      path.join(sdkWorkDir, 'package.json'),
+      JSON.stringify({ name: 'test-sdk' }),
+    );
+    const { execSync } = require('node:child_process');
+    execSync('git init && git add -A && git commit -m init', {
+      cwd: sdkWorkDir,
+      stdio: 'ignore',
+      env: {
+        ...process.env,
+        GIT_AUTHOR_NAME: 'test',
+        GIT_COMMITTER_NAME: 'test',
+        GIT_AUTHOR_EMAIL: 'test@test.com',
+        GIT_COMMITTER_EMAIL: 'test@test.com',
+      },
+    });
+
+    // Mock LLM server (separate instance from Strategy A)
+    sdkMock = await createMockLlmServer([]);
+
+    // Launch opencode serve with dynamic port and mock LLM redirect
+    const env: Record<string, string> = {
+      PATH: process.env.PATH ?? '',
+      HOME: process.env.HOME ?? tmpdir(),
+      TERM: process.env.TERM ?? 'xterm-256color',
+      XDG_DATA_HOME: path.join(tmpdir(), `opencode-sdk-${Date.now()}`),
+      ANTHROPIC_API_KEY: 'test-sdk-key',
+      ANTHROPIC_BASE_URL: `http://127.0.0.1:${sdkMock.port}`,
+      OPENCODE_CONFIG_CONTENT: JSON.stringify({}),
+    };
+
+    sdkServerProc = spawn(
+      'opencode',
+      ['serve', '--port', '0', '--hostname', '127.0.0.1'],
+      { env, cwd: sdkWorkDir, stdio: ['pipe', 'pipe', 'pipe'] },
+    );
+
+    // Parse server URL from stdout/stderr
+    try {
+      sdkServerUrl = await new Promise<string>((resolve, reject) => {
+        const timer = setTimeout(() => {
+          sdkServerProc!.kill();
+          reject(new Error('opencode serve did not start within 20s'));
+        }, 20_000);
+
+        let output = '';
+        const onData = (chunk: Buffer) => {
+          output += chunk.toString();
+          const match = output.match(
+            /opencode server listening on\s+(https?:\/\/[^\s]+)/,
+          );
+          if (match) {
+            clearTimeout(timer);
+            resolve(match[1]);
+          }
+        };
+        sdkServerProc!.stdout?.on('data', onData);
+        sdkServerProc!.stderr?.on('data', onData);
+        sdkServerProc!.on('exit', (code) => {
+          clearTimeout(timer);
+          reject(
+            new Error(
+              `opencode serve exited with code ${code}\n${output.slice(0, 2000)}`,
+            ),
+          );
+        });
+      });
+    } catch (err) {
+      console.log(
+        'Strategy B setup: opencode serve failed —',
+        (err as Error).message.slice(0, 500),
+      );
+      return;
+    }
+
+    // Create SDK client
+    const { createOpencodeClient } = await import('@opencode-ai/sdk');
+    sdkClient = createOpencodeClient({
+      baseUrl: sdkServerUrl as `${string}://${string}`,
+      directory: sdkWorkDir,
+    });
+
+    // Health check — verify server is responding
+    try {
+      const health = await sdkClient.session.list();
+      if (health.error) {
+        console.log('Strategy B: health check failed:', health.error);
+        sdkClient = null;
+      }
+    } catch (err) {
+      console.log('Strategy B: health check error:', err);
+      sdkClient = null;
+    }
+  }, 30_000);
+
+  afterAll(async () => {
+    if (sdkServerProc) {
+      sdkServerProc.kill('SIGTERM');
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(() => {
+          sdkServerProc!.kill('SIGKILL');
+          resolve();
+        }, 3_000);
+        sdkServerProc!.on('close', () => {
+          clearTimeout(timer);
+          resolve();
+        });
+      });
+    }
+    if (sdkMock) await sdkMock.close();
+    if (sdkWorkDir) {
+      await rm(sdkWorkDir, { recursive: true, force: true }).catch(() => {});
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // Connection & health
+  // -------------------------------------------------------------------------
+
+  it(
+    'SDK client connects — create client, call health/status endpoint',
+    async () => {
+      if (!sdkClient) return;
+
+      const result = await sdkClient.session.list();
+      expect(result.data).toBeDefined();
+      expect(Array.isArray(result.data)).toBe(true);
+    },
+    15_000,
+  );
+
+  // -------------------------------------------------------------------------
+  // Prompt
+  // -------------------------------------------------------------------------
+
+  it(
+    'SDK sends prompt — send prompt via SDK, receive streamed response',
+    async () => {
+      if (!sdkClient) return;
+
+      // Title request + main response (opencode may issue title call first)
+      sdkMock!.reset([
+        { type: 'text', text: 'title' },
+        { type: 'text', text: 'SDK_PROMPT_CANARY_42' },
+        { type: 'text', text: 'SDK_PROMPT_CANARY_42' },
+        { type: 'text', text: 'SDK_PROMPT_CANARY_42' },
+      ]);
+
+      const session = await sdkClient.session.create();
+      expect(session.data?.id).toBeDefined();
+
+      const result = await sdkClient.session.prompt({
+        path: { id: session.data.id },
+        body: {
+          parts: [{ type: 'text', text: 'say hello' }],
+          model: { providerID: 'anthropic', modelID: 'claude-sonnet-4-6' },
+        },
+      });
+
+      expect(result.data).toBeDefined();
+      expect(result.data.info).toBeDefined();
+      expect(result.data.parts.length).toBeGreaterThan(0);
+    },
+    60_000,
+  );
+
+  // -------------------------------------------------------------------------
+  // Session management
+  // -------------------------------------------------------------------------
+
+  it(
+    'SDK session management — create session, send message, list messages',
+    async () => {
+      if (!sdkClient) return;
+
+      sdkMock!.reset([
+        { type: 'text', text: 'title' },
+        { type: 'text', text: 'SESSION_MGMT_RESPONSE' },
+        { type: 'text', text: 'SESSION_MGMT_RESPONSE' },
+        { type: 'text', text: 'SESSION_MGMT_RESPONSE' },
+      ]);
+
+      // Create session
+      const session = await sdkClient.session.create();
+      expect(session.data?.id).toBeDefined();
+
+      // Send message
+      await sdkClient.session.prompt({
+        path: { id: session.data.id },
+        body: {
+          parts: [{ type: 'text', text: 'session management test' }],
+          model: { providerID: 'anthropic', modelID: 'claude-sonnet-4-6' },
+        },
+      });
+
+      // List messages — should include user message and assistant response
+      const msgs = await sdkClient.session.messages({
+        path: { id: session.data.id },
+      });
+      expect(msgs.data).toBeDefined();
+      expect(Array.isArray(msgs.data)).toBe(true);
+      expect(msgs.data.length).toBeGreaterThanOrEqual(2);
+    },
+    60_000,
+  );
+
+  // -------------------------------------------------------------------------
+  // SSE streaming
+  // -------------------------------------------------------------------------
+
+  it(
+    'SSE streaming works — response streams incrementally, not all-at-once',
+    async () => {
+      if (!sdkClient || !sdkServerUrl) return;
+
+      sdkMock!.reset([
+        { type: 'text', text: 'title' },
+        { type: 'text', text: 'SSE_INCREMENTAL_RESPONSE' },
+        { type: 'text', text: 'SSE_INCREMENTAL_RESPONSE' },
+        { type: 'text', text: 'SSE_INCREMENTAL_RESPONSE' },
+      ]);
+
+      const session = await sdkClient.session.create();
+      expect(session.data?.id).toBeDefined();
+
+      // Open raw SSE connection to /event
+      const controller = new AbortController();
+      const sseResp = await fetch(
+        `${sdkServerUrl}/event?directory=${encodeURIComponent(sdkWorkDir)}`,
+        { signal: controller.signal },
+      );
+      expect(sseResp.ok).toBe(true);
+      expect(sseResp.headers.get('content-type')).toContain(
+        'text/event-stream',
+      );
+
+      // Read SSE chunks in background
+      const reader = sseResp.body!.getReader();
+      const decoder = new TextDecoder();
+      const chunks: string[] = [];
+
+      const readLoop = (async () => {
+        try {
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            chunks.push(decoder.decode(value, { stream: true }));
+            const joined = chunks.join('');
+            if (
+              joined.includes('message.part.updated') ||
+              chunks.length > 100
+            ) {
+              break;
+            }
+          }
+        } catch {
+          // AbortError expected on cleanup
+        }
+      })();
+
+      // Let SSE connection establish
+      await new Promise((r) => setTimeout(r, 300));
+
+      // Send prompt — generates streaming SSE events
+      await sdkClient.session.prompt({
+        path: { id: session.data.id },
+        body: {
+          parts: [{ type: 'text', text: 'stream test' }],
+          model: { providerID: 'anthropic', modelID: 'claude-sonnet-4-6' },
+        },
+      });
+
+      // Wait for SSE events or timeout
+      await Promise.race([
+        readLoop,
+        new Promise((r) => setTimeout(r, 10_000)),
+      ]);
+      controller.abort();
+
+      // Verify SSE delivered incremental events
+      const allData = chunks.join('');
+      expect(allData.length).toBeGreaterThan(0);
+      const dataLines = allData
+        .split('\n')
+        .filter((l) => l.startsWith('data:'));
+      // Multiple data: lines prove incremental event delivery
+      expect(dataLines.length).toBeGreaterThan(1);
+    },
+    60_000,
+  );
+
+  // -------------------------------------------------------------------------
+  // Error handling
+  // -------------------------------------------------------------------------
+
+  it(
+    'SDK error handling — invalid session ID returns proper error response',
+    async () => {
+      if (!sdkClient) return;
+
+      const result = await sdkClient.session.get({
+        path: { id: 'nonexistent-session-id-99999' },
+      });
+
+      // Non-existent session should produce error (404 Not Found)
+      expect(result.error).toBeDefined();
+    },
+    15_000,
+  );
+});

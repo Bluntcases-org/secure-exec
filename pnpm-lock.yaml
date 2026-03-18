@@ -234,6 +234,9 @@ importers:
       '@mariozechner/pi-coding-agent':
         specifier: ^0.60.0
         version: 0.60.0(zod@4.3.6)
+      '@opencode-ai/sdk':
+        specifier: ^1.2.27
+        version: 1.2.27
       '@types/node':
         specifier: ^22.10.2
         version: 22.19.3
@@ -2780,6 +2783,10 @@ packages:
 
   /@open-draft/until@2.1.0:
     resolution: {integrity: sha512-U69T3ItWHvLwGg5eJ0n3I62nWuE6ilHlmz7zM0npLBRvPRd7e6NYmg54vvRtP5mZG7kZqZCFVdsTWo7BPtBujg==}
+    dev: true
+
+  /@opencode-ai/sdk@1.2.27:
+    resolution: {integrity: sha512-Wk0o/I+Fo+wE3zgvlJDs8Fb67KlKqX0PrV8dK5adSDkANq6r4Z25zXJg2iOir+a8ntg3rAcpel1OY4FV/TwRUA==}
     dev: true
 
   /@oslojs/encoding@1.1.0:
