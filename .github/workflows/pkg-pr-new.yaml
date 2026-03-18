@@ -7,7 +7,7 @@ on:
       - "package.json"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
-      - "packages/secure-exec/**"
+      - "packages/**"
   push:
     branches:
       - main
@@ -16,7 +16,7 @@ on:
       - "package.json"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
-      - "packages/secure-exec/**"
+      - "packages/**"
 
 concurrency:
   group: pkg-pr-new-${{ github.event.pull_request.number || github.ref }}
@@ -45,8 +45,16 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build package
-        run: pnpm --filter secure-exec build
+      - name: Build packages
+        run: pnpm turbo run build --filter='@secure-exec/typescript...'
 
       - name: Publish to pkg.pr.new
-        run: pnpm dlx pkg-pr-new publish "./packages/secure-exec" --packageManager pnpm
+        run: |
+          pnpm dlx pkg-pr-new publish \
+            "./packages/secure-exec" \
+            "./packages/secure-exec-core" \
+            "./packages/secure-exec-node" \
+            "./packages/secure-exec-browser" \
+            "./packages/secure-exec-python" \
+            "./packages/secure-exec-typescript" \
+            --packageManager pnpm
