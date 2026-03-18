@@ -1380,3 +1380,17 @@ PRD: ralph/kernel-hardening (46 stories)
   - MockRuntimeDriver `neverExit` + `killSignals` configs are useful for testing timeout/kill behavior
   - vi.useFakeTimers() + vi.advanceTimersByTimeAsync() works well for verifying timer cleanup
 ---
+
+## 2026-03-18 - US-116
+- Implemented: Capped cryptoRandomFill host allocation to 65536 bytes (Web Crypto API spec limit)
+- Guest-side validation in bridge/process.ts throws RangeError before calling host (proper error propagation)
+- Host-side validation in bridge-setup.ts as defense-in-depth against OOM
+- Files changed:
+  - packages/secure-exec-node/src/bridge-setup.ts (host-side cap)
+  - packages/secure-exec-core/src/bridge/process.ts (guest-side RangeError)
+  - packages/secure-exec/tests/runtime-driver/node/index.test.ts (3 new tests)
+- **Learnings for future iterations:**
+  - Bridge guest-side catch blocks (process.ts) swallow all errors into "not supported" — validation that should produce specific errors (e.g., RangeError) must go BEFORE the try block
+  - Web Crypto API getRandomValues limit is 65536 bytes; Node.js matches this
+  - Defense-in-depth: validate on both guest side (for proper error type) and host side (for OOM protection)
+---
