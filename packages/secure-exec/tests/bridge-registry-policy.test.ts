@@ -10,6 +10,13 @@ function readSource(relativePath: string): string {
 	return readFileSync(new URL(`../${relativePath}`, import.meta.url), "utf8");
 }
 
+function readCoreSource(relativePath: string): string {
+	return readFileSync(
+		new URL(`../../secure-exec-core/${relativePath}`, import.meta.url),
+		"utf8",
+	);
+}
+
 describe("bridge registry policy", () => {
 	it("keeps canonical bridge key lists represented in custom-global inventory", () => {
 		const inventoryNames = new Set(
@@ -50,10 +57,10 @@ describe("bridge registry policy", () => {
 			"src/bridge/child-process.ts",
 		];
 		for (const file of bridgeFiles) {
-			expect(readSource(file)).toContain("../shared/bridge-contract.js");
+			expect(readCoreSource(file)).toContain("../shared/bridge-contract.js");
 		}
 
-		const runtimeGlobals = readSource(
+		const runtimeGlobals = readCoreSource(
 			"isolate-runtime/src/common/runtime-globals.d.ts",
 		);
 		expect(runtimeGlobals).toContain(

@@ -187,3 +187,6 @@ export {
 	getIsolateRuntimeSource,
 	ISOLATE_RUNTIME_SOURCES,
 } from "./generated/isolate-runtime.js";
+
+// Generated polyfills.
+export { POLYFILL_CODE_MAP } from "./generated/polyfills.js";

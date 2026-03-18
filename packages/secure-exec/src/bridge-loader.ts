@@ -1,10 +1,15 @@
 import * as fs from "node:fs";
+import { createRequire } from "node:module";
 import * as path from "node:path";
-import { fileURLToPath } from "node:url";
 import * as esbuild from "esbuild";
-import { getIsolateRuntimeSource } from "./generated/isolate-runtime.js";
+import { getIsolateRuntimeSource } from "@secure-exec/core";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+// Resolve @secure-exec/core package root for bridge source and compiled bundle.
+const _require = createRequire(import.meta.url);
+const coreRoot = path.resolve(
+	path.dirname(_require.resolve("@secure-exec/core")),
+	"..",
+);
 
 // Cache the bridge code
 let bridgeCodeCache: string | null = null;
@@ -12,8 +17,7 @@ let bridgeCodeCache: string | null = null;
 /** Locate the bridge TypeScript source for on-demand compilation (dev only). */
 function findBridgeSourcePath(): string | null {
 	const candidates = [
-		path.join(__dirname, "bridge", "index.ts"),
-		path.join(__dirname, "..", "src", "bridge", "index.ts"),
+		path.join(coreRoot, "src", "bridge", "index.ts"),
 	];
 	for (const candidate of candidates) {
 		if (fs.existsSync(candidate)) return candidate;
@@ -46,7 +50,7 @@ function ensureBridgeBundle(bridgePath: string): void {
 	if (!sourcePath) {
 		if (fs.existsSync(bridgePath)) return;
 		throw new Error(
-			"bridge.js not found and source is unavailable. Run `pnpm -C packages/secure-exec build:bridge`.",
+			"bridge.js not found and source is unavailable. Run `pnpm -C packages/secure-exec-core build:bridge`.",
 		);
 	}
 
@@ -79,7 +83,7 @@ function ensureBridgeBundle(bridgePath: string): void {
  */
 export function getRawBridgeCode(): string {
 	if (!bridgeCodeCache) {
-		const bridgePath = path.join(__dirname, "..", "dist", "bridge.js");
+		const bridgePath = path.join(coreRoot, "dist", "bridge.js");
 		ensureBridgeBundle(bridgePath);
 		bridgeCodeCache = fs.readFileSync(bridgePath, "utf8");
 	}

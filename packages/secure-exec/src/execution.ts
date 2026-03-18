@@ -1,5 +1,5 @@
 import ivm from "isolated-vm";
-import { getIsolateRuntimeSource } from "./generated/isolate-runtime.js";
+import { getIsolateRuntimeSource } from "@secure-exec/core";
 import type { ResolutionCache } from "./package-bundler.js";
 import { transformDynamicImport } from "./shared/esm-utils.js";
 import type {

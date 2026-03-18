@@ -1,5 +1,5 @@
 import ivm from "isolated-vm";
-import { getIsolateRuntimeSource } from "../generated/isolate-runtime.js";
+import { getIsolateRuntimeSource } from "@secure-exec/core";
 import {
 	HARDENED_NODE_CUSTOM_GLOBALS,
 	MUTABLE_NODE_CUSTOM_GLOBALS,

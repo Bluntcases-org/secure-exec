@@ -2,7 +2,7 @@ import ivm from "isolated-vm";
 import { randomFillSync, randomUUID } from "node:crypto";
 import { getInitialBridgeGlobalsSetupCode } from "../bridge-setup.js";
 import { getBridgeAttachCode, getRawBridgeCode } from "../bridge-loader.js";
-import { getIsolateRuntimeSource } from "../generated/isolate-runtime.js";
+import { getIsolateRuntimeSource } from "@secure-exec/core";
 import { loadFile, resolveModule } from "../package-bundler.js";
 import { bundlePolyfill, hasPolyfill } from "../polyfills.js";
 import {

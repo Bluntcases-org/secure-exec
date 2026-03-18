@@ -59,7 +59,10 @@ describe("isolate runtime injection policy", () => {
 	});
 
 	it("builds isolate runtime from src/inject entrypoints with shared common modules", () => {
-		const buildScript = readSource("scripts/build-isolate-runtime.mjs");
+		const buildScript = readFileSync(
+			new URL("../../secure-exec-core/scripts/build-isolate-runtime.mjs", import.meta.url),
+			"utf8",
+		);
 		expect(buildScript).toContain('path.join(process.cwd(), "isolate-runtime", "src")');
 		expect(buildScript).toContain('path.join(runtimeSourceDir, "inject")');
 		expect(buildScript).toContain("bundle: true");

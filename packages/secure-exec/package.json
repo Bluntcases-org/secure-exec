@@ -23,22 +23,16 @@
     }
   },
   "scripts": {
-    "check-types:src": "tsc --noEmit",
-    "check-types:isolate-runtime": "tsc -p tsconfig.isolate-runtime.json --noEmit",
-    "check-types": "pnpm run build:generated && pnpm run check-types:src && pnpm run check-types:isolate-runtime",
-    "build:bridge": "esbuild src/bridge/index.ts --bundle --format=iife --global-name=bridge --outfile=dist/bridge.js",
-    "build:polyfills": "node scripts/build-polyfills.mjs",
-    "build:isolate-runtime": "node scripts/build-isolate-runtime.mjs",
-    "build:generated": "pnpm run build:polyfills && pnpm run build:isolate-runtime",
-    "build": "pnpm run build:bridge && pnpm run build:generated && tsc",
-    "check-types:test": "pnpm run build:generated && vitest --typecheck --run tests/types/",
-    "test:test-suite": "pnpm run build:generated && vitest run tests/test-suite.test.ts tests/test-suite-python.test.ts",
-    "test:runtime-driver": "pnpm run build:generated && vitest run tests/runtime-driver/*.test.ts",
+    "check-types": "tsc --noEmit",
+    "check-types:test": "vitest --typecheck --run tests/types/",
+    "build": "tsc",
+    "test:test-suite": "vitest run tests/test-suite.test.ts tests/test-suite-python.test.ts",
+    "test:runtime-driver": "vitest run tests/runtime-driver/*.test.ts",
     "test:integration:node": "pnpm run test:test-suite && pnpm run test:runtime-driver",
-    "test:integration:browser": "pnpm run build:generated && vitest run --config vitest.browser.config.ts tests/test-suite/node.test.ts tests/runtime-driver/browser/runtime.test.ts",
-    "test:project-matrix": "pnpm run build:generated && vitest run tests/project-matrix.test.ts",
-    "test": "pnpm run build:generated && vitest run",
-    "test:watch": "pnpm run build:generated && vitest"
+    "test:integration:browser": "vitest run --config vitest.browser.config.ts tests/test-suite/node.test.ts tests/runtime-driver/browser/runtime.test.ts",
+    "test:project-matrix": "vitest run tests/project-matrix.test.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@secure-exec/core": "workspace:*",

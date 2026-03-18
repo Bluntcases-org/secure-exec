@@ -1,4 +1,4 @@
-import { getIsolateRuntimeSource } from "./generated/isolate-runtime.js";
+import { getIsolateRuntimeSource } from "@secure-exec/core";
 
 /**
  * Get the isolate-side script that initializes early mutable runtime globals

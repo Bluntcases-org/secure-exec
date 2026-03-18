@@ -17,7 +17,7 @@ import {
 import {
 	HOST_BRIDGE_GLOBAL_KEYS,
 } from "../shared/bridge-contract.js";
-import { getIsolateRuntimeSource } from "../generated/isolate-runtime.js";
+import { getIsolateRuntimeSource } from "@secure-exec/core";
 import {
 	getExecutionRunOptions,
 	runWithExecutionDeadline,

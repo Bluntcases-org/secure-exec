@@ -13,8 +13,7 @@ import {
 	isESM,
 	transformDynamicImport,
 } from "../shared/esm-utils.js";
-import { getIsolateRuntimeSource } from "../generated/isolate-runtime.js";
-import { POLYFILL_CODE_MAP } from "../generated/polyfills.js";
+import { getIsolateRuntimeSource, POLYFILL_CODE_MAP } from "@secure-exec/core";
 import { loadFile, resolveModule } from "../package-bundler.js";
 import { mkdir } from "../fs-helpers.js";
 import {
