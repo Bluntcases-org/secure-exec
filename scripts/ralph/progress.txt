@@ -1474,3 +1474,14 @@ PRD: ralph/kernel-hardening (46 stories)
   - In canonical mode, chars beyond MAX_CANON are silently dropped (no EAGAIN) — only buffer-level EAGAIN applies to input/output buffers
   - Echo with canonical mode: echo output is bounded by MAX_CANON (only accepted chars get echoed) + 2 bytes for CR+LF on newline flush
 ---
+
+## 2026-03-18 - US-109, US-110
+- US-109: Already implemented in prior iteration (commit 667669d). Verified tests pass, marked passes: true.
+- US-110: Added 2 kernel-integration-level PTY echo buffer exhaustion tests through fdWrite/fdRead kernel interface
+  - Test 1: fill output buffer via slave write, verify fdWrite to master with echo enabled throws EAGAIN
+  - Test 2: drain buffer via master read, verify echo resumes (write 'B', read echo 'B' back)
+- Files changed: packages/kernel/test/kernel-integration.test.ts (added MAX_PTY_BUFFER_BYTES import + 2 tests in termios section)
+- **Learnings for future iterations:**
+  - Integration-level PTY tests use ki.fdWrite/ki.fdRead (kernel interface), not ptyManager.write/read directly
+  - Output buffer fills via slave write (slave→master direction); echo goes in the same direction, so echo is blocked when output buffer is full
+---

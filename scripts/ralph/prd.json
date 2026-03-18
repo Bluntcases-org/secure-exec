@@ -1944,7 +1944,7 @@
         "Tests pass"
       ],
       "priority": 115,
-      "passes": false,
+      "passes": true,
       "notes": "LOW \u2014 found during PTY review. PTY foregroundPgid goes stale when process exits. Protected by try/catch in kernel constructor wiring but untested."
     },
     {
@@ -1958,7 +1958,7 @@
         "Tests pass"
       ],
       "priority": 116,
-      "passes": false,
+      "passes": true,
       "notes": "LOW \u2014 depends on US-106 (echo overflow fix). Tests the specific interaction between buffer fullness and echo."
     },
     {
