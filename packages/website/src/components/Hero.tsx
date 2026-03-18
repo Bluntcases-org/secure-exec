@@ -6,35 +6,37 @@ import { ArrowRight, Terminal, Check, ChevronDown } from "lucide-react";
 import { CopyButton } from "./ui/CopyButton";
 import { LightningBackground } from "./ui/LightningBackground";
 
-const codeRaw = `import { generateText, tool } from "ai";
+const codeRaw = `import { generateText, stepCountIs, tool } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { NodeRuntime, createNodeDriver, createNodeRuntimeDriverFactory } from "secure-exec";
 import { z } from "zod";
 
 const runtime = new NodeRuntime({
-  systemDriver: createNodeDriver({ permissions: { fs: true, network: true } }),
+  systemDriver: createNodeDriver({
+    permissions: {
+      fs: () => ({ allow: true }),
+      network: () => ({ allow: true }),
+    },
+  }),
   runtimeDriverFactory: createNodeRuntimeDriverFactory(),
   memoryLimit: 64,
   cpuTimeLimitMs: 5000,
 });
 
-const result = await generateText({
-  model: anthropic("claude-sonnet-4-20250514"),
+const { text } = await generateText({
+  model: anthropic("claude-sonnet-4-6"),
+  prompt: "Calculate the first 20 fibonacci numbers",
+  stopWhen: stepCountIs(5),
   tools: {
     execute: tool({
-      description: "Run JavaScript in a secure sandbox",
-      parameters: z.object({ code: z.string() }),
-      execute: async ({ code }) => {
-        const logs: string[] = [];
-        const res = await runtime.exec(code, {
-          onStdio: (e) => logs.push(e.message),
-        });
-        return { exitCode: res.code, output: logs.join("\\n") };
-      },
+      description: "Run JavaScript in a secure sandbox. Assign the result to module.exports to return data.",
+      inputSchema: z.object({ code: z.string() }),
+      execute: async ({ code }) => runtime.run(code),
     }),
   },
-  prompt: "Calculate the first 20 fibonacci numbers",
-});`;
+});
+
+console.log(text);`;
 
 function CodeBlock() {
   return (
@@ -48,6 +50,8 @@ function CodeBlock() {
           <span className="text-purple-400">import</span>
           <span className="text-zinc-300">{" { "}</span>
           <span className="text-white">generateText</span>
+          <span className="text-zinc-300">, </span>
+          <span className="text-white">stepCountIs</span>
           <span className="text-zinc-300">, </span>
           <span className="text-white">tool</span>
           <span className="text-zinc-300">{" } "}</span>
@@ -99,11 +103,21 @@ function CodeBlock() {
           {"\n"}
           <span className="text-zinc-300">{"  systemDriver: "}</span>
           <span className="text-blue-400">createNodeDriver</span>
-          <span className="text-zinc-300">{"({ permissions: { fs: "}</span>
+          <span className="text-zinc-300">{"({"}</span>
+          {"\n"}
+          <span className="text-zinc-300">{"    permissions: {"}</span>
+          {"\n"}
+          <span className="text-zinc-300">{"      fs: () => ({ allow: "}</span>
           <span className="text-orange-400">true</span>
-          <span className="text-zinc-300">{", network: "}</span>
+          <span className="text-zinc-300">{" }),"}</span>
+          {"\n"}
+          <span className="text-zinc-300">{"      network: () => ({ allow: "}</span>
           <span className="text-orange-400">true</span>
-          <span className="text-zinc-300">{" } }),"}</span>
+          <span className="text-zinc-300">{" }),"}</span>
+          {"\n"}
+          <span className="text-zinc-300">{"    },"}</span>
+          {"\n"}
+          <span className="text-zinc-300">{"  }),"}</span>
           {"\n"}
           <span className="text-zinc-300">{"  runtimeDriverFactory: "}</span>
           <span className="text-blue-400">createNodeRuntimeDriverFactory</span>
@@ -123,7 +137,7 @@ function CodeBlock() {
           <span className="text-zinc-500">// Expose as an AI SDK tool</span>
           {"\n"}
           <span className="text-purple-400">const</span>
-          <span className="text-zinc-300"> result = </span>
+          <span className="text-zinc-300">{" { text } = "}</span>
           <span className="text-purple-400">await</span>
           <span className="text-zinc-300"> </span>
           <span className="text-blue-400">generateText</span>
@@ -132,7 +146,17 @@ function CodeBlock() {
           <span className="text-zinc-300">{"  model: "}</span>
           <span className="text-blue-400">anthropic</span>
           <span className="text-zinc-300">{"("}</span>
-          <span className="text-green-400">"claude-sonnet-4-20250514"</span>
+          <span className="text-green-400">"claude-sonnet-4-6"</span>
+          <span className="text-zinc-300">{"),"}</span>
+          {"\n"}
+          <span className="text-zinc-300">{"  prompt: "}</span>
+          <span className="text-green-400">"Calculate the first 20 fibonacci numbers"</span>
+          <span className="text-zinc-300">,</span>
+          {"\n"}
+          <span className="text-zinc-300">{"  stopWhen: "}</span>
+          <span className="text-blue-400">stepCountIs</span>
+          <span className="text-zinc-300">{"("}</span>
+          <span className="text-orange-400">5</span>
           <span className="text-zinc-300">{"),"}</span>
           {"\n"}
           <span className="text-zinc-300">{"  tools: {"}</span>
@@ -142,10 +166,10 @@ function CodeBlock() {
           <span className="text-zinc-300">{"({"}</span>
           {"\n"}
           <span className="text-zinc-300">{"      description: "}</span>
-          <span className="text-green-400">"Run JavaScript in a secure sandbox"</span>
+          <span className="text-green-400">"Run JavaScript in a secure sandbox. Assign the result to module.exports to return data."</span>
           <span className="text-zinc-300">,</span>
           {"\n"}
-          <span className="text-zinc-300">{"      parameters: z."}</span>
+          <span className="text-zinc-300">{"      inputSchema: z."}</span>
           <span className="text-blue-400">object</span>
           <span className="text-zinc-300">{"({ code: z."}</span>
           <span className="text-blue-400">string</span>
@@ -153,47 +177,20 @@ function CodeBlock() {
           {"\n"}
           <span className="text-zinc-300">{"      execute: "}</span>
           <span className="text-purple-400">async</span>
-          <span className="text-zinc-300">{" ({ code }) => {"}</span>
-          {"\n"}
-          <span className="text-zinc-300">{"        "}</span>
-          <span className="text-purple-400">const</span>
-          <span className="text-zinc-300">{" logs: "}</span>
-          <span className="text-blue-400">string</span>
-          <span className="text-zinc-300">{"[] = [];"}</span>
-          {"\n"}
-          <span className="text-zinc-300">{"        "}</span>
-          <span className="text-purple-400">const</span>
-          <span className="text-zinc-300">{" res = "}</span>
-          <span className="text-purple-400">await</span>
-          <span className="text-zinc-300">{" runtime."}</span>
-          <span className="text-blue-400">exec</span>
-          <span className="text-zinc-300">{"(code, {"}</span>
-          {"\n"}
-          <span className="text-zinc-300">{"          onStdio: (e) => logs."}</span>
-          <span className="text-blue-400">push</span>
-          <span className="text-zinc-300">{"(e.message),"}</span>
-          {"\n"}
-          <span className="text-zinc-300">{"        });"}</span>
-          {"\n"}
-          <span className="text-zinc-300">{"        "}</span>
-          <span className="text-purple-400">return</span>
-          <span className="text-zinc-300">{" { exitCode: res.code, output: logs."}</span>
-          <span className="text-blue-400">join</span>
-          <span className="text-zinc-300">{"("}</span>
-          <span className="text-green-400">"\\n"</span>
-          <span className="text-zinc-300">{") };"}</span>
-          {"\n"}
-          <span className="text-zinc-300">{"      },"}</span>
+          <span className="text-zinc-300">{" ({ code }) => runtime."}</span>
+          <span className="text-blue-400">run</span>
+          <span className="text-zinc-300">{"(code),"}</span>
           {"\n"}
           <span className="text-zinc-300">{"    }),"}</span>
           {"\n"}
           <span className="text-zinc-300">{"  },"}</span>
           {"\n"}
-          <span className="text-zinc-300">{"  prompt: "}</span>
-          <span className="text-green-400">"Calculate the first 20 fibonacci numbers"</span>
-          <span className="text-zinc-300">,</span>
-          {"\n"}
           <span className="text-zinc-300">{"});"}</span>
+          {"\n\n"}
+          <span className="text-white">console</span>
+          <span className="text-zinc-300">.</span>
+          <span className="text-blue-400">log</span>
+          <span className="text-zinc-300">(text);</span>
         </code>
       </pre>
     </div>

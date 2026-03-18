@@ -15,6 +15,13 @@
     "light": "/logo.svg",
     "dark": "/logo.svg"
   },
+  "integrations": {
+    "posthog": {
+      "apiKey": "phc_6kfTNEAVw7rn1LA51cO3D69FefbKupSWFaM7OUgEpEo",
+      "apiHost": "https://ph.rivet.gg",
+      "sessionRecording": true
+    }
+  },
   "colors": {
     "primary": "#CC0000",
     "light": "#FF3333",

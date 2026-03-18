@@ -30,6 +30,28 @@ importers:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@22.19.3)(@vitest/browser@2.1.9)
 
+  examples/ai-sdk:
+    dependencies:
+      '@ai-sdk/anthropic':
+        specifier: ^3.0.58
+        version: 3.0.58(zod@3.25.76)
+      '@ai-sdk/openai':
+        specifier: ^3.0.41
+        version: 3.0.41(zod@3.25.76)
+      ai:
+        specifier: ^6.0.116
+        version: 6.0.116(zod@3.25.76)
+      secure-exec:
+        specifier: workspace:*
+        version: link:../../packages/secure-exec
+      zod:
+        specifier: ^3.24.0
+        version: 3.25.76
+    devDependencies:
+      tsx:
+        specifier: ^4.19.2
+        version: 4.21.0
+
   examples/codemod:
     dependencies:
       secure-exec:
@@ -365,6 +387,59 @@ importers:
         version: 5.9.3
 
 packages:
+
+  /@ai-sdk/anthropic@3.0.58(zod@3.25.76):
+    resolution: {integrity: sha512-/53SACgmVukO4bkms4dpxpRlYhW8Ct6QZRe6sj1Pi5H00hYhxIrqfiLbZBGxkdRvjsBQeP/4TVGsXgH5rQeb8Q==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      zod: ^3.25.76 || ^4.1.8
+    dependencies:
+      '@ai-sdk/provider': 3.0.8
+      '@ai-sdk/provider-utils': 4.0.19(zod@3.25.76)
+      zod: 3.25.76
+    dev: false
+
+  /@ai-sdk/gateway@3.0.66(zod@3.25.76):
+    resolution: {integrity: sha512-SIQ0YY0iMuv+07HLsZ+bB990zUJ6S4ujORAh+Jv1V2KGNn73qQKnGO0JBk+w+Res8YqOFSycwDoWcFlQrVxS4A==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      zod: ^3.25.76 || ^4.1.8
+    dependencies:
+      '@ai-sdk/provider': 3.0.8
+      '@ai-sdk/provider-utils': 4.0.19(zod@3.25.76)
+      '@vercel/oidc': 3.1.0
+      zod: 3.25.76
+    dev: false
+
+  /@ai-sdk/openai@3.0.41(zod@3.25.76):
+    resolution: {integrity: sha512-IZ42A+FO+vuEQCVNqlnAPYQnnUpUfdJIwn1BEDOBywiEHa23fw7PahxVtlX9zm3/zMvTW4JKPzWyvAgDu+SQ2A==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      zod: ^3.25.76 || ^4.1.8
+    dependencies:
+      '@ai-sdk/provider': 3.0.8
+      '@ai-sdk/provider-utils': 4.0.19(zod@3.25.76)
+      zod: 3.25.76
+    dev: false
+
+  /@ai-sdk/provider-utils@4.0.19(zod@3.25.76):
+    resolution: {integrity: sha512-3eG55CrSWCu2SXlqq2QCsFjo3+E7+Gmg7i/oRVoSZzIodTuDSfLb3MRje67xE9RFea73Zao7Lm4mADIfUETKGg==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      zod: ^3.25.76 || ^4.1.8
+    dependencies:
+      '@ai-sdk/provider': 3.0.8
+      '@standard-schema/spec': 1.1.0
+      eventsource-parser: 3.0.6
+      zod: 3.25.76
+    dev: false
+
+  /@ai-sdk/provider@3.0.8:
+    resolution: {integrity: sha512-oGMAgGoQdBXbZqNG0Ze56CHjDZ1IDYOwGYxYjO5KLSlz5HiNQ9udIXsPZ61VWaHGZ5XW/jyjmr6t2xz2jGVwbQ==}
+    engines: {node: '>=18'}
+    dependencies:
+      json-schema: 0.4.0
+    dev: false
 
   /@alloc/quick-lru@5.2.0:
     resolution: {integrity: sha512-UrcABB+4bUrFABwbluTIBErXwvbsU/V7TZWfmbgJfbkwiBuziS9gxdODUyuiecfdGQ85jglMW6juS3+z5TsKLw==}
@@ -2038,6 +2113,11 @@ packages:
     resolution: {integrity: sha512-U69T3ItWHvLwGg5eJ0n3I62nWuE6ilHlmz7zM0npLBRvPRd7e6NYmg54vvRtP5mZG7kZqZCFVdsTWo7BPtBujg==}
     dev: true
 
+  /@opentelemetry/api@1.9.0:
+    resolution: {integrity: sha512-3giAOQvZiH5F9bMlMiv8+GSPMeqg0dbaeo58/0SlA9sxSqZhnUtxzX9/2FzyhS9sWQf5S0GJE0AKBrFqjpeYcg==}
+    engines: {node: '>=8.0.0'}
+    dev: false
+
   /@oslojs/encoding@1.1.0:
     resolution: {integrity: sha512-70wQhgYmndg4GCPxPPxPGevRKqTIJ2Nh4OkiMWmDAVYsTQ+Ta7Sq+rPevXyXGdzr30/qZBnyOalCszoMxlyldQ==}
     dev: false
@@ -2265,6 +2345,10 @@ packages:
     resolution: {integrity: sha512-83yeghZ2xxin3Nj8z1NMd/NCuca+gsYXswywDy5bHvwlWL8tpTQmzGeUuHd9FC3E/SBEMvzJRwWEOz5gGes9Qg==}
     dev: false
 
+  /@standard-schema/spec@1.1.0:
+    resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
+    dev: false
+
   /@testing-library/dom@10.4.1:
     resolution: {integrity: sha512-o4PXJQidqJl82ckFaXUeoAW+XysPLauYI43Abki5hABd853iMhitooc6znOnczgbTYmEP6U6/y1ZyKAIsvMKGg==}
     engines: {node: '>=18'}
@@ -2407,6 +2491,11 @@ packages:
     resolution: {integrity: sha512-WmoN8qaIAo7WTYWbAZuG8PYEhn5fkz7dZrqTBZ7dtt//lL2Gwms1IcnQ5yHqjDfX8Ft5j4YzDM23f87zBfDe9g==}
     dev: false
 
+  /@vercel/oidc@3.1.0:
+    resolution: {integrity: sha512-Fw28YZpRnA3cAHHDlkt7xQHiJ0fcL+NRcIqsocZQUSmbzeIKRpwttJjik5ZGanXP+vlA4SbTg+AbA3bP363l+w==}
+    engines: {node: '>= 20'}
+    dev: false
+
   /@vitejs/plugin-react@4.7.0(vite@6.4.1):
     resolution: {integrity: sha512-gUu9hwfWvvEDBBmgtAowQCojwZmJ5mcLn3aufeCsitijs3+f2NsrPtlAWIR6OPiqljl96GVCUbLe0HyqIpVaoA==}
     engines: {node: ^14.18.0 || >=16.0.0}
@@ -2544,6 +2633,19 @@ packages:
     resolution: {integrity: sha512-NZyJarBfL7nWwIq+FDL6Zp/yHEhePMNnnJ0y3qfieCrmNvYct8uvtiV41UvlSe6apAfk0fY1FbWx+NwfmpvtTg==}
     engines: {node: '>=0.4.0'}
     hasBin: true
+
+  /ai@6.0.116(zod@3.25.76):
+    resolution: {integrity: sha512-7yM+cTmyRLeNIXwt4Vj+mrrJgVQ9RMIW5WO0ydoLoYkewIvsMcvUmqS4j2RJTUXaF1HphwmSKUMQ/HypNRGOmA==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      zod: ^3.25.76 || ^4.1.8
+    dependencies:
+      '@ai-sdk/gateway': 3.0.66(zod@3.25.76)
+      '@ai-sdk/provider': 3.0.8
+      '@ai-sdk/provider-utils': 4.0.19(zod@3.25.76)
+      '@opentelemetry/api': 1.9.0
+      zod: 3.25.76
+    dev: false
 
   /amdefine@1.0.1:
     resolution: {integrity: sha512-S2Hw0TtNkMJhIabBwIojKL9YHO5T0n5eNqWJ7Lrlel/zDbftQpxpapi8tZs3X1HWa+u+QeydGmzzNU0m09+Rcg==}
@@ -3674,6 +3776,11 @@ packages:
     engines: {node: '>=0.8.x'}
     dev: false
 
+  /eventsource-parser@3.0.6:
+    resolution: {integrity: sha512-Vo1ab+QXPzZ4tCa8SwIHJFaSzy4R6SHf7BY79rFBDf0idraZWAkYrDjDj8uWaSm3S2TK+hJ7/t1CEmZ7jXw+pg==}
+    engines: {node: '>=18.0.0'}
+    dev: false
+
   /evp_bytestokey@1.0.3:
     resolution: {integrity: sha512-/f2Go4TognH/KvCISP7OUsHn85hT9nUkxxA9BEWxFn+Oj9o8ZNLm/40hdlgSLyuOimsrTKLUMEorQexp/aPQeA==}
     dependencies:
@@ -4315,6 +4422,10 @@ packages:
     resolution: {integrity: sha512-/sM3dO2FOzXjKQhJuo0Q173wf2KOo8t4I8vHy6lF9poUp7bKT0/NHE8fPX23PwfhnykfqnC2xRxOnVw5XuGIaA==}
     engines: {node: '>=6'}
     hasBin: true
+    dev: false
+
+  /json-schema@0.4.0:
+    resolution: {integrity: sha512-es94M3nTIfsEPisRafak+HDLfHXnKBhV3vU5eqPcS3flIWqcxJWgXHXiey3YrpaNsanY5ei1VoYEbOzijuq9BA==}
     dev: false
 
   /json5@2.2.3:
