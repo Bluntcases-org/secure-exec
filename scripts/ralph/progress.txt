@@ -1187,3 +1187,20 @@ PRD: ralph/kernel-hardening (46 stories)
   - VFS.snapshot() omits device nodes (e.g., /dev/null) since the VFS constructor recreates them
   - Prior iteration commits updated root-level prd.json but the active PRD is at scripts/ralph/prd.json — always update the correct file
 ---
+
+## 2026-03-17 - US-077
+- Added 5 process cleanup and timer disposal tests to dispose-behavior.test.ts
+- Files changed:
+  - packages/secure-exec/tests/kernel/dispose-behavior.test.ts — added 5 new tests
+  - scripts/ralph/prd.json — marked US-076, US-077 as passes: true
+- **Tests added:**
+  - Crashed process has worker/isolate cleaned up (verifies _activeDrivers map is empty after error exit)
+  - setInterval does not keep process alive after runtime dispose (verifies dispose completes within 5s)
+  - Piped stdout/stderr FDs closed on process exit, readers get EOF
+  - Double-dispose on NodeRuntime does not throw
+  - Double-dispose on PythonRuntime does not throw (skipped if pyodide unavailable)
+- **Learnings for future iterations:**
+  - NodeRuntimeDriver._activeDrivers.delete(ctx.pid) is called in both success and catch paths of _executeAsync — no leaked entries after crash
+  - PythonRuntime has explicit `_disposed` flag for idempotent dispose; NodeRuntimeDriver doesn't need one since it just iterates/clears a map
+  - Kernel.dispose() has its own `disposed` flag, so double-dispose on kernel only calls driver.dispose() once — to test driver-level double-dispose, call driver.dispose() directly after kernel.dispose()
+---
