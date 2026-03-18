@@ -5,6 +5,7 @@ PRD: ralph/kernel-hardening (46 stories)
 ## Codebase Patterns
 - Kernel errors use `KernelError(code, message)` from types.ts — always use structured codes, not plain Error with embedded code in message
 - ERRNO_MAP in wasmvm/src/wasi-constants.ts is the single source of truth for POSIX→WASI errno mapping
+- Bridge ServerResponseBridge.write/end must treat null as no-op (Node.js convention: res.end(null) ends without writing; Fastify's sendTrailer calls res.end(null, null, null))
 - Use `pnpm run check-types` (turbo) for typecheck, not bare `tsc`
 - Bridge readFileSync error.code is lost crossing isolate boundary — bridge must detect error patterns in message and re-create proper Node.js errors
 - Node driver creates system driver with `permissions: { ...allowAllChildProcess }` only — no fs permissions → deny-by-default → EACCES for all fs reads
@@ -812,4 +813,21 @@ PRD: ralph/kernel-hardening (46 stories)
   - Bun 1.3.10 creates text-based bun.lock (not binary bun.lockb from v0)
   - Bun install doesn't need --prefer-offline or --ignore-workspace flags
   - Both project-matrix.test.ts and kernel/e2e-project-matrix.test.ts must be updated in sync for new package managers
+---
+
+## 2026-03-17 - US-051
+- Fixed Express and Fastify fixtures to use real HTTP servers
+- Root cause: bridge ServerResponseBridge.write/end did not handle null chunks — Fastify's sendTrailer calls res.end(null, null, null) which pushed null into _chunks, causing Buffer.concat to fail with "Cannot read properties of null (reading 'length')"
+- Fix: updated write() and end() in bridge/network.ts to treat null as no-op (matching Node.js behavior)
+- Updated Fastify fixture to use app.listen() instead of manual http.createServer + app.routing
+- All 14 project matrix tests pass, all 149 node runtime driver tests pass, typecheck passes
+- Files changed:
+  - packages/secure-exec/src/bridge/network.ts (null-safe write/end)
+  - packages/secure-exec/tests/projects/fastify-pass/src/index.js (use app.listen)
+  - prd.json (US-051 passes: true)
+- **Learnings for future iterations:**
+  - Node.js res.end(null) is valid and means "end without writing data" — bridge must match this convention
+  - Fastify v5 calls res.end(null, null, null) in sendTrailer to avoid V8's ArgumentsAdaptorTrampoline — this is a common Node.js pattern
+  - When debugging sandbox HTTP failures, check the bridge's ServerResponseBridge.write/end for type handling gaps
+  - Express fixture passes with basic http bridge; Fastify needs null-safe write/end due to internal stream handling
 ---
