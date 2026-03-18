@@ -1591,3 +1591,17 @@ PRD: ralph/kernel-hardening (46 stories)
   - DeviceLayer realpath must intercept device paths (isDevicePath || isDeviceDir) to avoid backing VFS ENOENT
   - DEVICE_PATHS set contains the 6 static devices; DEVICE_DIRS has /dev/fd and /dev/pts
 ---
+
+## 2026-03-18 - US-136
+- Sanitized module access error messages: OUT_OF_SCOPE and NATIVE_ADDON errors now use virtual paths instead of host canonical paths / hostNodeModulesRoot
+- Sanitized HTTP server 500 error handler: replaced `error.message` with generic "Internal Server Error"
+- Files changed:
+  - packages/secure-exec-node/src/module-access.ts (lines 253-262: sanitized error messages)
+  - packages/secure-exec-node/src/driver.ts (line 244: generic 500 body)
+  - packages/secure-exec/tests/runtime-driver/node/module-access.test.ts (added out-of-scope error sanitization test)
+  - packages/secure-exec/tests/runtime-driver/node/bridge-hardening.test.ts (added HTTP 500 error sanitization test)
+- **Learnings for future iterations:**
+  - collectOverlayAllowedRoots only scans top-level and @scoped symlinks in node_modules — nested symlinks can trigger OUT_OF_SCOPE
+  - createDefaultNetworkAdapter() is directly testable for HTTP server behavior without going through the full runtime
+  - Security error tests should verify BOTH that the error is raised AND that it doesn't leak sensitive information
+---

@@ -1794,7 +1794,7 @@
         "Tests pass"
       ],
       "priority": 106,
-      "passes": false,
+      "passes": true,
       "notes": "LOW \u2014 module-access.ts:253-256 and driver.ts:244-251. Error messages include canonical paths and host roots."
     },
     {
