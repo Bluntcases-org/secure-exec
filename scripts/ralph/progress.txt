@@ -78,6 +78,10 @@ PRD: ralph/kernel-hardening (46 stories)
 - SAB overflow guard: check responseData.length > DATA_BUFFER_BYTES before writing, return errno 76 (EIO)
 - Bridge execSync wraps as `bash -c 'cmd'`; spawnSync passes command/args directly — use spawnSync for precise routing tests
 - PtyManager description IDs start at 200,000 (pipes at 100,000, regular FDs at 1) — avoid collisions between managers
+- Bridge module loader (require-setup.ts) only supports CJS — ESM packages (with "type": "module") fail with "Cannot use import statement outside a module" when loaded via require
+- Pi's Anthropic provider hardcodes baseURL in model config, ignoring ANTHROPIC_BASE_URL env var — use fetch-intercept.cjs preload to redirect API calls to mock server
+- Pi blocks when spawned via child_process without closing stdin — always call child.stdin.end() when running Pi in print mode
+- Pi hangs in --print mode without --verbose — always pass --verbose to bypass quiet startup blocking
 - PTY is bidirectional: master write→slave read (input), slave write→master read (output); isatty() is true only for slave FDs
 - Adding a new FD-managed resource (like PTY) requires updating: fdRead, fdWrite, fdClose, fdSeek, isStdioPiped, cleanupProcessFDs in kernel.ts
 - PTY default termios: icanon=true, echo=true, isig=true (POSIX standard); tests wanting raw mode must explicitly set via tcsetattr or ptySetDiscipline
@@ -1837,4 +1841,39 @@ PRD: ralph/kernel-hardening (46 stories)
   - stream.Transform and stream.PassThrough are already available via stream-browserify polyfill (readable-stream v3.6.2) — no bridge changes needed
   - Custom NetworkAdapter in tests bypasses SSRF protection and can inject host-side TLS options (ca, rejectUnauthorized) — useful for localhost HTTPS testing
   - Self-signed cert generation in tests: use openssl CLI (genpkey + req + x509) — works reliably in CI
+---
+
+## 2026-03-18 - US-097
+- Created shared mock LLM server at packages/secure-exec/tests/cli-tools/mock-llm-server.ts
+  - Serves Anthropic Messages API SSE (message_start, content_block_start/delta/stop, message_delta, message_stop)
+  - Serves OpenAI Chat Completions API SSE (chat.completion.chunk with delta, finish_reason, [DONE])
+  - Supports text and tool_use response types for multi-turn conversations
+  - Resettable response queue for test isolation (reset() method)
+  - Returns 404 for unknown routes
+- Added @mariozechner/pi-coding-agent as devDependency to packages/secure-exec
+- Created packages/secure-exec/tests/cli-tools/pi-headless.test.ts with 6 tests:
+  - Pi boots in print mode (exit code 0)
+  - Pi produces output (stdout contains canned LLM response)
+  - Pi reads a file (read tool accesses seeded file, 2+ mock requests)
+  - Pi writes a file (file exists after write tool runs)
+  - Pi runs bash command (bash tool executes ls via child_process)
+  - Pi JSON output mode (--mode json produces valid NDJSON)
+- Created fetch-intercept.cjs preload script to redirect Pi's hardcoded API calls to mock server
+- Added permissions option to NodeRuntimeOptions (forward-compatible for future in-VM execution)
+- Tests gated with skipUnlessPiInstalled()
+- Files changed:
+  - packages/secure-exec/tests/cli-tools/mock-llm-server.ts (new)
+  - packages/secure-exec/tests/cli-tools/pi-headless.test.ts (new)
+  - packages/secure-exec/tests/cli-tools/fetch-intercept.cjs (new)
+  - packages/runtime/node/src/driver.ts (permissions option)
+  - packages/secure-exec/package.json (devDependency)
+  - pnpm-lock.yaml
+- **Learnings for future iterations:**
+  - Bridge module loader only supports CJS — ESM packages fail in V8 isolate; need ESM→CJS transpilation for in-VM execution
+  - Pi hardcodes API base URLs per-provider in model config, ignoring ANTHROPIC_BASE_URL env var
+  - fetch-intercept.cjs via NODE_OPTIONS="-r ..." is the reliable way to redirect Pi's API calls
+  - Pi blocks when spawned without stdin EOF — always call child.stdin.end()
+  - Pi --print mode hangs without --verbose flag (quiet startup blocks on something)
+  - Pi --mode json outputs NDJSON (multiple JSON lines), not a single JSON object
+  - Mock LLM server must use "event: <type>\ndata: <json>\n\n" SSE format (event + data prefix required by Pi's SDK)
 ---

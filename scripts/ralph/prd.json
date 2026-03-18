@@ -2287,7 +2287,7 @@
         "Tests pass"
       ],
       "priority": 135,
-      "passes": false,
+      "passes": true,
       "notes": "CLI E2E Phase 1. Mock LLM server is shared infrastructure for all subsequent CLI tool tests. Pi is tested first because it's pure JS with simplest dependency tree. API tokens (ANTHROPIC_API_KEY, OPENAI_API_KEY) available at ~/misc/env.txt \u2014 source it before running tests that need real or mock-pointed API keys."
     },
     {
