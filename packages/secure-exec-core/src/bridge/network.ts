@@ -1,6 +1,9 @@
 // Network module polyfill for isolated-vm
 // Provides fetch, http, https, and dns module emulation that bridges to host
 
+// Cap in-sandbox request/response buffering to prevent host memory exhaustion
+const MAX_HTTP_BODY_BYTES = 50 * 1024 * 1024; // 50 MB
+
 import type * as nodeHttp from "http";
 import type * as nodeDns from "dns";
 import { exposeCustomGlobal } from "../shared/global-exposure.js";
@@ -660,6 +663,7 @@ export class ClientRequest {
   private _callback?: (res: IncomingMessage) => void;
   private _listeners: Record<string, EventListener[]> = {};
   private _body = "";
+  private _bodyBytes = 0;
   private _ended = false;
   private _agent: { _acquireSlot(key: string): Promise<void>; _releaseSlot(key: string): void; _getHostKey(options: { hostname?: string; host?: string; port?: string | number }): string } | null;
   private _hostKey: string;
@@ -788,12 +792,17 @@ export class ClientRequest {
   }
 
   write(data: string): boolean {
+    const addedBytes = typeof Buffer !== "undefined" ? Buffer.byteLength(data) : data.length;
+    if (this._bodyBytes + addedBytes > MAX_HTTP_BODY_BYTES) {
+      throw new Error("ERR_HTTP_BODY_TOO_LARGE: request body exceeds " + MAX_HTTP_BODY_BYTES + " byte limit");
+    }
     this._body += data;
+    this._bodyBytes += addedBytes;
     return true;
   }
 
   end(data?: string): this {
-    if (data) this._body += data;
+    if (data) this.write(data);
     this._ended = true;
     return this;
   }
@@ -1115,6 +1124,7 @@ class ServerResponseBridge {
   writableFinished = false;
   private _headers = new Map<string, string>();
   private _chunks: Uint8Array[] = [];
+  private _chunksBytes = 0;
   private _listeners: Record<string, EventListener[]> = {};
   private _closedPromise: Promise<void>;
   private _resolveClosed: (() => void) | null = null;
@@ -1201,11 +1211,12 @@ class ServerResponseBridge {
   write(chunk: string | Uint8Array | null): boolean {
     if (chunk == null) return true;
     this.headersSent = true;
-    if (typeof chunk === "string") {
-      this._chunks.push(Buffer.from(chunk));
-    } else {
-      this._chunks.push(chunk);
+    const buf = typeof chunk === "string" ? Buffer.from(chunk) : chunk;
+    if (this._chunksBytes + buf.byteLength > MAX_HTTP_BODY_BYTES) {
+      throw new Error("ERR_HTTP_BODY_TOO_LARGE: response body exceeds " + MAX_HTTP_BODY_BYTES + " byte limit");
     }
+    this._chunks.push(buf);
+    this._chunksBytes += buf.byteLength;
     return true;
   }
 
@@ -1488,7 +1499,12 @@ async function dispatchServerRequest(
     await Promise.resolve(listenerResult);
   } catch (err) {
     outgoing.statusCode = 500;
-    outgoing.end(err instanceof Error ? `Error: ${err.message}` : "Error");
+    try {
+      outgoing.end(err instanceof Error ? `Error: ${err.message}` : "Error");
+    } catch {
+      // Body cap may prevent writing error — finalize without data
+      if (!outgoing.writableFinished) outgoing.end();
+    }
   }
 
   if (!outgoing.writableFinished) {
@@ -1511,6 +1527,7 @@ function ServerResponseCallable(this: any): void {
   this.writableFinished = false;
   this._headers = new Map<string, string>();
   this._chunks = [] as Uint8Array[];
+  this._chunksBytes = 0;
   this._listeners = {} as Record<string, EventListener[]>;
   this._closedPromise = new Promise<void>((resolve) => {
     this._resolveClosed = resolve;
