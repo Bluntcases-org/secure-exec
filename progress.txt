@@ -879,3 +879,24 @@ PRD: ralph/kernel-hardening (46 stories)
   - Kernel integration tests (tests/kernel/) have pre-existing failures unrelated to package restructuring — they use a different code path through runtime-node
   - build:bridge produces dist/bridge.js in whichever package owns the bridge source — bridge-loader.ts must know where to find it
 ---
+
+## 2026-03-17 - US-054
+- What was implemented: Moved runtime facades (runtime.ts, python-runtime.ts), filesystem helpers (fs-helpers.ts), ESM compiler (esm-compiler.ts), module resolver (module-resolver.ts), package bundler (package-bundler.ts), and bridge setup (bridge-setup.ts) from secure-exec/src/ to @secure-exec/core
+- Files changed:
+  - packages/secure-exec-core/src/runtime.ts — NEW: NodeRuntime facade (imports from core-local paths)
+  - packages/secure-exec-core/src/python-runtime.ts — NEW: PythonRuntime facade
+  - packages/secure-exec-core/src/fs-helpers.ts — NEW: VFS helper functions
+  - packages/secure-exec-core/src/esm-compiler.ts — NEW: ESM wrapper generator for built-in modules
+  - packages/secure-exec-core/src/module-resolver.ts — NEW: module classification/resolution with inlined hasPolyfill
+  - packages/secure-exec-core/src/package-bundler.ts — NEW: VFS module resolution (resolveModule, loadFile, etc.)
+  - packages/secure-exec-core/src/bridge-setup.ts — NEW: bridge globals setup code loader
+  - packages/secure-exec-core/src/index.ts — added exports for all 7 new modules
+  - packages/secure-exec/src/{runtime,python-runtime,fs-helpers,esm-compiler,module-resolver,package-bundler,bridge-setup}.ts — replaced with re-exports from @secure-exec/core
+  - packages/secure-exec/tests/isolate-runtime-injection-policy.test.ts — updated bridgeSetup source path to read from core
+  - prd.json — marked US-054 as passes: true
+- **Learnings for future iterations:**
+  - module-resolver.ts depended on hasPolyfill from polyfills.ts — inlined it in core since core already has node-stdlib-browser dependency
+  - Source policy tests (isolate-runtime-injection-policy) read source files by path and must be updated when moving code to core
+  - Re-export pattern: replace moved file with `export { X } from "@secure-exec/core"` — all consumers using relative imports from secure-exec keep working unchanged
+  - Existing consumers in node/, browser/, tests/ that import `../module-resolver.js` etc. don't need changes since the re-export files forward to core
+---
