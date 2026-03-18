@@ -1252,3 +1252,15 @@ PRD: ralph/kernel-hardening (46 stories)
   - fsOpToSyscall maps: write→"write", createDir→"mkdir", rm→"unlink" — match these in expectEacces assertions
   - wrapCommandExecutor passes `cwd: options.cwd` to the childProcess permission checker request
 ---
+
+## 2026-03-17 - US-080
+- Already implemented in prior iteration — TerminalHarness class at packages/kernel/test/terminal-harness.ts (192 lines)
+- @xterm/headless ^6.0.0 already in kernel devDependencies
+- All acceptance criteria verified: constructor (80x24 default), type() with 50ms settlement + in-flight guard, screenshotTrimmed() viewport-only, line(row), waitFor() with 20ms polling + shell death check + descriptive errors, exit() via ^D, dispose() idempotent cleanup
+- Typecheck passes
+- Marked passes: true in prd.json
+- **Learnings for future iterations:**
+  - TerminalHarness is duplicated in packages/runtime/wasmvm/test/ because cross-package test imports aren't supported
+  - WasmVM copy has 5s default timeout vs kernel's 2s — WasmVM shell commands are slower
+  - Shell death detection uses Promise.race with 0ms timeout to non-blockingly check shell.wait()
+---
