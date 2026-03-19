@@ -1455,6 +1455,18 @@
                 asyncStart: _createChannel(),
                 asyncEnd: _createChannel(),
                 error: _createChannel(),
+                traceSync: function (fn, context, thisArg) {
+                  var args = Array.prototype.slice.call(arguments, 3);
+                  return fn.apply(thisArg, args);
+                },
+                tracePromise: function (fn, context, thisArg) {
+                  var args = Array.prototype.slice.call(arguments, 3);
+                  return fn.apply(thisArg, args);
+                },
+                traceCallback: function (fn, context, thisArg) {
+                  var args = Array.prototype.slice.call(arguments, 3);
+                  return fn.apply(thisArg, args);
+                },
               };
             },
             Channel: function Channel(name) {
