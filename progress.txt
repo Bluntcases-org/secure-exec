@@ -128,6 +128,9 @@ PRD: ralph/kernel-hardening (46 stories)
 - NodeExecutionDriver split into 5 modules in src/node/: isolate-bootstrap.ts (types+utilities), module-resolver.ts, esm-compiler.ts, bridge-setup.ts, execution-lifecycle.ts; facade is execution-driver.ts (<300 lines)
 - Source policy tests (isolate-runtime-injection-policy, bridge-registry-policy) read specific source files by path — update them when moving code between files
 - esmModuleCache has a sibling esmModuleReverseCache (Map<ivm.Module, string>) for O(1) module→path lookup — both must be updated together and cleared together in execution.ts
+- wrapNetworkAdapter creates a new object — any new NetworkAdapter methods MUST be explicitly forwarded through wrapNetworkAdapter or they'll be undefined at bridge-setup
+- UpgradeSocket.emit must use .call(this) — libraries like ws use `this[Symbol(...)]` in event callbacks requiring proper `this` binding
+- Server-side HTTP upgrade relay: driver.ts adds server.on('upgrade') → applySync dispatches to sandbox → sandbox Server._emit('upgrade') → ws handles handshake → UpgradeSocket relays data bidirectionally through bridge
 
 ---
 
@@ -2393,4 +2396,28 @@ PRD: ralph/kernel-hardening (46 stories)
   - SSE events are separated by double newlines; multi-line data fields join with \n (per spec)
   - All output is deterministic since server sends fixed events and closes — no randomness or timing issues
   - The fixture exercises: http.createServer, chunked transfer-encoding, Connection: keep-alive, streaming reads
+---
+
+## 2026-03-19 - US-191
+- What was implemented: Rewrote ws-pass fixture with full WebSocket server-client communication (text + binary echo). Implemented server-side HTTP upgrade support in the bridge (UpgradeSocket class, bidirectional data relay through host bridge references).
+- Files changed:
+  - packages/secure-exec/tests/projects/ws-pass/src/index.js — full rewrite: WebSocketServer on port 0, client connects, text + binary echo, event verification
+  - packages/secure-exec-core/src/bridge/network.ts — added UpgradeSocket class for bidirectional data relay, server upgrade dispatch, data/end push functions
+  - packages/secure-exec-core/src/shared/bridge-contract.ts — added upgrade socket host/runtime bridge keys
+  - packages/secure-exec-core/src/shared/global-exposure.ts — added upgrade socket globals to inventory
+  - packages/secure-exec-core/src/shared/permissions.ts — forwarded upgradeSocketWrite/End/Destroy/setUpgradeSocketCallbacks through wrapNetworkAdapter
+  - packages/secure-exec-core/src/types.ts — added onUpgrade/onUpgradeSocketData/onUpgradeSocketEnd to NetworkServerListenOptions; upgradeSocketWrite/End/Destroy/setUpgradeSocketCallbacks to NetworkAdapter
+  - packages/secure-exec-core/isolate-runtime/src/common/runtime-globals.d.ts — added upgrade socket bridge ref types
+  - packages/secure-exec-core/src/index.ts — re-exported new bridge ref types
+  - packages/secure-exec/src/shared/bridge-contract.ts — re-exported new bridge ref types
+  - packages/secure-exec-node/src/bridge-setup.ts — added lazy upgrade dispatch/data/end refs; registered onUpgrade/onUpgradeSocketData/onUpgradeSocketEnd callbacks; added host write/end/destroy refs; called setUpgradeSocketCallbacks
+  - packages/secure-exec-node/src/driver.ts — added server.on('upgrade') handler in httpServerListen; kept client-side upgrade socket alive for data relay; added upgradeSocketWrite/End/Destroy/setUpgradeSocketCallbacks adapter methods
+- **Learnings for future iterations:**
+  - wrapNetworkAdapter in permissions.ts creates a NEW object — any new adapter methods MUST be forwarded through it or they'll be undefined at bridge-setup time
+  - Server-side HTTP upgrade: host server.on('upgrade') → applySync to sandbox → sandbox Server._emit('upgrade') → ws handles it
+  - Client-side HTTP upgrade: host req.on('upgrade') → keep socket alive → include upgradeSocketId in response JSON → sandbox creates UpgradeSocket
+  - UpgradeSocket.emit must call listeners with .call(this) — ws library's socketOnData uses `this[Symbol('websocket')]` which requires proper `this` binding
+  - UpgradeSocket needs _readableState.endEmitted and _writableState.finished stubs — ws checks these in socketOnClose
+  - UpgradeSocket.destroy/close must emit 'close' with false argument (hadError=false) for ws compatibility
+  - applySync from within applySync (host→sandbox→host reentrance) works in isolated-vm — the host Reference callback runs synchronously
 ---

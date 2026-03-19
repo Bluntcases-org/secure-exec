@@ -3294,7 +3294,7 @@
         "Tests pass (project-matrix)"
       ],
       "priority": 191,
-      "passes": false,
+      "passes": true,
       "notes": "ws is the most popular WebSocket library. Exercises HTTP upgrade, net.Socket, crypto (for Sec-WebSocket-Accept), Buffer, EventEmitter, streams. Depends on US-043 HTTP upgrade support."
     },
     {
