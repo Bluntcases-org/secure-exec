@@ -2074,3 +2074,13 @@ PRD: ralph/kernel-hardening (46 stories)
   - This is separate from the non-kernel project-matrix.test.ts which works correctly
   - Build-step fixtures (next build, astro build) use execSync from entry script with ensureBuild() pattern
 ---
+
+## 2026-03-18 - US-162
+- Vite project-matrix fixture already existed and passes non-kernel project-matrix test
+- Fixture: vite.config.mjs with @vitejs/plugin-react, index.html, app/App.jsx, ensureBuild pattern
+- Vite already in docs/nodejs-compatibility.mdx tested packages table
+- Kernel e2e fails (same pre-existing issue as all other fixtures)
+- No code changes needed
+- **Learnings for future iterations:**
+  - Same pattern as Next.js and Astro: ensureBuild + execSync for build tools, read output for verification
+---
