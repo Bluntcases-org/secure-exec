@@ -63,6 +63,9 @@ export const HOST_BRIDGE_GLOBAL_KEYS = {
 	networkHttpRequestRaw: "_networkHttpRequestRaw",
 	networkHttpServerListenRaw: "_networkHttpServerListenRaw",
 	networkHttpServerCloseRaw: "_networkHttpServerCloseRaw",
+	upgradeSocketWriteRaw: "_upgradeSocketWriteRaw",
+	upgradeSocketEndRaw: "_upgradeSocketEndRaw",
+	upgradeSocketDestroyRaw: "_upgradeSocketDestroyRaw",
 	ptySetRawMode: "_ptySetRawMode",
 	processConfig: "_processConfig",
 	osConfig: "_osConfig",
@@ -85,6 +88,9 @@ export const RUNTIME_BRIDGE_GLOBAL_KEYS = {
 	http2Module: "_http2Module",
 	dnsModule: "_dnsModule",
 	httpServerDispatch: "_httpServerDispatch",
+	httpServerUpgradeDispatch: "_httpServerUpgradeDispatch",
+	upgradeSocketData: "_upgradeSocketData",
+	upgradeSocketEnd: "_upgradeSocketEnd",
 	fsFacade: "_fs",
 	requireFrom: "_requireFrom",
 	moduleCache: "_moduleCache",
@@ -246,6 +252,9 @@ export type NetworkDnsLookupRawBridgeRef = BridgeApplyRef<[string], string>;
 export type NetworkHttpRequestRawBridgeRef = BridgeApplyRef<[string, string], string>;
 export type NetworkHttpServerListenRawBridgeRef = BridgeApplyRef<[string], string>;
 export type NetworkHttpServerCloseRawBridgeRef = BridgeApplyRef<[number], void>;
+export type UpgradeSocketWriteRawBridgeRef = BridgeApplySyncRef<[number, string], void>;
+export type UpgradeSocketEndRawBridgeRef = BridgeApplySyncRef<[number], void>;
+export type UpgradeSocketDestroyRawBridgeRef = BridgeApplySyncRef<[number], void>;
 
 // PTY boundary contracts.
 export type PtySetRawModeBridgeRef = BridgeApplySyncRef<[boolean], void>;

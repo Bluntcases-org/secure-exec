@@ -46,6 +46,9 @@ import type {
 	ChildProcessSpawnSyncBridgeRef,
 	ChildProcessStdinCloseBridgeRef,
 	ChildProcessStdinWriteBridgeRef,
+	UpgradeSocketWriteRawBridgeRef,
+	UpgradeSocketEndRawBridgeRef,
+	UpgradeSocketDestroyRawBridgeRef,
 } from "../../../src/shared/bridge-contract.js";
 
 type RuntimeGlobalExposer = (name: string, value: unknown) => void;
@@ -94,6 +97,9 @@ declare global {
 	var _networkHttpRequestRaw: NetworkHttpRequestRawBridgeRef;
 	var _networkHttpServerListenRaw: NetworkHttpServerListenRawBridgeRef;
 	var _networkHttpServerCloseRaw: NetworkHttpServerCloseRawBridgeRef;
+	var _upgradeSocketWriteRaw: UpgradeSocketWriteRawBridgeRef;
+	var _upgradeSocketEndRaw: UpgradeSocketEndRawBridgeRef;
+	var _upgradeSocketDestroyRaw: UpgradeSocketDestroyRawBridgeRef;
 	var _childProcessSpawnStart: ChildProcessSpawnStartBridgeRef;
 	var _childProcessStdinWrite: ChildProcessStdinWriteBridgeRef;
 	var _childProcessStdinClose: ChildProcessStdinCloseBridgeRef;

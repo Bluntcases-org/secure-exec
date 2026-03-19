@@ -99,6 +99,21 @@ export const NODE_CUSTOM_GLOBAL_INVENTORY: readonly CustomGlobalInventoryEntry[]
 		rationale: "Host-to-sandbox HTTP server dispatch entrypoint.",
 	},
 	{
+		name: "_httpServerUpgradeDispatch",
+		classification: "hardened",
+		rationale: "Host-to-sandbox HTTP server upgrade dispatch entrypoint.",
+	},
+	{
+		name: "_upgradeSocketData",
+		classification: "hardened",
+		rationale: "Host-to-sandbox upgrade socket data push entrypoint.",
+	},
+	{
+		name: "_upgradeSocketEnd",
+		classification: "hardened",
+		rationale: "Host-to-sandbox upgrade socket end push entrypoint.",
+	},
+	{
 		name: "ProcessExitError",
 		classification: "hardened",
 		rationale: "Runtime-owned process-exit control-path error class.",
@@ -342,6 +357,21 @@ export const NODE_CUSTOM_GLOBAL_INVENTORY: readonly CustomGlobalInventoryEntry[]
 		name: "_networkHttpServerCloseRaw",
 		classification: "hardened",
 		rationale: "Host network bridge reference.",
+	},
+	{
+		name: "_upgradeSocketWriteRaw",
+		classification: "hardened",
+		rationale: "Host upgrade socket write bridge reference.",
+	},
+	{
+		name: "_upgradeSocketEndRaw",
+		classification: "hardened",
+		rationale: "Host upgrade socket end bridge reference.",
+	},
+	{
+		name: "_upgradeSocketDestroyRaw",
+		classification: "hardened",
+		rationale: "Host upgrade socket destroy bridge reference.",
 	},
 	{
 		name: "_ptySetRawMode",

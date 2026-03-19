@@ -1252,6 +1252,54 @@ export async function setupRequire(
 			return httpServerDispatchRef!;
 		};
 
+		// Lazy dispatcher reference for upgrade events
+		let httpServerUpgradeDispatchRef: ivm.Reference<
+			(serverId: number, requestJson: string, headBase64: string, socketId: number) => void
+		> | null = null;
+
+		const getUpgradeDispatchRef = () => {
+			if (!httpServerUpgradeDispatchRef) {
+				httpServerUpgradeDispatchRef = context.global.getSync(
+					RUNTIME_BRIDGE_GLOBAL_KEYS.httpServerUpgradeDispatch,
+					{ reference: true },
+				) as ivm.Reference<
+					(serverId: number, requestJson: string, headBase64: string, socketId: number) => void
+				>;
+			}
+			return httpServerUpgradeDispatchRef!;
+		};
+
+		// Lazy dispatcher references for upgrade socket data push
+		let upgradeSocketDataRef: ivm.Reference<
+			(socketId: number, dataBase64: string) => void
+		> | null = null;
+
+		const getUpgradeSocketDataRef = () => {
+			if (!upgradeSocketDataRef) {
+				upgradeSocketDataRef = context.global.getSync(
+					RUNTIME_BRIDGE_GLOBAL_KEYS.upgradeSocketData,
+					{ reference: true },
+				) as ivm.Reference<
+					(socketId: number, dataBase64: string) => void
+				>;
+			}
+			return upgradeSocketDataRef!;
+		};
+
+		let upgradeSocketEndDispatchRef: ivm.Reference<
+			(socketId: number) => void
+		> | null = null;
+
+		const getUpgradeSocketEndRef = () => {
+			if (!upgradeSocketEndDispatchRef) {
+				upgradeSocketEndDispatchRef = context.global.getSync(
+					RUNTIME_BRIDGE_GLOBAL_KEYS.upgradeSocketEnd,
+					{ reference: true },
+				) as ivm.Reference<(socketId: number) => void>;
+			}
+			return upgradeSocketEndDispatchRef!;
+		};
+
 		// Reference for starting an in-sandbox HTTP server
 		const networkHttpServerListenRef = new ivm.Reference(
 			(optionsJson: string): Promise<string> => {
@@ -1287,6 +1335,25 @@ export async function setupRequire(
 								bodyEncoding?: "utf8" | "base64";
 							}>("network.httpServer response", String(responseJson), jsonPayloadLimit);
 						},
+						onUpgrade: (request, head, socketId) => {
+							const requestJson = JSON.stringify(request);
+							getUpgradeDispatchRef().applySync(
+								undefined,
+								[options.serverId, requestJson, head, socketId],
+							);
+						},
+						onUpgradeSocketData: (socketId, dataBase64) => {
+							getUpgradeSocketDataRef().applySync(
+								undefined,
+								[socketId, dataBase64],
+							);
+						},
+						onUpgradeSocketEnd: (socketId) => {
+							getUpgradeSocketEndRef().applySync(
+								undefined,
+								[socketId],
+							);
+						},
 					});
 					ownedHttpServers.add(options.serverId);
 					deps.activeHttpServerIds.add(options.serverId);
@@ -1316,6 +1383,25 @@ export async function setupRequire(
 			},
 		);
 
+		// References for upgrade socket write/end/destroy (sandbox → host)
+		const upgradeSocketWriteRef = new ivm.Reference(
+			(socketId: number, dataBase64: string): void => {
+				adapter.upgradeSocketWrite?.(socketId, dataBase64);
+			},
+		);
+
+		const upgradeSocketEndRef = new ivm.Reference(
+			(socketId: number): void => {
+				adapter.upgradeSocketEnd?.(socketId);
+			},
+		);
+
+		const upgradeSocketDestroyRef = new ivm.Reference(
+			(socketId: number): void => {
+				adapter.upgradeSocketDestroy?.(socketId);
+			},
+		);
+
 		await jail.set(HOST_BRIDGE_GLOBAL_KEYS.networkFetchRaw, networkFetchRef);
 		await jail.set(
 			HOST_BRIDGE_GLOBAL_KEYS.networkDnsLookupRaw,
@@ -1333,6 +1419,34 @@ export async function setupRequire(
 			HOST_BRIDGE_GLOBAL_KEYS.networkHttpServerCloseRaw,
 			networkHttpServerCloseRef,
 		);
+		await jail.set(
+			HOST_BRIDGE_GLOBAL_KEYS.upgradeSocketWriteRaw,
+			upgradeSocketWriteRef,
+		);
+		await jail.set(
+			HOST_BRIDGE_GLOBAL_KEYS.upgradeSocketEndRaw,
+			upgradeSocketEndRef,
+		);
+		await jail.set(
+			HOST_BRIDGE_GLOBAL_KEYS.upgradeSocketDestroyRaw,
+			upgradeSocketDestroyRef,
+		);
+
+		// Register client-side upgrade socket callbacks so httpRequest can push data
+		adapter.setUpgradeSocketCallbacks?.({
+			onData: (socketId, dataBase64) => {
+				getUpgradeSocketDataRef().applySync(
+					undefined,
+					[socketId, dataBase64],
+				);
+			},
+			onEnd: (socketId) => {
+				getUpgradeSocketEndRef().applySync(
+					undefined,
+					[socketId],
+				);
+			},
+		});
 	}
 
 	// Set up PTY setRawMode bridge ref when stdin is a TTY
