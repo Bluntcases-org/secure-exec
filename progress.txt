@@ -2451,3 +2451,17 @@ PRD: ralph/kernel-hardening (46 stories)
   - http.createServer IS supported (used by express, fastify, ws fixtures) but net.createServer is NOT — ws WebSocketServer works because it wraps http.createServer internally
   - ioredis with { lazyConnect: true, enableReadyCheck: false } safely constructs without touching net module — pipeline/multi/Command APIs work without a connection
 ---
+
+## 2026-03-19 - US-194
+- Enhanced mysql2 project-matrix fixture from basic import checks to comprehensive API surface validation
+- Expanded coverage: connection pool creation/config (createPool with connectionLimit, keepAlive), pool cluster (createPoolCluster with add/of/selectors), escape/format utilities (strings, numbers, null, booleans, arrays, nested arrays, identifiers, qualified identifiers, Buffer, objects/SET clauses), raw() prepared statement placeholders, MySQL type constants (27 types verified), promise wrapper (createConnection/createPool/createPoolCluster), event emitter interface
+- Real MySQL Docker integration not possible — net module is deferred-stubbed in sandbox (same as ioredis US-193, pg US-188)
+- Avoided timezone-sensitive Date formatting output (used type check instead of value comparison)
+- Files changed: packages/secure-exec/tests/projects/mysql2-pass/src/index.js
+- **Learnings for future iterations:**
+  - mysql2 pool.end() and cluster.end() accept callbacks — needed for clean fixture teardown without hanging
+  - mysql2 promise pool end() returns a Promise — use .catch() to suppress unhandled rejection
+  - mysql2 escape() with nested arrays produces SQL value lists: [[1,2],[3,4]] → "(1, 2), (3, 4)"
+  - Date formatting in mysql2.escape/format is timezone-dependent — avoid comparing date string values in project-matrix fixtures
+  - createPoolCluster.of("REPLICA*") returns a namespace selector object — exercises pattern matching without TCP
+---
