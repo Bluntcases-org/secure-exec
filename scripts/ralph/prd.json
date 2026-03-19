@@ -3254,7 +3254,7 @@
         "Tests pass (project-matrix)"
       ],
       "priority": 189,
-      "passes": false,
+      "passes": true,
       "notes": "mysql2 exercises crypto (sha256_password auth), net/tls, Buffer, streams."
     },
     {
