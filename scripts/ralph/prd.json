@@ -2931,7 +2931,7 @@
         "Tests pass"
       ],
       "priority": 170,
-      "passes": false,
+      "passes": true,
       "notes": "Used by bcryptjs, passport, and auth libraries."
     },
     {
@@ -2950,7 +2950,7 @@
         "Tests pass"
       ],
       "priority": 171,
-      "passes": false,
+      "passes": true,
       "notes": "Used by SSH, TLS simulation, and data-at-rest encryption packages."
     },
     {

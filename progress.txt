@@ -2152,3 +2152,37 @@ PRD: ralph/kernel-hardening (46 stories)
   - Callback-based tests must use synchronous callback capture (not Promise wrapping) since callbacks fire synchronously in sandbox
   - Must run `pnpm run --filter @secure-exec/core build` after editing isolate-runtime sources to regenerate bundles
 ---
+
+## 2026-03-18 - US-170
+- What was implemented: crypto.pbkdf2, crypto.pbkdf2Sync, crypto.scrypt, and crypto.scryptSync in the bridge — three-layer pattern (host ref, contract key, sandbox overlay)
+- Files changed:
+  - packages/secure-exec-core/src/shared/bridge-contract.ts — added cryptoPbkdf2/cryptoScrypt keys and typed ref aliases
+  - packages/secure-exec-node/src/bridge-setup.ts — added host-side ivm.References calling real Node.js pbkdf2Sync/scryptSync with base64 encoding
+  - packages/secure-exec-core/isolate-runtime/src/inject/require-setup.ts — added sandbox-side pbkdf2Sync/pbkdf2/scryptSync/scrypt overlays in the crypto polyfill patch
+  - packages/secure-exec/tests/test-suite/node/crypto.ts — added 7 tests: pbkdf2Sync known value, pbkdf2 callback, pbkdf2 Buffer inputs, scryptSync known value, scryptSync defaults, scrypt callback with opts, scrypt callback without opts
+- **Learnings for future iterations:**
+  - pbkdf2/scrypt are one-shot functions (no stream accumulation like Hash/Hmac) — simpler bridge pattern: sandbox converts inputs to base64, calls host ref, converts result back
+  - scrypt options use both Node.js naming (N/r/p) and alias naming (cost/blockSize/parallelization) — sandbox overlay maps aliases to canonical names before passing to host
+  - Host-side scryptSync accepts options as a plain object — serialize via JSON.stringify across the isolate boundary
+  - All 34 crypto tests pass (27 existing + 7 new); typecheck passes across all packages
+---
+
+## 2026-03-18 - US-171
+- What was implemented: crypto.createCipheriv and crypto.createDecipheriv bridge support
+- Bridge design: guest accumulates update() chunks, host performs cipher/decipher on final()
+- GCM mode: host returns JSON with data + authTag; decipher accepts authTag via optionsJson
+- Supported algorithms: aes-128-cbc, aes-256-cbc, aes-128-gcm, aes-256-gcm
+- Also fixed missing _cryptoPbkdf2 and _cryptoScrypt entries in global-exposure.ts inventory
+- Files changed:
+  - packages/secure-exec-core/src/shared/bridge-contract.ts — added CryptoCipherivBridgeRef, CryptoDecipherivBridgeRef types and HOST_BRIDGE_GLOBAL_KEYS entries
+  - packages/secure-exec-core/src/shared/global-exposure.ts — added inventory entries for _cryptoPbkdf2, _cryptoScrypt, _cryptoCipheriv, _cryptoDecipheriv
+  - packages/secure-exec-node/src/bridge-setup.ts — added host-side createCipheriv/createDecipheriv refs with GCM auth tag support
+  - packages/secure-exec-core/isolate-runtime/src/inject/require-setup.ts — added SandboxCipher and SandboxDecipher guest-side classes
+  - packages/secure-exec/tests/test-suite/node/crypto.ts — added 7 tests: CBC/GCM roundtrips, auth tag verification, multi-chunk, hex encoding
+  - packages/secure-exec-core/src/generated/isolate-runtime.ts — auto-generated
+- **Learnings for future iterations:**
+  - Cipher update() returns data (Buffer/string) unlike Hash.update() which returns `this` — accumulate-and-batch still works because final() returns all data
+  - createCipheriv/createDecipheriv with GCM need `as any` cast because TypeScript crypto types use separate CipherGCM/DecipherGCM for getAuthTag/setAuthTag
+  - bridge-registry-policy.test.ts enforces that ALL HOST_BRIDGE_GLOBAL_KEYS have matching NODE_CUSTOM_GLOBAL_INVENTORY entries — must add inventory entries for every new bridge key
+  - _cryptoPbkdf2 and _cryptoScrypt were missing from inventory (pre-existing gap) — fixed in this commit
+---
