@@ -2543,7 +2543,7 @@
         "Tests pass"
       ],
       "priority": 148,
-      "passes": false,
+      "passes": true,
       "notes": "Audit H6 \u2014 HIGH. permissions.ts:228-234, node/driver.ts:241-278. Permission checks validate the original URL but fetch follows redirects by default. A URL that 302-redirects to http://169.254.169.254/ passes the check."
     },
     {

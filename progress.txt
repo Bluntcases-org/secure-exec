@@ -1928,3 +1928,14 @@ PRD: ralph/kernel-hardening (46 stories)
 - Files changed:
   - prd.json — marked US-147 as passes: true
 ---
+
+## 2026-03-18 - US-148
+- What was implemented: Verified SSRF protection already in place
+- `isPrivateIp()` in driver.ts blocks all private/reserved IPv4 and IPv6 ranges
+- `assertNotPrivateHost()` resolves hostnames via DNS before validation
+- fetch() uses `redirect: "manual"` with re-validation loop (MAX_REDIRECTS=20)
+- Loopback exemption system for sandbox-owned server ports
+- 44 tests in ssrf-protection.test.ts covering unit, adapter, redirect, loopback, integration, DNS rebinding
+- Files changed:
+  - prd.json — marked US-148 as passes: true
+---
