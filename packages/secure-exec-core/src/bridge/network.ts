@@ -69,10 +69,24 @@ interface FetchResponse {
 }
 
 // Fetch polyfill
-export async function fetch(url: string | URL, options: FetchOptions = {}): Promise<FetchResponse> {
+export async function fetch(input: string | URL | Request, options: FetchOptions = {}): Promise<FetchResponse> {
   if (typeof _networkFetchRaw === 'undefined') {
     console.error('fetch requires NetworkAdapter to be configured');
     throw new Error('fetch requires NetworkAdapter to be configured');
+  }
+
+  // Extract URL and options from Request object (used by axios fetch adapter)
+  let resolvedUrl: string;
+  if (input instanceof Request) {
+    resolvedUrl = input.url;
+    options = {
+      method: input.method,
+      headers: Object.fromEntries(input.headers.entries()),
+      body: input.body,
+      ...options,
+    };
+  } else {
+    resolvedUrl = String(input);
   }
 
   const optionsJson = JSON.stringify({
@@ -81,7 +95,7 @@ export async function fetch(url: string | URL, options: FetchOptions = {}): Prom
     body: options.body || null,
   });
 
-  const responseJson = await _networkFetchRaw.apply(undefined, [String(url), optionsJson], {
+  const responseJson = await _networkFetchRaw.apply(undefined, [resolvedUrl, optionsJson], {
     result: { promise: true },
   });
   const response = JSON.parse(responseJson) as {
@@ -100,7 +114,7 @@ export async function fetch(url: string | URL, options: FetchOptions = {}): Prom
     status: response.status,
     statusText: response.statusText,
     headers: new Map(Object.entries(response.headers || {})),
-    url: response.url || String(url),
+    url: response.url || resolvedUrl,
     redirected: response.redirected || false,
     type: "basic",
 
