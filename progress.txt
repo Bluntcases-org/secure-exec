@@ -1950,3 +1950,11 @@ PRD: ralph/kernel-hardening (46 stories)
 - Files changed:
   - prd.json — marked US-149 as passes: true
 ---
+
+## 2026-03-18 - US-150
+- What was implemented: Verified httpServerClose ownership check already in place
+- bridge-setup.ts tracks `ownedHttpServers` per execution context; close checks ownership before forwarding
+- Tests in bridge-hardening.test.ts cover: own-server close succeeds, foreign-server close denied
+- Files changed:
+  - prd.json — marked US-150 as passes: true
+---
