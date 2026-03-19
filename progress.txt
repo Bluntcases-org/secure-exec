@@ -1984,3 +1984,11 @@ PRD: ralph/kernel-hardening (46 stories)
 - Files changed:
   - prd.json — marked US-153 as passes: true
 ---
+
+## 2026-03-18 - US-154
+- What was implemented: Verified process.binding() throws in sandbox
+- process.binding() and process._linkedBinding() throw Error in bridge/process.ts
+- Tests in sandbox-escape.test.ts cover: binding('fs'), binding('buffer'), _linkedBinding('fs') all throw
+- Files changed:
+  - prd.json — marked US-154 as passes: true
+---
