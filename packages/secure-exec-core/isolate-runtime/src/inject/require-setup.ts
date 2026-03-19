@@ -1042,6 +1042,34 @@
           return result;
         }
 
+        // Fix stream prototype chain broken by esbuild's circular-dep resolution.
+        // stream-browserify → readable-stream → require('stream') creates a cycle;
+        // esbuild gives Readable a stale Stream ref, so Readable extends EventEmitter
+        // directly instead of Stream. Insert Stream.prototype into the chain so
+        // `passThrough instanceof Stream` works (node-fetch, undici, etc. depend on this).
+        if (name === 'stream') {
+          if (
+            typeof result === 'function' &&
+            result.prototype &&
+            typeof result.Readable === 'function'
+          ) {
+            var readableProto = result.Readable.prototype;
+            var streamProto = result.prototype;
+            // Only patch if Stream.prototype is not already in the chain
+            if (
+              readableProto &&
+              streamProto &&
+              !(readableProto instanceof result)
+            ) {
+              // Insert Stream.prototype between Readable.prototype and its current parent
+              var currentParent = Object.getPrototypeOf(readableProto);
+              Object.setPrototypeOf(streamProto, currentParent);
+              Object.setPrototypeOf(readableProto, streamProto);
+            }
+          }
+          return result;
+        }
+
         if (name === 'path') {
           if (result.win32 === null || result.win32 === undefined) {
             result.win32 = result.posix || result;
