@@ -157,7 +157,7 @@ describe.skipIf(skipReason)("e2e-docker", () => {
 			return;
 		}
 
-		// Build SSH image
+		// Build custom images
 		const sshdDockerfile = path.join(
 			FIXTURES_ROOT,
 			"dockerfiles",
@@ -165,8 +165,15 @@ describe.skipIf(skipReason)("e2e-docker", () => {
 		);
 		buildImage(sshdDockerfile, "secure-exec-test-sshd");
 
+		const pgSslDockerfile = path.join(
+			FIXTURES_ROOT,
+			"dockerfiles",
+			"postgres-ssl.Dockerfile",
+		);
+		buildImage(pgSslDockerfile, "secure-exec-test-postgres-ssl");
+
 		// Start containers (startContainer is synchronous — sequential start)
-		const pg = startContainer("postgres:16-alpine", {
+		const pg = startContainer("secure-exec-test-postgres-ssl", {
 			ports: { 5432: 0 },
 			env: {
 				POSTGRES_USER: "testuser",
@@ -176,6 +183,12 @@ describe.skipIf(skipReason)("e2e-docker", () => {
 			healthCheck: ["pg_isready", "-U", "testuser", "-d", "testdb"],
 			healthCheckTimeout: 30_000,
 			args: ["--tmpfs", "/var/lib/postgresql/data"],
+			// Enable SSL with self-signed certificate from custom image
+			command: [
+				"-c", "ssl=on",
+				"-c", "ssl_cert_file=/var/lib/postgresql/server.crt",
+				"-c", "ssl_key_file=/var/lib/postgresql/server.key",
+			],
 		});
 
 		const mysql = startContainer("mysql:8.0", {

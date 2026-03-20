@@ -22,6 +22,7 @@ import type {
 	NetSocketWriteRawBridgeRef,
 	NetSocketEndRawBridgeRef,
 	NetSocketDestroyRawBridgeRef,
+	NetSocketUpgradeTlsRawBridgeRef,
 } from "../shared/bridge-contract.js";
 
 // Declare host bridge References
@@ -65,6 +66,10 @@ declare const _netSocketEndRaw:
 
 declare const _netSocketDestroyRaw:
   | NetSocketDestroyRawBridgeRef
+  | undefined;
+
+declare const _netSocketUpgradeTlsRaw:
+  | NetSocketUpgradeTlsRawBridgeRef
   | undefined;
 
 declare const _registerHandle:
@@ -1957,7 +1962,8 @@ class NetSocket {
   bytesRead = 0;
   bytesWritten = 0;
   private _listeners: Record<string, EventListener[]> = {};
-  private _socketId = -1;
+  /** @internal socket ID shared with TLS upgrade bridge */
+  _socketId = -1;
   private _connectHost = "";
   private _connectPort = 0;
 
@@ -2213,6 +2219,7 @@ function onNetSocketDispatch(socketId: number, type: string, data: string): void
     case "end": socket._onEnd(); break;
     case "error": socket._onError(data); break;
     case "close": socket._onClose(data === "1"); break;
+    case "secureConnect": socket.emit("secureConnect"); break;
   }
 }
 
@@ -2248,12 +2255,101 @@ export const net = {
   isIPv6(input: string): boolean { return netIsIP(input) === 6; },
 };
 
+// ----------------------------------------------------------------
+// tls module — TLS socket upgrade bridge
+// ----------------------------------------------------------------
+
+/** TLS socket that wraps an existing NetSocket after host-side TLS upgrade. */
+class TLSSocket extends NetSocket {
+  encrypted = true;
+  authorized = false;
+  authorizationError: string | null = null;
+  alpnProtocol: string | false = false;
+  private _wrappedSocket: NetSocket | null = null;
+
+  constructor(originalSocket: NetSocket) {
+    super();
+    this._wrappedSocket = originalSocket;
+    // Copy connection state from original socket
+    this.remoteAddress = originalSocket.remoteAddress;
+    this.remotePort = originalSocket.remotePort;
+    this.remoteFamily = originalSocket.remoteFamily;
+    this.localAddress = originalSocket.localAddress;
+    this.localPort = originalSocket.localPort;
+    this.connecting = false;
+    this.pending = false;
+    this.readyState = "open";
+    // Share the same socketId — bridge events route here after upgrade
+    this._socketId = originalSocket._socketId;
+    // Copy private connect info so _cleanup unregisters the correct handle
+    (this as Record<string, unknown>)._connectHost = (originalSocket as Record<string, unknown>)._connectHost;
+    (this as Record<string, unknown>)._connectPort = (originalSocket as Record<string, unknown>)._connectPort;
+    netSocketInstances.set(this._socketId, this);
+  }
+
+  _onSecureConnect(): void {
+    this.authorized = true;
+    this.emit("secureConnect");
+  }
+
+  // Forward end/close to the wrapped raw socket — Node.js tls.TLSSocket
+  // closes the underlying socket, which fires its 'close' event. Libraries
+  // like pg rely on the original socket's 'close' listener to detect shutdown.
+  _onEnd(): void {
+    super._onEnd();
+    if (this._wrappedSocket) this._wrappedSocket._onEnd();
+  }
+
+  _onClose(hadError: boolean): void {
+    super._onClose(hadError);
+    if (this._wrappedSocket) {
+      this._wrappedSocket._onClose(hadError);
+      this._wrappedSocket = null;
+    }
+  }
+}
+
+export const tlsModule = {
+  TLSSocket: TLSSocket as unknown as typeof import("tls").TLSSocket,
+  connect(options: Record<string, unknown>): NetSocket {
+    const existingSocket = options.socket as NetSocket | undefined;
+    if (!existingSocket || existingSocket._socketId < 0) {
+      throw new Error("tls.connect requires an existing connected socket via options.socket");
+    }
+
+    // Create TLS socket wrapper on sandbox side
+    const tlsSocket = new TLSSocket(existingSocket);
+
+    if (typeof _netSocketUpgradeTlsRaw === "undefined") {
+      Promise.resolve().then(() => {
+        tlsSocket._onError("tls.connect requires NetworkAdapter TLS support");
+      });
+      return tlsSocket;
+    }
+
+    // Tell host to wrap the underlying TCP socket with TLS
+    _netSocketUpgradeTlsRaw.applySync(undefined, [
+      existingSocket._socketId,
+      JSON.stringify({
+        rejectUnauthorized: options.rejectUnauthorized ?? true,
+        servername: options.servername,
+      }),
+    ]);
+
+    return tlsSocket;
+  },
+  createSecureContext(_options?: Record<string, unknown>): Record<string, unknown> {
+    return {};
+  },
+};
+
 // Export modules and make them available as globals for require()
 exposeCustomGlobal("_httpModule", http);
 exposeCustomGlobal("_httpsModule", https);
 exposeCustomGlobal("_http2Module", http2);
 exposeCustomGlobal("_dnsModule", dns);
 exposeCustomGlobal("_netModule", net);
+exposeCustomGlobal("_tlsModule", tlsModule);
 exposeCustomGlobal("_httpServerDispatch", dispatchServerRequest);
 exposeCustomGlobal("_httpServerUpgradeDispatch", dispatchUpgradeRequest);
 exposeCustomGlobal("_upgradeSocketData", onUpgradeSocketData);
@@ -2280,6 +2376,7 @@ export default {
   https,
   http2,
   net,
+  tls: tlsModule,
   IncomingMessage,
   ClientRequest,
 };

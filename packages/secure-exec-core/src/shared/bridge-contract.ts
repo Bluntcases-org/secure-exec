@@ -75,6 +75,7 @@ export const HOST_BRIDGE_GLOBAL_KEYS = {
 	netSocketWriteRaw: "_netSocketWriteRaw",
 	netSocketEndRaw: "_netSocketEndRaw",
 	netSocketDestroyRaw: "_netSocketDestroyRaw",
+	netSocketUpgradeTlsRaw: "_netSocketUpgradeTlsRaw",
 	ptySetRawMode: "_ptySetRawMode",
 	processConfig: "_processConfig",
 	osConfig: "_osConfig",
@@ -101,6 +102,7 @@ export const RUNTIME_BRIDGE_GLOBAL_KEYS = {
 	upgradeSocketData: "_upgradeSocketData",
 	upgradeSocketEnd: "_upgradeSocketEnd",
 	netModule: "_netModule",
+	tlsModule: "_tlsModule",
 	netSocketDispatch: "_netSocketDispatch",
 	fsFacade: "_fs",
 	requireFrom: "_requireFrom",
@@ -272,6 +274,9 @@ export type NetSocketConnectRawBridgeRef = BridgeApplySyncRef<[string, number], 
 export type NetSocketWriteRawBridgeRef = BridgeApplySyncRef<[number, string], void>;
 export type NetSocketEndRawBridgeRef = BridgeApplySyncRef<[number], void>;
 export type NetSocketDestroyRawBridgeRef = BridgeApplySyncRef<[number], void>;
+
+// TLS socket upgrade boundary contract.
+export type NetSocketUpgradeTlsRawBridgeRef = BridgeApplySyncRef<[number, string], void>;
 
 // PTY boundary contracts.
 export type PtySetRawModeBridgeRef = BridgeApplySyncRef<[boolean], void>;

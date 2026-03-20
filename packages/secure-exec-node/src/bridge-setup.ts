@@ -1656,10 +1656,24 @@ export async function setupRequire(
 			},
 		);
 
+		const netSocketUpgradeTlsRef = new ivm.Reference(
+			(socketId: number, optionsJson: string): void => {
+				checkBridgeBudget(deps);
+				adapter.netSocketUpgradeTls?.(socketId, optionsJson, {
+					onData: (dataBase64) => dispatchNetEvent(socketId, "data", dataBase64),
+					onEnd: () => dispatchNetEvent(socketId, "end", ""),
+					onError: (message) => dispatchNetEvent(socketId, "error", message),
+					onClose: (hadError) => dispatchNetEvent(socketId, "close", hadError ? "1" : "0"),
+					onSecureConnect: () => dispatchNetEvent(socketId, "secureConnect", ""),
+				});
+			},
+		);
+
 		await jail.set(HOST_BRIDGE_GLOBAL_KEYS.netSocketConnectRaw, netSocketConnectRef);
 		await jail.set(HOST_BRIDGE_GLOBAL_KEYS.netSocketWriteRaw, netSocketWriteRef);
 		await jail.set(HOST_BRIDGE_GLOBAL_KEYS.netSocketEndRaw, netSocketEndRef);
 		await jail.set(HOST_BRIDGE_GLOBAL_KEYS.netSocketDestroyRaw, netSocketDestroyRef);
+		await jail.set(HOST_BRIDGE_GLOBAL_KEYS.netSocketUpgradeTlsRaw, netSocketUpgradeTlsRef);
 	}
 
 	// Set up PTY setRawMode bridge ref when stdin is a TTY

@@ -295,6 +295,7 @@ export function wrapNetworkAdapter(
 		netSocketWrite: adapter.netSocketWrite?.bind(adapter),
 		netSocketEnd: adapter.netSocketEnd?.bind(adapter),
 		netSocketDestroy: adapter.netSocketDestroy?.bind(adapter),
+		netSocketUpgradeTls: adapter.netSocketUpgradeTls?.bind(adapter),
 	};
 }
 

@@ -258,6 +258,18 @@ export interface NetworkAdapter {
 	netSocketEnd?(socketId: number): void;
 	/** Destroy a TCP socket. */
 	netSocketDestroy?(socketId: number): void;
+	/** Upgrade an existing TCP socket to TLS. */
+	netSocketUpgradeTls?(
+		socketId: number,
+		optionsJson: string,
+		callbacks: {
+			onData: (dataBase64: string) => void;
+			onEnd: () => void;
+			onError: (message: string) => void;
+			onClose: (hadError: boolean) => void;
+			onSecureConnect: () => void;
+		},
+	): void;
 }
 
 export interface PermissionDecision {

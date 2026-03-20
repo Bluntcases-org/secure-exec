@@ -1492,6 +1492,14 @@
           return _netModule;
         }
 
+        // Special handling for tls module
+        if (name === 'tls') {
+          if (__internalModuleCache['tls']) return __internalModuleCache['tls'];
+          __internalModuleCache['tls'] = _tlsModule;
+          _debugRequire('loaded', name, 'tls-special');
+          return _tlsModule;
+        }
+
         // Special handling for os module
         if (name === 'os') {
           if (__internalModuleCache['os']) return __internalModuleCache['os'];
