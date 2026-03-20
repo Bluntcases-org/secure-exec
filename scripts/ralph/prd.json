@@ -498,8 +498,8 @@
         "Tests pass"
       ],
       "priority": 28,
-      "passes": false,
-      "notes": "The existing https-streams.test.ts tests the happy path (self-signed with rejectUnauthorized:false and valid cert chain). Error cases for TLS validation failures are untested. If the sandbox silently accepts bad certs, this is a security issue."
+      "passes": true,
+      "notes": "Completed. Three TLS error scenarios tested with parity: expired cert (CERT_HAS_EXPIRED), hostname mismatch (ERR_TLS_CERT_ALTNAME_MISMATCH), self-signed cert with rejectUnauthorized:true (SELF_SIGNED_CERT_IN_CHAIN). Each test generates certs via openssl, starts HTTPS servers, and compares host vs sandbox error messages. TLS errors propagate correctly through the httpRequest bridge."
     }
   ]
 }

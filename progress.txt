@@ -2816,3 +2816,16 @@ PRD: ralph/kernel-hardening (46 stories)
   - Postgres SSL: use custom Dockerfile (postgres-ssl.Dockerfile) that installs openssl and generates self-signed cert; existing pg fixtures still work when server has SSL enabled (SSL is optional)
   - pg_stat_ssl system view verifies the connection is actually encrypted — query WHERE pid = pg_backend_pid()
 ---
+
+## 2026-03-19 - US-028
+- Implemented HTTPS error handling e2e tests for TLS edge cases
+- Three parity tests: expired cert, hostname mismatch, self-signed cert with rejectUnauthorized:true
+- Tests generate certs via openssl, start HTTPS servers on ephemeral ports, compare host vs sandbox error messages
+- Files changed:
+  - packages/secure-exec/tests/runtime-driver/node/https-errors.test.ts (new)
+- **Learnings for future iterations:**
+  - TLS error messages propagate correctly through the httpRequest bridge — the adapter rejects with the same Node.js error, and isolated-vm delivers it to the sandbox's catch block
+  - openssl days=0 generates a cert that expires at issuance — a 2s delay in beforeAll ensures the cert is actually expired when tests run
+  - Self-signed cert (no CA in trust chain) with default rejectUnauthorized=true triggers SELF_SIGNED_CERT_IN_CHAIN
+  - Hostname mismatch cert (SAN=wrong.example.com, connecting to 127.0.0.1) triggers ERR_TLS_CERT_ALTNAME_MISMATCH
+---
