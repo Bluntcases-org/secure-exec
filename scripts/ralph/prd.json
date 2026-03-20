@@ -357,8 +357,8 @@
         "Tests pass"
       ],
       "priority": 20,
-      "passes": false,
-      "notes": "The current SFTP fixture only transfers 18 bytes. Larger transfers stress the sandbox's TCP buffer management, stream backpressure handling, and memory limits. Also tests createReadStream (streaming) which exercises different buffer management than readFile (buffered)."
+      "passes": true,
+      "notes": "Completed. Fixture ssh2-sftp-large generates deterministic 1MB payload, uploads via createWriteStream, renames via sftp.rename(), downloads via createReadStream, verifies integrity via SHA-256 hash comparison. Host and sandbox produce identical output."
     },
     {
       "id": "US-021",

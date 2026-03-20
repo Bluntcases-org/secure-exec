@@ -2719,3 +2719,14 @@ PRD: ralph/kernel-hardening (46 stories)
   - For error path fixtures, only serialize err.message (and err.level for ssh2) — err.code/err.errno are missing in sandbox
   - ssh2 auth failure emits error with level="client-authentication" — useful for distinguishing auth errors from connection errors
 ---
+
+## 2026-03-19 - US-020
+- Added SFTP large file transfer and rename e2e-docker fixture
+- Fixture generates deterministic 1MB payload (byte pattern: i & 0xFF), uploads via createWriteStream, renames via sftp.rename(), downloads via createReadStream, verifies integrity via SHA-256 hash comparison
+- Files created: packages/secure-exec/tests/e2e-docker/ssh2-sftp-large/{package.json,fixture.json,src/index.js}
+- Host and sandbox produce identical output; parity test passes (~4.2s)
+- **Learnings for future iterations:**
+  - createWriteStream/createReadStream for SFTP work through the sandbox net bridge without issues — TCP buffer management handles 1MB+ transfers
+  - sftp.rename() works through the sandbox with no additional bridge work needed
+  - Deterministic payload generation (byte pattern loop) is simpler and more reliable than random data for parity testing
+---
