@@ -8,6 +8,8 @@
 
 Consolidate the two parallel architectures (published SDK layer and kernel/OS layer) into a single kernel-first architecture. The kernel becomes the default for all usage. The non-kernel `NodeRuntime` / `SystemDriver` API is removed. Runtime packages (`@secure-exec/nodejs`, `@secure-exec/python`, `@secure-exec/wasmvm`) become kernel drivers that users mount. The user experience is progressive: start with sandboxed Node, add WasmVM for shell/POSIX, add Python for Python — all via `kernel.mount()`.
 
+Additionally, restructure the repository layout to cleanly separate TypeScript packages (`packages/`) from native Rust code (`native/`), eliminating the current split where Rust code is scattered across `crates/` and `wasmvm/` at the repo root.
+
 ## Motivation
 
 ### Two architectures, one product
@@ -34,6 +36,15 @@ The kernel path wraps the SDK path — `runtime-node` creates a `SystemDriver` a
 
 6. **Naming confusion.** `@secure-exec/node` (published V8 driver) vs `@secure-exec/runtime-node` (kernel runtime driver) vs `@secure-exec/os-node` (kernel platform adapter) — three packages with "node" in the name at different abstraction levels.
 
+### Scattered native code
+
+Rust code lives in two disconnected locations at the repo root:
+
+- **`crates/v8-runtime/`** — a single Rust crate that compiles to a host binary (x86/arm). It's the V8 runtime process that `@secure-exec/v8` spawns. Sits alone in `crates/` with no siblings.
+- **`wasmvm/`** — an entire separate Rust workspace with its own `Cargo.toml`, `Cargo.lock`, `Makefile`, `vendor/`, `scripts/`, `patches/`, and `CLAUDE.md`. Contains ~90 command crates compiled to `wasm32-wasip1`, plus C programs and wasi-libc patches.
+
+These two Rust projects have completely different toolchains and targets (host native vs WASM), so they can't share a Cargo workspace. But having them at different nesting levels (`crates/X` vs `wasmvm/`) with different conventions makes the repo harder to navigate. Meanwhile, `packages/` mixes flat top-level packages (`secure-exec-core`) with nested groups (`runtime/node`, `os/browser`), and after the kernel consolidation those nested groups get merged away.
+
 ### Why the kernel is effectively free
 
 The kernel constructor (`kernel.ts:88-121`) is synchronous, in-memory setup:
@@ -47,7 +58,52 @@ The expensive part — `NodeExecutionDriver` + V8 isolate + bridge — is identi
 
 ## Target Architecture
 
-### Package structure
+### Repository layout
+
+```
+/
+├── native/                         ← All Rust/C native code
+│   ├── v8-runtime/                 ← V8 host binary (x86/arm)
+│   │   ├── Cargo.toml
+│   │   └── src/
+│   └── wasmvm/                     ← WASM command workspace (wasm32-wasip1)
+│       ├── Cargo.toml              ← Workspace root (separate from v8-runtime)
+│       ├── Cargo.lock
+│       ├── Makefile
+│       ├── rust-toolchain.toml
+│       ├── crates/
+│       │   ├── commands/           ← ~90 command crates (sh, ls, grep, etc.)
+│       │   ├── libs/               ← Shared Rust libs for commands
+│       │   └── wasi-ext/           ← WASI host import declarations
+│       ├── c/                      ← C programs compiled to WASM
+│       ├── patches/                ← wasi-libc patches
+│       ├── vendor/                 ← Vendored Rust deps
+│       ├── scripts/
+│       └── CLAUDE.md
+├── packages/                       ← All TypeScript packages (pnpm workspace)
+│   ├── secure-exec/                ← Re-export of @secure-exec/nodejs
+│   ├── secure-exec-core/           ← Kernel + types + utilities
+│   ├── secure-exec-nodejs/         ← Node.js runtime driver + bridge
+│   ├── secure-exec-v8/             ← V8 bindings (TS side)
+│   ├── secure-exec-python/         ← Python runtime driver
+│   ├── secure-exec-wasmvm/         ← WasmVM runtime driver (TS side)
+│   ├── secure-exec-browser/        ← Browser platform adapter (future)
+│   ├── secure-exec-typescript/     ← TypeScript helpers
+│   ├── playground/                 ← Dev playground (private)
+│   └── website/                    ← Docs site (private)
+├── docs/                           ← Public documentation (Astro)
+├── docs-internal/                  ← Internal specs, proposals, glossary
+├── examples/                       ← Example projects
+└── scripts/                        ← Repo-level scripts
+```
+
+**Key principles:**
+- `packages/` = TypeScript. `native/` = Rust/C. No mixing.
+- `native/v8-runtime/` and `native/wasmvm/` remain separate Cargo workspaces (different toolchains, different targets). The `native/` grouping is organizational, not a shared workspace.
+- `packages/` is flat — no nested `runtime/`, `os/`, or `kernel/` subdirectories after consolidation.
+- `wasmvm/` internals (crates, patches, vendor, Makefile) are preserved as-is under `native/wasmvm/`.
+
+### npm package structure
 
 ```
 secure-exec                    (published — convenience re-export)
@@ -333,14 +389,32 @@ const kernel = createKernel({
 
 **This is a semver major bump.** Publish as `secure-exec@0.2.0` (or `1.0.0` if ready).
 
-### Phase 6: Cleanup
+### Phase 6: Repository layout restructure (low risk)
+
+Move native code into `native/` and flatten `packages/`.
+
+1. Move `crates/v8-runtime/` → `native/v8-runtime/`.
+2. Move `wasmvm/` → `native/wasmvm/`.
+3. Update `@secure-exec/v8` to reference `native/v8-runtime/` for the Rust binary (postinstall script, build paths).
+4. Update `@secure-exec/wasmvm` to reference `native/wasmvm/target/` for WASM binaries.
+5. Update `turbo.json` `build:wasm` task inputs from `wasmvm/**` to `native/wasmvm/**`.
+6. Update CLAUDE.md references to `wasmvm/` and `crates/`.
+7. Update `native/wasmvm/CLAUDE.md` if path references change.
+8. Delete empty top-level `crates/` and `wasmvm/` directories.
+
+**Risk:** Low — these are pure file moves with no code changes. The two Rust workspaces remain independent. The main risk is stale path references in scripts, CI, and documentation.
+
+**Verification:** `cd native/v8-runtime && cargo build` and `cd native/wasmvm && make wasm` must both work after the move.
+
+### Phase 7: Cleanup
 
 1. Delete empty/merged packages: `@secure-exec/kernel`, `@secure-exec/runtime-node`, `@secure-exec/runtime-python`, `@secure-exec/runtime-wasmvm`, `@secure-exec/os-node`, `@secure-exec/os-browser`.
-2. Update `pnpm-workspace.yaml` to remove old paths.
+2. Update `pnpm-workspace.yaml` to remove old paths (`packages/os/*`, `packages/runtime/*`).
 3. Update `turbo.json` tasks.
 4. Update `docs-internal/arch/overview.md`.
 5. Update contracts in `.agent/contracts/`.
 6. Update CLAUDE.md.
+7. Update CI workflows (`.github/workflows/`) for new paths.
 
 ## Open Questions
 
@@ -404,6 +478,8 @@ This is straightforward but must be done in Phase 3 when the kernel merges into 
 | Published API break | Certain | High | Semver major bump, migration guide, deprecation warnings |
 | turbo.json cache invalidation | Medium | Low | Rebuild cache from scratch after restructure |
 | Browser support regression | Low | Low | Already broken, explicitly deferred |
+| Stale native path references after layout move | Medium | Medium | Grep all references to `crates/`, `wasmvm/` in CI, scripts, docs, CLAUDE.md; verify `cargo build` and `make wasm` post-move |
+| CI workflows break from path changes | Medium | Medium | Update `.github/workflows/` glob patterns and cache keys in same PR as moves |
 
 ## Success Criteria
 
@@ -415,3 +491,6 @@ This is straightforward but must be done in Phase 3 when the kernel merges into 
 6. Adding WasmVM/Python is one import + one `mount()` call — no API change.
 7. No duplicate type definitions between packages.
 8. All docs updated to reflect new API.
+9. All Rust/C code lives under `native/`. All TypeScript packages live under `packages/`. No code at the repo root.
+10. `cd native/v8-runtime && cargo build` and `cd native/wasmvm && make wasm` both succeed.
+11. No remaining references to old paths (`crates/v8-runtime`, top-level `wasmvm/`) in CI, scripts, docs, or CLAUDE.md.
