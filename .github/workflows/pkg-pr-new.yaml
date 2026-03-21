@@ -58,7 +58,7 @@ jobs:
           pnpm dlx pkg-pr-new publish \
             "./packages/secure-exec" \
             "./packages/secure-exec-core" \
-            "./packages/secure-exec-node" \
+            "./packages/secure-exec-nodejs" \
             "./packages/secure-exec-browser" \
             "./packages/secure-exec-python" \
             "./packages/secure-exec-typescript" \

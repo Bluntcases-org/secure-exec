@@ -22,7 +22,7 @@ Package index:
     V8 runtime process manager (spawns Rust binary, IPC client,
     session abstraction). MessagePack framing over UDS.
 
-  @secure-exec/node        packages/secure-exec-node/
+  @secure-exec/nodejs      packages/secure-exec-nodejs/
     Execution driver, bridge-handlers, bridge-loader, module-access overlay,
     createNodeDriver, createNodeRuntimeDriverFactory
 
@@ -75,7 +75,7 @@ Factory abstraction for constructing execution drivers from normalized runtime o
 
 ### createNodeDriver()
 
-`packages/secure-exec-node/src/driver.ts`
+`packages/secure-exec-nodejs/src/driver.ts`
 
 Factory that builds a `SystemDriver` with Node-native adapters.
 
@@ -84,7 +84,7 @@ Factory that builds a `SystemDriver` with Node-native adapters.
 
 ### createNodeRuntimeDriverFactory()
 
-`packages/secure-exec-node/src/driver.ts`
+`packages/secure-exec-nodejs/src/driver.ts`
 
 Factory that builds a Node-backed execution driver factory.
 
@@ -148,7 +148,7 @@ The Rust V8 runtime process. One OS thread per session, each owning a `v8::Isola
 
 ## NodeExecutionDriver
 
-`packages/secure-exec-node/src/execution-driver.ts`
+`packages/secure-exec-nodejs/src/execution-driver.ts`
 
 The engine. Obtains a V8 session from the shared `@secure-exec/v8` runtime and bridges host capabilities in.
 
@@ -203,7 +203,7 @@ Optional companion package for isolated TypeScript compiler work (`@secure-exec/
 
 ## ModuleAccessFileSystem
 
-`packages/secure-exec-node/src/module-access.ts`
+`packages/secure-exec-nodejs/src/module-access.ts`
 
 Filesystem overlay that makes host `node_modules` available read-only at `/root/node_modules`.
 

@@ -2,7 +2,7 @@ import * as esbuild from "esbuild";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-// Bridge source lives in this package (secure-exec-node).
+// Bridge source lives in this package (secure-exec-nodejs).
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(__dirname, "..");
 

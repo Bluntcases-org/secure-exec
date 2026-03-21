@@ -221,7 +221,7 @@ Changes to runtime or bridge filesystem metadata/rename behavior SHALL update co
 - **THEN** the compatibility project-matrix MUST include fixture coverage that exercises the changed behavior under host Node and secure-exec comparison
 
 ### Requirement: Governance References Use Canonical Secure-Exec Package Family Naming
-Governance artifacts that reference runtime package imports SHALL use the `@secure-exec/*` scoped package names (`@secure-exec/core`, `@secure-exec/node`, `@secure-exec/browser`, `@secure-exec/python`) or the `secure-exec` barrel. Source paths SHALL use the corresponding workspace directories (`packages/secure-exec-core`, `packages/secure-exec-node`, `packages/secure-exec-browser`, `packages/secure-exec-python`, `packages/secure-exec`).
+Governance artifacts that reference runtime package imports SHALL use the `@secure-exec/*` scoped package names (`@secure-exec/core`, `@secure-exec/nodejs`, `@secure-exec/browser`, `@secure-exec/python`) or the `secure-exec` barrel. Source paths SHALL use the corresponding workspace directories (`packages/secure-exec-core`, `packages/secure-exec-nodejs`, `packages/secure-exec-browser`, `packages/secure-exec-python`, `packages/secure-exec`).
 
 #### Scenario: Governance guidance references runtime package imports
 - **WHEN** a governance document or spec requirement describes runtime package imports
@@ -261,7 +261,7 @@ Any change that introduces or modifies runtime log-capture defaults or hook-base
 Any change that modifies runtime-driver behavior or runtime orchestration contracts MUST run shared integration suites against both node and browser runtime-driver targets.
 
 #### Scenario: Runtime/driver implementation changes trigger cross-target validation
-- **WHEN** a change modifies runtime contracts or driver behavior under `packages/secure-exec-core/src/`, `packages/secure-exec-node/src/`, or `packages/secure-exec-browser/src/`
+- **WHEN** a change modifies runtime contracts or driver behavior under `packages/secure-exec-core/src/`, `packages/secure-exec-nodejs/src/`, or `packages/secure-exec-browser/src/`
 - **THEN** the change MUST execute shared integration suites for both node and browser targets before completion
 
 #### Scenario: Shared suites are reused between targets

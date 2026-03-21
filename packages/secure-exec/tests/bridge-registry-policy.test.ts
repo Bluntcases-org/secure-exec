@@ -19,7 +19,7 @@ function readCoreSource(relativePath: string): string {
 
 function readNodeSource(relativePath: string): string {
 	return readFileSync(
-		new URL(`../../secure-exec-node/${relativePath}`, import.meta.url),
+		new URL(`../../secure-exec-nodejs/${relativePath}`, import.meta.url),
 		"utf8",
 	);
 }
@@ -39,7 +39,7 @@ describe("bridge registry policy", () => {
 
 	it("uses shared host bridge key constants for jail wiring", () => {
 		// Jail wiring spans execution-driver.ts facade and extracted modules.
-		// Canonical source is in @secure-exec/node.
+		// Canonical source is in @secure-exec/nodejs.
 		const nodeModulePaths = [
 			"src/execution-driver.ts",
 			"src/bridge-setup.ts",

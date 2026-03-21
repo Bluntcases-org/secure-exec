@@ -1,6 +1,6 @@
 /**
- * @deprecated Canonical source moved to @secure-exec/node (os-filesystem.ts).
+ * @deprecated Canonical source moved to @secure-exec/nodejs (os-filesystem.ts).
  * This file re-exports for backward compatibility.
  */
-export { HostNodeFileSystem as NodeFileSystem } from '@secure-exec/node';
-export type { HostNodeFileSystemOptions as NodeFileSystemOptions } from '@secure-exec/node';
+export { HostNodeFileSystem as NodeFileSystem } from '@secure-exec/nodejs';
+export type { HostNodeFileSystemOptions as NodeFileSystemOptions } from '@secure-exec/nodejs';

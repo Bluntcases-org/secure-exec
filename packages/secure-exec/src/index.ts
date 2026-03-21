@@ -31,11 +31,15 @@ export {
 	createNodeRuntimeDriverFactory,
 	NodeExecutionDriver,
 	NodeFileSystem,
-} from "@secure-exec/node";
+} from "@secure-exec/nodejs";
 export type {
 	ModuleAccessOptions,
 	NodeRuntimeDriverFactoryOptions,
-} from "@secure-exec/node";
+} from "@secure-exec/nodejs";
+
+// Re-export kernel API.
+export { createKernel } from "@secure-exec/core";
+export type { Kernel, KernelInterface } from "@secure-exec/core";
 
 export { createInMemoryFileSystem } from "./shared/in-memory-fs.js";
 export {

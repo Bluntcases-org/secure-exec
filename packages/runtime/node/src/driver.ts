@@ -1,5 +1,5 @@
 /**
- * @deprecated Canonical source moved to @secure-exec/node (kernel-runtime.ts).
+ * @deprecated Canonical source moved to @secure-exec/nodejs (kernel-runtime.ts).
  * This file re-exports for backward compatibility.
  */
 export {
@@ -7,5 +7,5 @@ export {
   createKernelCommandExecutor,
   createKernelVfsAdapter,
   createHostFallbackVfs,
-} from '@secure-exec/node';
-export type { NodeRuntimeOptions } from '@secure-exec/node';
+} from '@secure-exec/nodejs';
+export type { NodeRuntimeOptions } from '@secure-exec/nodejs';

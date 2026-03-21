@@ -234,7 +234,7 @@ The Node runtime MUST validate isolate-originated serialized payload size before
 - **THEN** the runtime MUST fail the operation with a deterministic overflow error and MUST NOT call `JSON.parse` on that payload
 
 #### Scenario: All isolate-originated parse entry points are guarded
-- **WHEN** host runtime code in the Node execution driver (`packages/secure-exec-node/src/execution-driver.ts`) parses isolate-originated JSON payloads for bridged operations
+- **WHEN** host runtime code in the Node execution driver (`packages/secure-exec-nodejs/src/execution-driver.ts`) parses isolate-originated JSON payloads for bridged operations
 - **THEN** each parse entry point MUST apply the same pre-parse size validation before invoking `JSON.parse`
 
 #### Scenario: In-limit serialized payload preserves existing behavior
@@ -317,7 +317,7 @@ Runtime rename behavior MUST delegate to the active driver `rename` operation an
 - **THEN** the runtime MUST expose deterministic documented behavior for that driver and MUST NOT silently perform copy-write-delete emulation as if it were atomic
 
 ### Requirement: Runtime Package Identity Uses Secure-Exec Package Family
-The runtime SHALL publish its execution interface through the `@secure-exec/*` scoped packages (`@secure-exec/core`, `@secure-exec/node`, `@secure-exec/browser`, `@secure-exec/python`). The `secure-exec` barrel package SHALL re-export all public APIs for backward compatibility.
+The runtime SHALL publish its execution interface through the `@secure-exec/*` scoped packages (`@secure-exec/core`, `@secure-exec/nodejs`, `@secure-exec/browser`, `@secure-exec/python`). The `secure-exec` barrel package SHALL re-export all public APIs for backward compatibility.
 
 #### Scenario: Consumers import runtime APIs from scoped packages
 - **WHEN** a Node or browser consumer imports runtime APIs
@@ -325,7 +325,7 @@ The runtime SHALL publish its execution interface through the `@secure-exec/*` s
 
 #### Scenario: Runtime source is split across focused packages
 - **WHEN** contributors update runtime implementation files
-- **THEN** shared types and runtime classes MUST live under `packages/secure-exec-core`, Node driver code under `packages/secure-exec-node`, browser driver code under `packages/secure-exec-browser`, Python driver code under `packages/secure-exec-python`, and the barrel re-export layer under `packages/secure-exec`
+- **THEN** shared types and runtime classes MUST live under `packages/secure-exec-core`, Node driver code under `packages/secure-exec-nodejs`, browser driver code under `packages/secure-exec-browser`, Python driver code under `packages/secure-exec-python`, and the barrel re-export layer under `packages/secure-exec`
 
 #### Scenario: Barrel package contains no source logic
 - **WHEN** contributors inspect `packages/secure-exec/src/`

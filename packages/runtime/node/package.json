@@ -16,7 +16,7 @@
   "dependencies": {
     "@secure-exec/core": "workspace:*",
     "@secure-exec/kernel": "workspace:*",
-    "@secure-exec/node": "workspace:*"
+    "@secure-exec/nodejs": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

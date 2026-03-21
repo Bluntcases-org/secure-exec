@@ -226,11 +226,11 @@ See `docs-internal/specs/v8-perf-research.md` for detailed profiling data and an
 
 - [ ] Cap and cache `package.json` parsing in resolver paths
   - Prevent repeated large-file reads and large JSON parse overhead in package resolution
-  - Files: `packages/secure-exec-node/src/`, `packages/secure-exec-core/src/`
+  - Files: `packages/secure-exec-nodejs/src/`, `packages/secure-exec-core/src/`
 
 - [ ] Module-access prefix indexing and canonicalization memoization
   - Reduce per-lookup overhead in module-access checks
-  - Files: `packages/secure-exec-node/src/module-access.ts`
+  - Files: `packages/secure-exec-nodejs/src/module-access.ts`
 
 - [ ] Offset-based fd read/write primitives (replace whole-file sync emulation)
   - Current approach reads/writes entire file contents; offset-based ops reduce large-file pressure
@@ -242,7 +242,7 @@ See `docs-internal/specs/v8-perf-research.md` for detailed profiling data and an
   - Spec: `docs-internal/specs/custom-bindings.md`
   - Nested object registration on host, auto-inflated to frozen `SecureExec.bindings.*` namespace in sandbox.
   - No Rust changes needed — piggybacks on existing `bridgeHandlers` mechanism.
-  - Files: `packages/secure-exec-core/src/runtime.ts`, `packages/secure-exec-node/src/execution-driver.ts`, `packages/secure-exec-core/src/runtime-driver.ts`
+  - Files: `packages/secure-exec-core/src/runtime.ts`, `packages/secure-exec-nodejs/src/execution-driver.ts`, `packages/secure-exec-core/src/runtime-driver.ts`
 
 ## CI and Automation
 

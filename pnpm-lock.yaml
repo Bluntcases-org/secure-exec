@@ -295,9 +295,9 @@ importers:
       '@secure-exec/kernel':
         specifier: workspace:*
         version: link:../../kernel
-      '@secure-exec/node':
+      '@secure-exec/nodejs':
         specifier: workspace:*
-        version: link:../../secure-exec-node
+        version: link:../../secure-exec-nodejs
     devDependencies:
       '@types/node':
         specifier: ^22.10.2
@@ -339,9 +339,9 @@ importers:
       '@secure-exec/kernel':
         specifier: workspace:*
         version: link:../../kernel
-      '@secure-exec/node':
+      '@secure-exec/nodejs':
         specifier: workspace:*
-        version: link:../../secure-exec-node
+        version: link:../../secure-exec-nodejs
     devDependencies:
       '@types/node':
         specifier: ^22.10.2
@@ -390,9 +390,9 @@ importers:
       '@secure-exec/kernel':
         specifier: workspace:*
         version: link:../kernel
-      '@secure-exec/node':
+      '@secure-exec/nodejs':
         specifier: workspace:*
-        version: link:../secure-exec-node
+        version: link:../secure-exec-nodejs
     optionalDependencies:
       '@secure-exec/browser':
         specifier: workspace:*
@@ -466,7 +466,7 @@ importers:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@22.19.3)(@vitest/browser@2.1.9)
 
-  packages/secure-exec-node:
+  packages/secure-exec-nodejs:
     dependencies:
       '@secure-exec/core':
         specifier: workspace:*
