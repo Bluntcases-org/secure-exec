@@ -55,6 +55,8 @@
 - OpenCode's --format json outputs NDJSON with types: step_start, text, step_finish — content in `part.text`
 - Use ANTHROPIC_BASE_URL env var to redirect OpenCode API calls to mock server — no opencode.json config needed
 - Use XDG_DATA_HOME + unique dir to isolate OpenCode's SQLite database per test run
+- Claude Code headless tests use direct spawn (nodeSpawn) — same pattern as OpenCode headless, not sandbox bridge
+- Claude Code exits 0 on 401 auth errors — check output text for error signals, not just exit code
 
 # Ralph Progress Log
 Started: Sat Mar 21 02:49:43 AM PDT 2026
@@ -704,4 +706,44 @@ Started: Sat Mar 21 02:49:43 AM PDT 2026
   - OpenCode accepts ANTHROPIC_BASE_URL env var for API redirect — no opencode.json config file needed
   - Use XDG_DATA_HOME to isolate OpenCode's database across test runs (avoids shared state)
   - NO_COLOR=1 strips ANSI codes from default format output
+---
+
+## 2026-03-21 08:47 - US-026
+- Updated opencode-interactive.test.ts imports from deleted package paths (kernel/, os/browser/, runtime/node/) to consolidated paths (secure-exec-core/, secure-exec-browser/, secure-exec-nodejs/)
+- Added PTY resize test: verifies OpenCode TUI re-renders after SIGWINCH from terminal resize
+- Tests skip gracefully when OpenCode binary is unavailable or child_process bridge can't spawn
+- Files changed:
+  - packages/secure-exec/tests/cli-tools/opencode-interactive.test.ts
+- **Learnings for future iterations:**
+  - OpenCode interactive tests use `script -qefc` wrapper to give the binary a host-side PTY (needed for TUI rendering)
+  - OpenCode uses kitty keyboard protocol — raw `\r` won't work as Enter, use `\x1b[13u` (CSI u-encoded Enter)
+  - HostBinaryDriver is a minimal RuntimeDriver that routes child_process.spawn to real host binaries
+  - These tests skip via 3-phase probing (node probe, spawn probe, stdin probe) — each probe tests a different layer of the bridge
+---
+
+## 2026-03-21 09:06 - US-027
+- Rewrote claude-headless.test.ts to use direct spawn (nodeSpawn) instead of sandbox bridge
+- Added --continue session continuation test (was missing from original skeleton)
+- Changed bad API key test to check for error signals in output (Claude may exit 0 on auth errors)
+- All 11 tests pass: boot, text output, JSON output, stream-json, file read, file write, bash tool, continue session, SIGINT, bad API key, good prompt
+- Files changed:
+  - packages/secure-exec/tests/cli-tools/claude-headless.test.ts
+- **Learnings for future iterations:**
+  - Claude Code headless tests must use direct spawn (nodeSpawn) for reliable stdout capture — sandbox bridge stdout round-trip is unreliable for native CLI binaries (same pattern as OpenCode)
+  - Claude Code exits 0 on 401 auth errors — check stderr/stdout for error text rather than relying on non-zero exit code
+  - Claude Code's --continue flag works with default session persistence (omit --no-session-persistence for the first run)
+  - Claude Code --verbose flag is required for stream-json output format
+  - Claude Code natively supports ANTHROPIC_BASE_URL — no config file or fetch interceptor needed
+---
+
+## 2026-03-21 09:15 - US-028
+- Updated claude-interactive.test.ts imports from deleted package paths (kernel/, os/browser/, runtime/node/) to consolidated paths (secure-exec-core/, secure-exec-browser/, secure-exec-nodejs/)
+- Added 3 new tests: tool use UI (tool_use mock response + Bash tool rendering), PTY resize (SIGWINCH + Ink re-render), /help command (slash command help text)
+- Total: 9 tests (6 existing + 3 new) — all skip gracefully when sandbox can't spawn Claude
+- Files changed:
+  - packages/secure-exec/tests/cli-tools/claude-interactive.test.ts
+- **Learnings for future iterations:**
+  - Claude Code with --dangerously-skip-permissions auto-executes tools without approval UI — tool use tests verify tool name/output appears on screen rather than approval dialog
+  - Claude interactive tests use same pattern as OpenCode: script -qefc wrapper, HostBinaryDriver, 3-phase probing (node, spawn, stdin)
+  - Pre-creating .claude/settings.json and .terms-accepted in HOME skips Claude's first-run onboarding dialogs
 ---

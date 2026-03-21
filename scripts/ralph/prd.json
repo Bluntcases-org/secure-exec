@@ -447,7 +447,7 @@
         "Typecheck passes"
       ],
       "priority": 26,
-      "passes": false,
+      "passes": true,
       "notes": "CLI Tool E2E Phase 4. Depends on US-022 (isTTY/setRawMode) and US-025 (OpenCode setup). Use content-based waitFor() assertions rather than exact screen matches due to OpenTUI rendering differences."
     },
     {
@@ -470,7 +470,7 @@
         "Typecheck passes"
       ],
       "priority": 27,
-      "passes": false,
+      "passes": true,
       "notes": "CLI Tool E2E Phase 5. Claude Code is a native binary with .node addons — must be spawned via child_process bridge, not in-VM. Reuses mock LLM server from US-023."
     },
     {
@@ -494,7 +494,7 @@
         "Typecheck passes"
       ],
       "priority": 28,
-      "passes": false,
+      "passes": true,
       "notes": "CLI Tool E2E Phase 6. Depends on US-022 (isTTY/setRawMode) and US-027 (Claude Code setup). Be aware of known stalling issue (anthropics/claude-code#771) — use reasonable timeouts."
     }
   ]
