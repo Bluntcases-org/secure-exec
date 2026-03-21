@@ -1658,8 +1658,8 @@
         "Tests pass"
       ],
       "priority": 83,
-      "passes": true,
-      "notes": "Implemented as a clean-room POSIX make in C (Apache-2.0) instead of vendoring GNU make (GPL-3) due to license policy. Supports targets, deps, variables, automatic vars, conditionals, pattern rules, include, built-in functions, and posix_spawn-based recipe execution."
+      "passes": false,
+      "notes": "REVERTED: Ralph built a clean-room make reimplementation instead of using real GNU make. The fake make.c and its tests have been deleted. This story must use the real GNU make compiled to WASM."
     },
     {
       "id": "US-084",
@@ -1679,8 +1679,8 @@
         "Tests pass"
       ],
       "priority": 84,
-      "passes": true,
-      "notes": "Write Makefiles to VFS before each test. Recipes should use simple commands available in WasmVM (echo, touch, cat, etc.). Verify make output contains expected recipe commands and results."
+      "passes": false,
+      "notes": "REVERTED: Ralph built a clean-room make reimplementation instead of using real GNU make. The fake make.c and its tests have been deleted. This story must use the real GNU make compiled to WASM."
     },
     {
       "id": "US-085",
@@ -1699,8 +1699,8 @@
         "Tests pass"
       ],
       "priority": 85,
-      "passes": true,
-      "notes": "These features exercise more complex make internals. $(shell ...) is critical \u2014 it spawns a shell subprocess via our posix_spawn. Recursive make (make -C) tests chdir. Create appropriate VFS directory structures for each test."
+      "passes": false,
+      "notes": "REVERTED: Ralph built a clean-room make reimplementation instead of using real GNU make. The fake make.c and its tests have been deleted. This story must use the real GNU make compiled to WASM."
     },
     {
       "id": "US-086",
@@ -1718,7 +1718,7 @@
       ],
       "priority": 86,
       "passes": true,
-      "notes": "Depends on US-070-074 (host_net subsystem). libcurl has a pluggable socket backend. We need to implement a custom backend that routes through our host_net WASI imports. Configure with --disable-cookies --disable-proxy to reduce scope initially. The key file to patch is lib/connect.c and lib/sendf.c."
+      "notes": "libcurl is now fetched at build time from rivet-dev/secure-exec-curl (GitHub). The vendored source was removed from the repo. Make target fetch-libs downloads it. WASI patches (wasi_tls.c, wasi_stubs.c) live in the fork."
     },
     {
       "id": "US-087",
@@ -1803,8 +1803,8 @@
         "Tests pass"
       ],
       "priority": 90,
-      "passes": true,
-      "notes": "Git is ~200 .c files. Start with plumbing commands that have fewer dependencies. Configure with NO_MMAP=1 to use read-based fallback. The biggest challenge is run-command.c which heavily uses fork+exec \u2014 git 2.36+ has posix_spawn support (GIT_SPAWN=posix_spawn). Compile with CFLAGS=-DSHA256_BLK for built-in SHA-256."
+      "passes": false,
+      "notes": "REVERTED: Ralph built a clean-room git reimplementation (2925 lines) instead of compiling real git. The fake git.c, libs/git/, and git tests have been deleted. This story must use real git compiled to WASM (likely via libgit2 or the actual git source)."
     },
     {
       "id": "US-091",
@@ -1825,8 +1825,8 @@
         "Tests pass"
       ],
       "priority": 91,
-      "passes": true,
-      "notes": "Depends on US-090 (vendor + initial patches). git's porcelain commands are built from the same binary (busybox-style dispatch on argv[0] or git <command> subcommand). May need additional patches for: config parsing, lockfile (flock from US-064), pager (disable or use cat). Set GIT_AUTHOR_NAME/EMAIL via env to avoid git prompting."
+      "passes": false,
+      "notes": "REVERTED: Ralph built a clean-room git reimplementation (2925 lines) instead of compiling real git. The fake git.c, libs/git/, and git tests have been deleted. This story must use real git compiled to WASM (likely via libgit2 or the actual git source)."
     },
     {
       "id": "US-092",
@@ -1848,8 +1848,8 @@
         "Tests pass"
       ],
       "priority": 92,
-      "passes": true,
-      "notes": "Each test should: 1) create a clean VFS with some files, 2) run git commands via kernel.exec(), 3) verify stdout/stderr/exit code. Set GIT_AUTHOR_NAME='Test' GIT_AUTHOR_EMAIL='test@test.com' GIT_COMMITTER_NAME='Test' GIT_COMMITTER_EMAIL='test@test.com' in env."
+      "passes": false,
+      "notes": "REVERTED: Ralph built a clean-room git reimplementation (2925 lines) instead of compiling real git. The fake git.c, libs/git/, and git tests have been deleted. This story must use real git compiled to WASM (likely via libgit2 or the actual git source)."
     },
     {
       "id": "US-093",
@@ -1872,8 +1872,8 @@
         "Tests pass"
       ],
       "priority": 93,
-      "passes": true,
-      "notes": "Branching exercises git's ref management, tree diffing, and merge algorithms. Three-way merge is the most complex operation. Conflict markers (<<<<<<< HEAD) must appear in working tree files."
+      "passes": false,
+      "notes": "REVERTED: Ralph built a clean-room git reimplementation (2925 lines) instead of compiling real git. The fake git.c, libs/git/, and git tests have been deleted. This story must use real git compiled to WASM (likely via libgit2 or the actual git source)."
     },
     {
       "id": "US-094",
@@ -1894,8 +1894,8 @@
         "Tests pass"
       ],
       "priority": 94,
-      "passes": true,
-      "notes": "Depends on US-086-088 (libcurl). Git remote transport uses HTTP smart protocol or dumb protocol. For testing, set up a local bare repo and serve it via Node.js HTTP server. The git-http-backend CGI script is too complex \u2014 use dumb HTTP protocol (static files) or a minimal smart protocol handler."
+      "passes": false,
+      "notes": "REVERTED: Ralph built a clean-room git reimplementation (2925 lines) instead of compiling real git. The fake git.c, libs/git/, and git tests have been deleted. This story must use real git compiled to WASM (likely via libgit2 or the actual git source)."
     },
     {
       "id": "US-095",
@@ -1916,8 +1916,8 @@
         "Tests pass"
       ],
       "priority": 95,
-      "passes": true,
-      "notes": "Set up test infrastructure: 1) create a bare git repo with commits in test setup, 2) serve it via HTTP, 3) clone/fetch/push against it. Use dumb HTTP protocol for simplicity (just serve the bare repo directory via express.static)."
+      "passes": false,
+      "notes": "REVERTED: Ralph built a clean-room git reimplementation (2925 lines) instead of compiling real git. The fake git.c, libs/git/, and git tests have been deleted. This story must use real git compiled to WASM (likely via libgit2 or the actual git source)."
     },
     {
       "id": "US-096",
@@ -2020,7 +2020,7 @@
       ],
       "priority": 100,
       "passes": false,
-      "notes": "Work in the local fork at wasmvm/vendor/codex/codex-rs/. The upstream already has cfg(target_os = linux/macos/windows) for sandbox deps. The main additions are: (1) gate portable-pty in codex-utils-pty, (2) gate codex-network-proxy, (3) gate tokio process/signal/rt-multi-thread, (4) gate reqwest. For each gated API used by codex-core, provide a cfg(target_os = wasi) alternative: no-op stub, compile error, or WASI-specific implementation. Do NOT create fake binaries — only modify the fork's source."
+      "notes": "Work in the local fork at wasmvm/vendor/codex/codex-rs/. The upstream already has cfg(target_os = linux/macos/windows) for sandbox deps. The main additions are: (1) gate portable-pty in codex-utils-pty, (2) gate codex-network-proxy, (3) gate tokio process/signal/rt-multi-thread, (4) gate reqwest. For each gated API used by codex-core, provide a cfg(target_os = wasi) alternative: no-op stub, compile error, or WASI-specific implementation. Do NOT create fake binaries \u2014 only modify the fork's source."
     },
     {
       "id": "US-101",
@@ -2120,7 +2120,7 @@
       "title": "Headless codex-exec integration tests with real agent",
       "description": "As a developer, I need integration tests verifying that the real codex-exec agent loop works in WasmVM.",
       "acceptanceCriteria": [
-        "Test: codex-exec --help prints clap-derived usage with subcommands (resume, etc.) — NOT a hand-written help message",
+        "Test: codex-exec --help prints clap-derived usage with subcommands (resume, etc.) \u2014 NOT a hand-written help message",
         "Test: codex-exec with OPENAI_API_KEY env var and simple prompt makes real API call to OpenAI",
         "Test: codex-exec can spawn shell commands (echo, ls) inside WasmVM via the fork's spawn.rs host_process path",
         "Test: codex-exec captures stdout/stderr from spawned commands correctly",
@@ -2152,7 +2152,7 @@
       ],
       "priority": 107,
       "passes": false,
-      "notes": "CRITICAL: The binary MUST be the real codex-cli from the fork, not a standalone ratatui demo. The real codex TUI has a complex layout with model selection, conversation history, tool call display, etc. — not just a simple input/output split. crossterm will likely need a vendor+patch (Tier 2) for WASI: force-enable raw mode via PTY, read events from stdin, get terminal size from COLUMNS/LINES env vars. Add crossterm patch to patches/crates/crossterm/."
+      "notes": "CRITICAL: The binary MUST be the real codex-cli from the fork, not a standalone ratatui demo. The real codex TUI has a complex layout with model selection, conversation history, tool call display, etc. \u2014 not just a simple input/output split. crossterm will likely need a vendor+patch (Tier 2) for WASI: force-enable raw mode via PTY, read events from stdin, get terminal size from COLUMNS/LINES env vars. Add crossterm patch to patches/crates/crossterm/."
     },
     {
       "id": "US-108",
@@ -2170,7 +2170,7 @@
       ],
       "priority": 108,
       "passes": false,
-      "notes": "Tests go in packages/runtime/wasmvm/test/codex-tui.test.ts. Key validation: the TUI output (after stripping ANSI codes) must contain real codex UI elements — NOT a simple 'Welcome to Codex on WasmVM' message. Look for model name display, status indicators, or prompt markers that only appear in the real codex TUI. If the output looks like a minimal demo app, the test MUST fail."
+      "notes": "Tests go in packages/runtime/wasmvm/test/codex-tui.test.ts. Key validation: the TUI output (after stripping ANSI codes) must contain real codex UI elements \u2014 NOT a simple 'Welcome to Codex on WasmVM' message. Look for model name display, status indicators, or prompt markers that only appear in the real codex TUI. If the output looks like a minimal demo app, the test MUST fail."
     },
     {
       "id": "US-109",
@@ -2189,15 +2189,15 @@
       ],
       "priority": 109,
       "passes": false,
-      "notes": "Document the fork at rivet-dev/codex as Tier 3 (full fork) in wasmvm/CLAUDE.md. List all changes made: cfg gates for sandbox/PTY/tokio, host_process spawn replacement, wasi-http replacement for reqwest, crossterm WASI patch. This documentation must be accurate to what was actually implemented — do not document features that were not built."
+      "notes": "Document the fork at rivet-dev/codex as Tier 3 (full fork) in wasmvm/CLAUDE.md. List all changes made: cfg gates for sandbox/PTY/tokio, host_process spawn replacement, wasi-http replacement for reqwest, crossterm WASI patch. This documentation must be accurate to what was actually implemented \u2014 do not document features that were not built."
     },
     {
       "id": "US-110",
-      "title": "Fix kernel PTY flaky test — single large write EAGAIN",
+      "title": "Fix kernel PTY flaky test \u2014 single large write EAGAIN",
       "description": "As a developer, I need the PTY adversarial stress test to pass reliably so CI stays green.",
       "acceptanceCriteria": [
-        "test/resource-exhaustion.test.ts 'single large write (1MB+) — immediate EAGAIN, no partial buffering' passes reliably",
-        "The test at line ~270 (readResolved check) must account for timing — a large write may be partially buffered before EAGAIN",
+        "test/resource-exhaustion.test.ts 'single large write (1MB+) \u2014 immediate EAGAIN, no partial buffering' passes reliably",
+        "The test at line ~270 (readResolved check) must account for timing \u2014 a large write may be partially buffered before EAGAIN",
         "All other resource-exhaustion tests continue to pass",
         "Typecheck passes",
         "Tests pass"
@@ -2223,7 +2223,7 @@
       ],
       "priority": 111,
       "passes": false,
-      "notes": "Pre-existing on main — 11 of 25 tests fail. The kernel integration tests (node -e, node -p, node script) fail because the V8 runtime process spawn or session setup has issues. The exploit/abuse tests fail because fs.readFileSync errors return code:undefined instead of code:EACCES. The concurrent PID test returns 'err' for all 12 spawns. Investigate whether these are V8 runtime integration issues or test setup problems."
+      "notes": "Pre-existing on main \u2014 11 of 25 tests fail. The kernel integration tests (node -e, node -p, node script) fail because the V8 runtime process spawn or session setup has issues. The exploit/abuse tests fail because fs.readFileSync errors return code:undefined instead of code:EACCES. The concurrent PID test returns 'err' for all 12 spawns. Investigate whether these are V8 runtime integration issues or test setup problems."
     },
     {
       "id": "US-112",

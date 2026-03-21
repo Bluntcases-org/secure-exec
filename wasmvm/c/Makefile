@@ -63,10 +63,10 @@ NATIVE_CFLAGS := -O0 -g -I include/
 COMMANDS_DIR ?= ../target/wasm32-wasip1/release/commands
 
 # Real commands to install (add command names as they are opted in)
-COMMANDS := zip unzip envsubst sqlite3 make curl wget git
+COMMANDS := zip unzip envsubst sqlite3 curl wget
 
 # Programs requiring patched sysroot (Tier 2+ custom host imports)
-PATCHED_PROGRAMS := isatty_test getpid_test getppid_test getppid_verify userinfo pipe_test dup_test spawn_child spawn_exit_code pipeline kill_child waitpid_return waitpid_edge syscall_coverage getpwuid_test signal_tests pipe_edge tcp_echo http_get dns_lookup sqlite3_cli make curl_test curl_cli wget git
+PATCHED_PROGRAMS := isatty_test getpid_test getppid_test getppid_verify userinfo pipe_test dup_test spawn_child spawn_exit_code pipeline kill_child waitpid_return waitpid_edge syscall_coverage getpwuid_test signal_tests pipe_edge tcp_echo http_get dns_lookup sqlite3_cli curl_test curl_cli wget
 
 # Discover all .c source files in programs/
 ALL_SOURCES := $(wildcard programs/*.c)
@@ -111,6 +111,69 @@ $(WASI_SDK_DIR)/bin/clang:
 	@rm -f "$(VENDOR_DIR)/$(WASI_SDK_TARBALL)"
 	@echo "wasi-sdk $(WASI_SDK_MAJOR) installed to $(WASI_SDK_DIR)"
 
+# --- C library dependencies (downloaded at build time) ---
+# Unmodified upstream libs are fetched from their official sources.
+# Modified libs (curl with WASI patches) are fetched from rivet-dev forks.
+# All downloads cached in libs/ — add libs/ to .gitignore.
+
+SQLITE3_URL := https://www.sqlite.org/2024/sqlite-amalgamation-3470200.zip
+ZLIB_URL    := https://github.com/nicehash/zlib/archive/refs/tags/v1.3.1.zip
+CJSON_URL   := https://github.com/DaveGamble/cJSON/archive/refs/tags/v1.7.18.zip
+CURL_COMMIT := main
+CURL_URL    := https://github.com/rivet-dev/secure-exec-curl/archive/refs/heads/$(CURL_COMMIT).zip
+MINIZIP_URL := https://github.com/nicehash/zlib/archive/refs/tags/v1.3.1.zip
+
+LIBS_DIR    := libs
+LIBS_CACHE  := .cache/libs
+
+libs/sqlite3/sqlite3.c:
+	@echo "Fetching sqlite3..."
+	@mkdir -p $(LIBS_CACHE) $(LIBS_DIR)/sqlite3
+	@curl -fSL "$(SQLITE3_URL)" -o "$(LIBS_CACHE)/sqlite3.zip"
+	@cd $(LIBS_CACHE) && unzip -qo sqlite3.zip
+	@cp $(LIBS_CACHE)/sqlite-amalgamation-*/sqlite3.c $(LIBS_CACHE)/sqlite-amalgamation-*/sqlite3.h $(LIBS_DIR)/sqlite3/
+
+libs/zlib/zutil.c:
+	@echo "Fetching zlib..."
+	@mkdir -p $(LIBS_CACHE) $(LIBS_DIR)/zlib
+	@curl -fSL "$(ZLIB_URL)" -o "$(LIBS_CACHE)/zlib.zip"
+	@cd $(LIBS_CACHE) && unzip -qo zlib.zip
+	@cp $(LIBS_CACHE)/zlib-*/*.c $(LIBS_CACHE)/zlib-*/*.h $(LIBS_DIR)/zlib/
+
+libs/minizip/ioapi.c:
+	@echo "Fetching minizip (from zlib contrib)..."
+	@mkdir -p $(LIBS_CACHE) $(LIBS_DIR)/minizip
+	@if [ ! -f "$(LIBS_CACHE)/zlib.zip" ]; then \
+		curl -fSL "$(MINIZIP_URL)" -o "$(LIBS_CACHE)/zlib.zip"; \
+		cd $(LIBS_CACHE) && unzip -qo zlib.zip; \
+	fi
+	@cp $(LIBS_CACHE)/zlib-*/contrib/minizip/ioapi.c $(LIBS_CACHE)/zlib-*/contrib/minizip/ioapi.h \
+	    $(LIBS_CACHE)/zlib-*/contrib/minizip/zip.c $(LIBS_CACHE)/zlib-*/contrib/minizip/zip.h \
+	    $(LIBS_CACHE)/zlib-*/contrib/minizip/unzip.c $(LIBS_CACHE)/zlib-*/contrib/minizip/unzip.h \
+	    $(LIBS_CACHE)/zlib-*/contrib/minizip/crypt.h \
+	    $(LIBS_DIR)/minizip/
+
+libs/cjson/cJSON.c:
+	@echo "Fetching cJSON..."
+	@mkdir -p $(LIBS_CACHE) $(LIBS_DIR)/cjson
+	@curl -fSL "$(CJSON_URL)" -o "$(LIBS_CACHE)/cjson.zip"
+	@cd $(LIBS_CACHE) && unzip -qo cjson.zip
+	@cp $(LIBS_CACHE)/cJSON-*/cJSON.c $(LIBS_CACHE)/cJSON-*/cJSON.h $(LIBS_DIR)/cjson/
+
+libs/curl/lib/easy.c:
+	@echo "Fetching curl (rivet-dev/secure-exec-curl)..."
+	@mkdir -p $(LIBS_CACHE)
+	@curl -fSL "$(CURL_URL)" -o "$(LIBS_CACHE)/curl.zip"
+	@cd $(LIBS_CACHE) && unzip -qo curl.zip
+	@rm -rf $(LIBS_DIR)/curl
+	@mv $(LIBS_CACHE)/secure-exec-curl-* $(LIBS_DIR)/curl
+
+.PHONY: fetch-libs clean-libs
+fetch-libs: libs/sqlite3/sqlite3.c libs/zlib/zutil.c libs/minizip/ioapi.c libs/cjson/cJSON.c libs/curl/lib/easy.c
+
+clean-libs:
+	rm -rf $(LIBS_DIR) $(LIBS_CACHE)
+
 # --- Patched sysroot (delegates to patch-wasi-libc.sh) ---
 
 sysroot: wasi-sdk
@@ -130,7 +193,7 @@ wasm-opt-check:
 
 # --- Compile all C programs to WASM ---
 
-programs: wasi-sdk wasm-opt-check $(WASM_OUTPUTS)
+programs: wasi-sdk fetch-libs wasm-opt-check $(WASM_OUTPUTS)
 	@echo ""
 	@echo "=== C WASM Build Report ==="
 	@echo "Programs: $(words $(PROG_NAMES)) compiled"
@@ -253,23 +316,6 @@ $(BUILD_DIR)/curl_cli: programs/curl_cli.c $(CURL_SRCS) $(WASI_SDK_DIR)/bin/clan
 $(NATIVE_DIR)/curl_cli: programs/curl_cli.c
 	@mkdir -p $(NATIVE_DIR)
 	$(NATIVE_CC) $(NATIVE_CFLAGS) -o $@ programs/curl_cli.c -lcurl
-
-# git: clean-room git implementation — links SHA-1 + zlib + libcurl (HTTP/HTTPS remote support)
-GIT_SRCS     := libs/git/sha1.c libs/git/git-objects.c libs/git/git-index.c
-GIT_INCLUDES := -Ilibs/git -Ilibs/zlib
-GIT_DEFS     := -DHAS_CURL
-
-$(BUILD_DIR)/git: programs/git.c $(GIT_SRCS) $(ZLIB_SRCS) $(CURL_SRCS) $(WASI_SDK_DIR)/bin/clang
-	@mkdir -p $(BUILD_DIR)
-	$(CC) $(WASM_CFLAGS) $(GIT_DEFS) $(GIT_INCLUDES) $(CURL_DEFS) $(CURL_INCLUDES) \
-	    -lwasi-emulated-signal \
-	    -o $@.wasm programs/git.c $(GIT_SRCS) $(ZLIB_SRCS) $(CURL_SRCS)
-	wasm-opt -O3 --strip-debug --all-features $@.wasm -o $@
-	@rm -f $@.wasm
-
-$(NATIVE_DIR)/git: programs/git.c $(GIT_SRCS) $(ZLIB_SRCS)
-	@mkdir -p $(NATIVE_DIR)
-	$(NATIVE_CC) $(NATIVE_CFLAGS) $(GIT_DEFS) $(GIT_INCLUDES) -o $@ programs/git.c $(GIT_SRCS) $(ZLIB_SRCS) -lcurl
 
 # wget: minimal wget built on libcurl
 $(BUILD_DIR)/wget: programs/wget.c $(CURL_SRCS) $(WASI_SDK_DIR)/bin/clang

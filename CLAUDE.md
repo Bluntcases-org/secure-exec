@@ -40,6 +40,15 @@
 - if the upstream cannot compile or link for the target, document the specific blockers and leave the story as failing — do not mark it passing with a placeholder
 - the PRD and story notes define which upstream project to use; follow them exactly unless explicitly told otherwise
 
+## C Library Vendoring Policy
+
+- NEVER commit third-party C library source code directly into this repo
+- **unmodified upstream libraries** (sqlite3, zlib, minizip, cJSON, etc.) must be downloaded at build time from their official release URLs — add a Makefile target in `wasmvm/c/Makefile` under `fetch-libs`
+- **modified libraries** (e.g., libcurl with WASI patches) must live in a fork under the `rivet-dev` GitHub org (e.g., `rivet-dev/secure-exec-curl`) — the Makefile downloads from the fork's archive URL
+- all downloaded library sources go in `wasmvm/c/libs/` which is gitignored — they are fetched by `make fetch-libs` and cached in `wasmvm/c/.cache/`
+- when adding a new C library dependency: (1) add its download URL and Makefile target to `fetch-libs`, (2) add `libs/<name>` to the appropriate `.gitignore`, (3) if WASI modifications are needed, create a `rivet-dev/secure-exec-<name>` fork first
+- existing forks: `rivet-dev/secure-exec-curl` (libcurl with `wasi_tls.c` and `wasi_stubs.c`)
+
 ## WASM Binary
 
 - the goal for WasmVM is full POSIX compliance 1:1 — every command, syscall, and shell behavior should match a real Linux system exactly
