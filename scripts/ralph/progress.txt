@@ -12,6 +12,8 @@
 - Cross-package relative imports (e.g., ../../../secure-exec-node/src/) cause rootDir violation in tsc — use @deprecated copy or package imports instead
 - VFS example-virtual-file-system-sqlite and example-virtual-file-system-s3 have pre-existing typecheck failures from US-001
 - bridge-registry-policy test "keeps canonical bridge key lists" has pre-existing failure (inventory out of sync)
+- Core's module-resolver.ts was renamed to builtin-modules.ts in node package (node already had its own module-resolver.ts)
+- When moving files from core to node that import VirtualFileSystem, change import from ./types.js to @secure-exec/kernel
 
 # Ralph Progress Log
 Started: Sat Mar 21 02:49:43 AM PDT 2026
@@ -60,4 +62,29 @@ Started: Sat Mar 21 02:49:43 AM PDT 2026
   - Core's ./internal/shared/* export wildcard covers any .ts file in shared/ — useful for proxy files
   - bridge-registry-policy test has multiple pre-existing failures (inventory out of sync, esm-compiler.ts reference stale)
   - Python runtime tests fail independently (PythonRuntimeClass constructor issue) — not related to bridge changes
+---
+
+## 2026-03-21 03:45 - US-003
+- Moved ESM compiler, module resolver, and package bundler source from core to secure-exec-node
+- Core module-resolver.ts → node builtin-modules.ts (renamed to avoid conflict with existing module-resolver.ts in node)
+- Core esm-compiler.ts → node esm-compiler.ts (updated import from ./module-resolver.js to ./builtin-modules.js)
+- Core package-bundler.ts → node package-bundler.ts (updated import from ./types.js to @secure-exec/kernel)
+- Left @deprecated copies in core for backward compatibility
+- Updated node internal imports:
+  - module-resolver.ts: normalizeBuiltinSpecifier, getPathDir from ./builtin-modules.js; resolveModule from ./package-bundler.js
+  - execution-driver.ts: createResolutionCache from ./package-bundler.js; ResolutionCache type from ./package-bundler.js
+  - isolate-bootstrap.ts: ResolutionCache type from ./package-bundler.js
+  - bridge-handlers.ts: normalizeBuiltinSpecifier from ./builtin-modules.js; resolveModule, loadFile from ./package-bundler.js; VirtualFileSystem from @secure-exec/kernel; ResolutionCache from ./package-bundler.js
+- Added ./internal/builtin-modules, ./internal/esm-compiler, ./internal/package-bundler exports to node package.json
+- Updated SDK re-export comments to reference new canonical locations
+- Files changed:
+  - packages/secure-exec-node/src/builtin-modules.ts (new), esm-compiler.ts (new), package-bundler.ts (new)
+  - packages/secure-exec-node/package.json, src/module-resolver.ts, src/execution-driver.ts, src/isolate-bootstrap.ts, src/bridge-handlers.ts
+  - packages/secure-exec-core/src/module-resolver.ts, esm-compiler.ts, package-bundler.ts (deprecated annotations)
+  - packages/secure-exec/src/module-resolver.ts, esm-compiler.ts, package-bundler.ts (comment updates)
+- **Learnings for future iterations:**
+  - When node package already has a file with the same name, rename the incoming file (e.g., module-resolver → builtin-modules)
+  - package-bundler.ts imports VirtualFileSystem from ./types.js in core; in node, import from @secure-exec/kernel instead
+  - bridge-handlers.ts also imported VirtualFileSystem from @secure-exec/core — when splitting that import, use @secure-exec/kernel directly
+  - 8 test files in runtime-driver/node/ have pre-existing failures unrelated to US-003 (verified by running before/after)
 ---
