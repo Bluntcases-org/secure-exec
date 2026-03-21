@@ -229,6 +229,94 @@ See `docs-internal/specs/v8-perf-research.md` for detailed profiling data and an
   - Job fails (no PR opened) if `cargo test` or TypeScript tests fail — prevents broken updates from being proposed
   - Files: `.github/workflows/v8-update.yml`, `crates/v8-runtime/Cargo.toml`
 
+## WasmVM: Test Fixes (pre-existing on main)
+
+- [ ] Fix kernel PTY flaky test — single large write EAGAIN.
+  - test/resource-exhaustion.test.ts 'single large write (1MB+)' expects immediate EAGAIN but PTY ring buffer can accept some data before blocking.
+  - Files: `packages/kernel/test/resource-exhaustion.test.ts`
+
+- [ ] Fix Node RuntimeDriver kernel integration tests (11 of 25 failing).
+  - Kernel integration tests (node -e, node -p, node script) fail — V8 runtime process spawn or session setup issues. Exploit/abuse tests return code:undefined instead of code:EACCES. Concurrent PID test returns 'err' for all spawns.
+  - Files: `packages/runtime/node/test/driver.test.ts`
+
+- [ ] Fix V8 crash isolation test timeouts.
+  - crash-isolation.test.ts and process-isolation.test.ts timeout at 30s. V8 process crash detection or IPC cleanup too slow.
+  - Files: `packages/secure-exec-v8/test/crash-isolation.test.ts`, `packages/secure-exec-v8/test/process-isolation.test.ts`
+
+- [ ] Fix crossterm vendor patch auto-apply in patch-vendor.sh.
+  - `patch -R --dry-run` gives false positives for patches that add new files. Forward-apply check should run first.
+  - Files: `wasmvm/scripts/patch-vendor.sh`
+
+- [ ] Fix C parity test WASM exit code 17 for non-patched programs.
+  - All C programs compiled against patched wasi-libc import host_user.isatty. Verify host_user imports are provided correctly for C-built WASM binaries and isatty signature matches between C sysroot patch and kernel-worker.ts.
+  - Files: `packages/runtime/wasmvm/src/kernel-worker.ts`, `wasmvm/c/Makefile`, `wasmvm/patches/wasi-libc/`
+
+- [ ] Fix secure-exec main test suite failures from build cascade.
+  - UpgradeSocket bridge refs fix (already committed) should resolve most failures. Verify after rebuild. Remaining failures may be Node runtime driver issues (above) or missing pyodide.
+  - Files: `packages/secure-exec-core/src/shared/bridge-contract.ts`
+
+## WasmVM: GNU Make (real upstream, not reimplementation)
+
+- [ ] Vendor real GNU make — download, configure, and patch for WASM.
+  - Previous clean-room reimplementation was deleted (violated Tool Integration Policy). Must compile real GNU make to wasm32-wasip1.
+
+- [ ] make basic test suite.
+  - Tests proving make can execute basic Makefiles with variables, recipes, and dependencies.
+
+- [ ] make advanced test suite.
+  - Tests for pattern rules, includes, conditionals, shell functions, and error handling.
+
+## WasmVM: Git (real upstream, not reimplementation)
+
+- [ ] Vendor real git source and compile for WASM.
+  - Previous clean-room reimplementation (2925 lines) was deleted (violated Tool Integration Policy). Must compile real git (likely via libgit2 or actual git source) to wasm32-wasip1.
+
+- [ ] git local commands — init, add, commit, status, log, diff.
+  - Core porcelain commands compiled for WASM.
+
+- [ ] git local test suite — filesystem operations.
+
+- [ ] git branching — branch, checkout, merge, tag + test suite.
+
+- [ ] git remote commands — clone, fetch, push, pull (HTTP/HTTPS via libcurl).
+
+- [ ] git remote test suite — network operations.
+
+## WasmVM: Codex (rivet-dev/codex fork)
+
+- [ ] Delete fake codex stubs and fork real codex-rs to rivet-dev/codex.
+  - Existing `wasmvm/crates/commands/codex/` and `codex-exec/` are fake stubs that print "agent loop is under development". Delete them. Fork `openai/codex` to `rivet-dev/codex`.
+
+- [ ] Add WASI cfg gates to codex-rs fork — core dependencies.
+  - Gate tokio process/signal/rt-multi-thread, portable-pty, reqwest, landlock/seccompiler behind `cfg(not(target_os = "wasi"))`.
+
+- [ ] Add WASI cfg gates to codex-rs fork — spawn and exec.
+  - Replace `tokio::process::Command` with `host_process_spawn` from wasi-ext on WASI.
+
+- [ ] Add WASI cfg gates to codex-rs fork — PTY and unified exec.
+  - Replace `portable-pty` with host_process PTY support on WASI.
+
+- [ ] Add WASI HTTP client to codex-rs fork replacing reqwest.
+  - Build HTTP client on host_net TCP/TLS imports for API calls.
+
+- [ ] Stub codex-network-proxy and codex-otel in the fork for WASI.
+  - No-op implementations for network proxy and telemetry on WASI.
+
+- [ ] Build real codex-exec WASM binary from fork (headless mode).
+  - The binary MUST be the real codex-exec from the fork. Verify --help shows clap-derived output with 'resume' subcommand.
+
+- [ ] Headless codex-exec integration tests with real agent.
+  - Verify real agent loop, clap-generated --help, not a hand-written placeholder.
+
+- [ ] Build real codex TUI WASM binary from fork.
+  - Real codex-cli with complex TUI layout (model selection, conversation history, tool calls), not a simple ratatui demo.
+
+- [ ] TUI codex integration tests with real agent.
+  - Verify real codex UI elements, not "Welcome to Codex on WasmVM" placeholder.
+
+- [ ] Update docs for real codex WasmVM integration.
+  - Document rivet-dev/codex fork as Tier 3 in wasmvm/CLAUDE.md with all WASI patches.
+
 ## Spec-Hardening Cross-References (items 29-42)
 
 Items below are tracked in detail in `docs-internal/spec-hardening.md`. Kept here for backlog visibility.
