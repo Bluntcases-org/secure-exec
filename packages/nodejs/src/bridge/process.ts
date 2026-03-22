@@ -13,6 +13,7 @@ import { URL as WhatwgURL, URLSearchParams as WhatwgURLSearchParams } from "what
 import { Buffer as BufferPolyfill } from "buffer";
 import type {
 	BridgeApplyRef,
+	BridgeApplySyncRef,
 	CryptoRandomFillBridgeRef,
 	CryptoRandomUuidBridgeRef,
 	FsFacadeBridge,
@@ -65,6 +66,8 @@ declare const _cryptoRandomUUID: CryptoRandomUuidBridgeRef | undefined;
 declare const _fs: FsFacadeBridge;
 // PTY setRawMode bridge ref (optional — only present when PTY is attached)
 declare const _ptySetRawMode: PtySetRawModeBridgeRef | undefined;
+// Process exit notification — flushes pending host timers so V8 event loop drains
+declare const _notifyProcessExit: BridgeApplySyncRef<[number], void> | undefined;
 // Timer budget injected by the host when resourceBudgets.maxTimers is set
 declare const _maxTimers: number | undefined;
 
@@ -761,6 +764,18 @@ const process: Record<string, unknown> & {
       _emit("exit", exitCode);
     } catch (_e) {
       // Ignore errors in exit handlers
+    }
+
+    // Clear all JS-side timers so .then() handlers skip their callbacks
+    _timers.clear();
+
+    // Flush pending host timers so the V8 event loop can drain
+    if (typeof _notifyProcessExit !== "undefined") {
+      try {
+        _notifyProcessExit.applySync(undefined, [exitCode]);
+      } catch (_e) {
+        // Best effort — exit must proceed even if bridge call fails
+      }
     }
 
     // Throw to stop execution

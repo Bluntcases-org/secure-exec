@@ -521,6 +521,7 @@ class NodeRuntimeDriver implements RuntimeDriver {
             kernel.ptySetDiscipline(ctx.pid, 0, {
               canonical: !mode,
               echo: !mode,
+              icrnl: !mode,
             });
           }
         : undefined;

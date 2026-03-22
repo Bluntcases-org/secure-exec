@@ -674,7 +674,7 @@ fn session_thread(
 ///
 /// Sync functions block V8 while the host processes the call (applySync/applySyncPromise).
 /// Async functions return a Promise to V8, resolved when the host responds (apply).
-pub(crate) const SYNC_BRIDGE_FNS: [&str; 31] = [
+pub(crate) const SYNC_BRIDGE_FNS: [&str; 33] = [
     // Console
     "_log",
     "_error",
@@ -711,6 +711,10 @@ pub(crate) const SYNC_BRIDGE_FNS: [&str; 31] = [
     "_childProcessStdinClose",
     "_childProcessKill",
     "_childProcessSpawnSync",
+    // PTY
+    "_ptySetRawMode",
+    // Process exit notification
+    "_notifyProcessExit",
 ];
 
 pub(crate) const ASYNC_BRIDGE_FNS: [&str; 8] = [

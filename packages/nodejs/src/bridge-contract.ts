@@ -83,6 +83,7 @@ export const HOST_BRIDGE_GLOBAL_KEYS = {
 	osConfig: "_osConfig",
 	log: "_log",
 	error: "_error",
+	notifyProcessExit: "_notifyProcessExit",
 } as const;
 
 /** Globals exposed by the bridge bundle and runtime scripts inside the isolate. */

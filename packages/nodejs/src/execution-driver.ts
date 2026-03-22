@@ -459,6 +459,12 @@ export class NodeExecutionDriver implements RuntimeDriver {
 			const ptyHandlers = buildPtyBridgeHandlers(ptyDeps);
 			if (ptyDeps.onStdinData) this.onStdinReady?.(ptyDeps.onStdinData, ptyDeps.onStdinEnd!);
 
+			const timerResult = buildTimerBridgeHandlers({
+				budgetState: s.budgetState,
+				maxBridgeCalls: s.maxBridgeCalls,
+				activeHostTimers: s.activeHostTimers,
+			});
+
 			const netSocketResult = buildNetworkSocketBridgeHandlers({
 				dispatch: (socketId, event, data) => {
 					const payload = JSON.stringify({ socketId, event, data });
@@ -507,11 +513,7 @@ export class NodeExecutionDriver implements RuntimeDriver {
 						this.flattenedBindings.map(b => [b.key, b.handler])
 					) : {}),
 				}),
-				...buildTimerBridgeHandlers({
-					budgetState: s.budgetState,
-					maxBridgeCalls: s.maxBridgeCalls,
-					activeHostTimers: s.activeHostTimers,
-				}),
+				...timerResult.handlers,
 				...buildFsBridgeHandlers({
 					filesystem: s.filesystem,
 					budgetState: s.budgetState,
@@ -562,6 +564,12 @@ export class NodeExecutionDriver implements RuntimeDriver {
 					bridgeHandlers[binding.key] = binding.handler;
 				}
 			}
+
+			// Process exit notification — flushes pending timers and stdin so V8 event loop drains
+			bridgeHandlers[HOST_BRIDGE_GLOBAL_KEYS.notifyProcessExit] = () => {
+				timerResult.flushPendingTimers();
+				ptyDeps.onStdinEnd?.();
+			};
 
 			// Build process/os config for V8 execution
 			const execProcessConfig = createProcessConfigForExecution(

@@ -1446,23 +1446,46 @@ export interface TimerBridgeDeps {
 	activeHostTimers: Set<ReturnType<typeof setTimeout>>;
 }
 
+/** Result from buildTimerBridgeHandlers — includes flush callback for exit. */
+export interface TimerBridgeResult {
+	handlers: BridgeHandlers;
+	/** Resolve all pending timer promises and cancel host timers. */
+	flushPendingTimers: () => void;
+}
+
 /** Build timer bridge handler. */
-export function buildTimerBridgeHandlers(deps: TimerBridgeDeps): BridgeHandlers {
+export function buildTimerBridgeHandlers(deps: TimerBridgeDeps): TimerBridgeResult {
 	const handlers: BridgeHandlers = {};
 	const K = HOST_BRIDGE_GLOBAL_KEYS;
+
+	// Track pending timer resolve functions so process exit can flush them
+	const pendingTimerResolves = new Set<() => void>();
 
 	handlers[K.scheduleTimer] = (delayMs: unknown) => {
 		checkBridgeBudget(deps);
 		return new Promise<void>((resolve) => {
+			pendingTimerResolves.add(resolve);
 			const id = globalThis.setTimeout(() => {
 				deps.activeHostTimers.delete(id);
+				pendingTimerResolves.delete(resolve);
 				resolve();
 			}, Number(delayMs));
 			deps.activeHostTimers.add(id);
 		});
 	};
 
-	return handlers;
+	const flushPendingTimers = () => {
+		for (const id of deps.activeHostTimers) {
+			clearTimeout(id);
+		}
+		deps.activeHostTimers.clear();
+		for (const resolve of pendingTimerResolves) {
+			resolve();
+		}
+		pendingTimerResolves.clear();
+	};
+
+	return { handlers, flushPendingTimers };
 }
 
 /** Dependencies for filesystem bridge handlers. */
