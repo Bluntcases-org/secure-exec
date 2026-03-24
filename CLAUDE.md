@@ -33,10 +33,13 @@
 
 - conformance tests live in `packages/secure-exec/tests/node-conformance/` — they are vendored upstream Node.js v22.14.0 test/parallel/ tests run through the sandbox
 - `docs-internal/nodejs-compat-roadmap.md` tracks every non-passing test with its fix category and resolution
-- when implementing bridge/polyfill features where both sides go through our code (e.g., loopback HTTP server + client), prevent overfitting with these three mitigations:
+- when implementing bridge/polyfill features where both sides go through our code (e.g., loopback HTTP server + client), prevent overfitting:
   - **wire-level snapshot tests**: capture raw protocol bytes and compare against known-good captures from real Node.js
   - **project-matrix cross-validation**: add a project-matrix fixture (`tests/projects/`) using a real npm package that exercises the feature — the matrix compares sandbox output to host Node.js
   - **real-server control tests**: for network features, maintain tests that hit real external endpoints (not loopback) to validate the client independently of the server
+  - **known-test-vector validation**: for crypto, validate against NIST/RFC test vectors — not just round-trip verification
+  - **error object snapshot testing**: for ERR_* codes, snapshot-test full error objects (code, message, constructor) against Node.js — not just check `.code` exists
+  - **host-side assertion verification**: periodically run assert-heavy conformance tests through host Node.js to verify the assert polyfill isn't masking failures
 - never inflate conformance numbers — if a test self-skips (exits 0 without testing anything), mark it `vacuous-skip` in expectations.json, not as a real pass
 - every entry in `expectations.json` must have a specific, verifiable reason — no vague "fails in sandbox" reasons
 
