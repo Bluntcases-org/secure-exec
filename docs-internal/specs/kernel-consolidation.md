@@ -1,4 +1,6 @@
-# Kernel Networking & Resource Consolidation
+# Kernel Consolidation
+
+Networking, resource management, and runtime-specific subsystems that need to move into the shared kernel.
 
 ## Problem
 
