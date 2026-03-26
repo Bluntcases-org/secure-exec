@@ -5446,70 +5446,10 @@
       "category": "implementation-gap",
       "expected": "fail"
     },
-    "test-whatwg-encoding-custom-api-basics.js": {
-      "reason": "text encoding API behavior gap",
-      "category": "implementation-gap",
-      "expected": "fail"
-    },
-    "test-whatwg-encoding-custom-fatal-streaming.js": {
-      "reason": "text encoding API behavior gap",
-      "category": "implementation-gap",
-      "expected": "fail"
-    },
-    "test-whatwg-encoding-custom-textdecoder-api-invalid-label.js": {
-      "reason": "text encoding API behavior gap",
-      "category": "implementation-gap",
-      "expected": "fail"
-    },
-    "test-whatwg-encoding-custom-textdecoder-fatal.js": {
-      "reason": "text encoding API behavior gap",
-      "category": "implementation-gap",
-      "expected": "fail"
-    },
-    "test-whatwg-encoding-custom-textdecoder-ignorebom.js": {
-      "reason": "text encoding API behavior gap",
-      "category": "implementation-gap",
-      "expected": "fail"
-    },
-    "test-whatwg-encoding-custom-textdecoder-invalid-arg.js": {
-      "reason": "tests Node.js-specific error codes (ERR_*) — sandbox polyfills throw plain errors",
-      "category": "implementation-gap",
-      "expected": "fail"
-    },
-    "test-whatwg-encoding-custom-textdecoder-streaming.js": {
-      "reason": "text encoding API behavior gap",
-      "category": "implementation-gap",
-      "expected": "fail"
-    },
-    "test-whatwg-encoding-custom-textdecoder-utf16-surrogates.js": {
-      "reason": "text encoding API behavior gap",
-      "category": "implementation-gap",
-      "expected": "fail"
-    },
     "test-whatwg-events-add-event-listener-options-passive.js": {
-      "reason": "EventTarget/DOM event API gap in sandbox",
-      "category": "implementation-gap",
-      "expected": "fail"
-    },
-    "test-whatwg-events-add-event-listener-options-signal.js": {
-      "reason": "EventTarget/DOM event API gap in sandbox",
-      "category": "implementation-gap",
-      "expected": "fail"
-    },
-    "test-whatwg-events-customevent.js": {
-      "reason": "EventTarget/DOM event API gap in sandbox",
-      "category": "implementation-gap",
-      "expected": "fail"
-    },
-    "test-whatwg-events-event-constructors.js": {
-      "reason": "test uses require('../common/wpt') WPT harness which is not implemented in sandbox conformance test harness",
-      "category": "test-infra",
-      "expected": "fail"
-    },
-    "test-whatwg-events-eventtarget-this-of-listener.js": {
-      "reason": "EventTarget/DOM event API gap in sandbox",
-      "category": "implementation-gap",
-      "expected": "fail"
+      "reason": "vendored file self-skips its remaining passive-listener assertions with common.skip('TODO: passive listeners is still broken')",
+      "category": "vacuous-skip",
+      "expected": "skip"
     },
     "test-whatwg-readablebytestream-bad-buffers-and-views.js": {
       "reason": "sandbox WebStreams ReadableByteStreamController.respondWithNewView() does not throw RangeError with ERR_INVALID_ARG_VALUE code for bad buffer sizes or detached views",

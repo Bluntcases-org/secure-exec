@@ -3,8 +3,14 @@
 
 import type * as nodeProcess from "process";
 
-// Re-export TextEncoder/TextDecoder from polyfills (polyfills.ts is imported first in index.ts)
-import { TextEncoder, TextDecoder } from "./polyfills.js";
+// Re-export WHATWG globals from polyfills (polyfills.ts is imported first in index.ts)
+import {
+	TextEncoder,
+	TextDecoder,
+	Event,
+	CustomEvent,
+	EventTarget,
+} from "./polyfills.js";
 
 import {
 	URL,
@@ -1181,7 +1187,7 @@ export function clearImmediate(id: TimerHandle | number | undefined): void {
 
 // TextEncoder and TextDecoder - re-export from polyfills
 export { URL, URLSearchParams };
-export { TextEncoder, TextDecoder };
+export { TextEncoder, TextDecoder, Event, CustomEvent, EventTarget };
 
 // Buffer - use buffer package polyfill
 export const Buffer = BufferPolyfill;
@@ -1798,14 +1804,12 @@ export function setupGlobals(): void {
   // URL globals must override bootstrap fallbacks and stay non-enumerable.
   installWhatwgUrlGlobals(g as typeof globalThis);
 
-  // TextEncoder/TextDecoder
-  if (typeof g.TextEncoder === "undefined") {
-    g.TextEncoder = TextEncoder;
-  }
-
-  if (typeof g.TextDecoder === "undefined") {
-    g.TextDecoder = TextDecoder;
-  }
+  // WHATWG encoding and events
+  g.TextEncoder = TextEncoder;
+  g.TextDecoder = TextDecoder;
+  g.Event = Event;
+  g.CustomEvent = CustomEvent;
+  g.EventTarget = EventTarget;
 
   // Buffer
   if (typeof g.Buffer === "undefined") {

@@ -160,30 +160,598 @@
         return p.slice(0, lastSlash);
       }
 
-      // Widen TextDecoder to accept common encodings beyond utf-8.
-      // The text-encoding-utf-8 polyfill only supports utf-8 and throws for
-      // anything else. Packages like ssh2 import modules that create TextDecoder
-      // with 'ascii' or 'latin1' at module scope. We wrap the constructor to
-      // normalize known labels to utf-8 (which is a safe superset for ASCII-range
-      // data) and only throw for truly unsupported encodings.
-      if (typeof globalThis.TextDecoder === 'function') {
-        var _OrigTextDecoder = globalThis.TextDecoder;
-        var _utf8Aliases = {
-          'utf-8': true, 'utf8': true, 'unicode-1-1-utf-8': true,
-          'ascii': true, 'us-ascii': true, 'iso-8859-1': true,
-          'latin1': true, 'binary': true, 'windows-1252': true,
-          'utf-16le': true, 'utf-16': true, 'ucs-2': true, 'ucs2': true,
-        };
-        globalThis.TextDecoder = function TextDecoder(encoding, options) {
-          var label = encoding !== undefined ? String(encoding).toLowerCase().replace(/\s/g, '') : 'utf-8';
-          if (_utf8Aliases[label]) {
-            return new _OrigTextDecoder('utf-8', options);
+      (function installWhatwgEncodingAndEvents() {
+        function _withCode(error, code) {
+          error.code = code;
+          return error;
+        }
+
+        function _trimAsciiWhitespace(value) {
+          return value.replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/g, '');
+        }
+
+        function _normalizeEncodingLabel(label) {
+          var normalized = _trimAsciiWhitespace(
+            label === undefined ? 'utf-8' : String(label),
+          ).toLowerCase();
+          switch (normalized) {
+            case 'utf-8':
+            case 'utf8':
+            case 'unicode-1-1-utf-8':
+            case 'unicode11utf8':
+            case 'unicode20utf8':
+            case 'x-unicode20utf8':
+              return 'utf-8';
+            case 'utf-16':
+            case 'utf-16le':
+            case 'ucs-2':
+            case 'ucs2':
+            case 'csunicode':
+            case 'iso-10646-ucs-2':
+            case 'unicode':
+            case 'unicodefeff':
+              return 'utf-16le';
+            case 'utf-16be':
+            case 'unicodefffe':
+              return 'utf-16be';
+            default:
+              throw _withCode(
+                new RangeError('The "' + normalized + '" encoding is not supported'),
+                'ERR_ENCODING_NOT_SUPPORTED',
+              );
           }
-          // Fall through to original for unknown encodings (will throw).
-          return new _OrigTextDecoder(encoding, options);
+        }
+
+        function _toUint8Array(input) {
+          if (input === undefined) {
+            return new Uint8Array(0);
+          }
+          if (ArrayBuffer.isView(input)) {
+            return new Uint8Array(input.buffer, input.byteOffset, input.byteLength);
+          }
+          if (input instanceof ArrayBuffer) {
+            return new Uint8Array(input);
+          }
+          if (typeof SharedArrayBuffer !== 'undefined' && input instanceof SharedArrayBuffer) {
+            return new Uint8Array(input);
+          }
+          throw _withCode(
+            new TypeError(
+              'The "input" argument must be an instance of ArrayBuffer, SharedArrayBuffer, or ArrayBufferView.',
+            ),
+            'ERR_INVALID_ARG_TYPE',
+          );
+        }
+
+        function _encodeUtf8ScalarValue(codePoint, bytes) {
+          if (codePoint <= 0x7f) {
+            bytes.push(codePoint);
+            return;
+          }
+          if (codePoint <= 0x7ff) {
+            bytes.push(0xc0 | (codePoint >> 6), 0x80 | (codePoint & 0x3f));
+            return;
+          }
+          if (codePoint <= 0xffff) {
+            bytes.push(
+              0xe0 | (codePoint >> 12),
+              0x80 | ((codePoint >> 6) & 0x3f),
+              0x80 | (codePoint & 0x3f),
+            );
+            return;
+          }
+          bytes.push(
+            0xf0 | (codePoint >> 18),
+            0x80 | ((codePoint >> 12) & 0x3f),
+            0x80 | ((codePoint >> 6) & 0x3f),
+            0x80 | (codePoint & 0x3f),
+          );
+        }
+
+        function _encodeUtf8(input) {
+          var value = String(input === undefined ? '' : input);
+          var bytes = [];
+          for (var index = 0; index < value.length; index += 1) {
+            var codeUnit = value.charCodeAt(index);
+            if (codeUnit >= 0xd800 && codeUnit <= 0xdbff) {
+              var nextIndex = index + 1;
+              if (nextIndex < value.length) {
+                var nextCodeUnit = value.charCodeAt(nextIndex);
+                if (nextCodeUnit >= 0xdc00 && nextCodeUnit <= 0xdfff) {
+                  _encodeUtf8ScalarValue(
+                    0x10000 + ((codeUnit - 0xd800) << 10) + (nextCodeUnit - 0xdc00),
+                    bytes,
+                  );
+                  index = nextIndex;
+                  continue;
+                }
+              }
+              _encodeUtf8ScalarValue(0xfffd, bytes);
+              continue;
+            }
+            if (codeUnit >= 0xdc00 && codeUnit <= 0xdfff) {
+              _encodeUtf8ScalarValue(0xfffd, bytes);
+              continue;
+            }
+            _encodeUtf8ScalarValue(codeUnit, bytes);
+          }
+          return new Uint8Array(bytes);
+        }
+
+        function _appendCodePoint(output, codePoint) {
+          if (codePoint <= 0xffff) {
+            output.push(String.fromCharCode(codePoint));
+            return;
+          }
+          var adjusted = codePoint - 0x10000;
+          output.push(
+            String.fromCharCode(0xd800 + (adjusted >> 10)),
+            String.fromCharCode(0xdc00 + (adjusted & 0x3ff)),
+          );
+        }
+
+        function _isContinuationByte(value) {
+          return value >= 0x80 && value <= 0xbf;
+        }
+
+        function _createInvalidDataError(encoding) {
+          return _withCode(
+            new TypeError('The encoded data was not valid for encoding ' + encoding),
+            'ERR_ENCODING_INVALID_ENCODED_DATA',
+          );
+        }
+
+        function _decodeUtf8(bytes, fatal, stream, encoding) {
+          var output = [];
+          for (var index = 0; index < bytes.length;) {
+            var first = bytes[index];
+            if (first <= 0x7f) {
+              output.push(String.fromCharCode(first));
+              index += 1;
+              continue;
+            }
+
+            var needed = 0;
+            var codePoint = 0;
+            if (first >= 0xc2 && first <= 0xdf) {
+              needed = 1;
+              codePoint = first & 0x1f;
+            } else if (first >= 0xe0 && first <= 0xef) {
+              needed = 2;
+              codePoint = first & 0x0f;
+            } else if (first >= 0xf0 && first <= 0xf4) {
+              needed = 3;
+              codePoint = first & 0x07;
+            } else {
+              if (fatal) throw _createInvalidDataError(encoding);
+              output.push('\ufffd');
+              index += 1;
+              continue;
+            }
+
+            if (index + needed >= bytes.length) {
+              if (stream) {
+                return { text: output.join(''), pending: Array.from(bytes.slice(index)) };
+              }
+              if (fatal) throw _createInvalidDataError(encoding);
+              output.push('\ufffd');
+              break;
+            }
+
+            var second = bytes[index + 1];
+            if (!_isContinuationByte(second)) {
+              if (fatal) throw _createInvalidDataError(encoding);
+              output.push('\ufffd');
+              index += 1;
+              continue;
+            }
+
+            if (
+              (first === 0xe0 && second < 0xa0) ||
+              (first === 0xed && second > 0x9f) ||
+              (first === 0xf0 && second < 0x90) ||
+              (first === 0xf4 && second > 0x8f)
+            ) {
+              if (fatal) throw _createInvalidDataError(encoding);
+              output.push('\ufffd');
+              index += 1;
+              continue;
+            }
+
+            codePoint = (codePoint << 6) | (second & 0x3f);
+
+            if (needed >= 2) {
+              var third = bytes[index + 2];
+              if (!_isContinuationByte(third)) {
+                if (fatal) throw _createInvalidDataError(encoding);
+                output.push('\ufffd');
+                index += 1;
+                continue;
+              }
+              codePoint = (codePoint << 6) | (third & 0x3f);
+            }
+
+            if (needed === 3) {
+              var fourth = bytes[index + 3];
+              if (!_isContinuationByte(fourth)) {
+                if (fatal) throw _createInvalidDataError(encoding);
+                output.push('\ufffd');
+                index += 1;
+                continue;
+              }
+              codePoint = (codePoint << 6) | (fourth & 0x3f);
+            }
+
+            if (codePoint >= 0xd800 && codePoint <= 0xdfff) {
+              if (fatal) throw _createInvalidDataError(encoding);
+              output.push('\ufffd');
+              index += needed + 1;
+              continue;
+            }
+
+            _appendCodePoint(output, codePoint);
+            index += needed + 1;
+          }
+
+          return { text: output.join(''), pending: [] };
+        }
+
+        function _decodeUtf16(bytes, encoding, fatal, stream, bomSeen) {
+          var output = [];
+          var endian = encoding === 'utf-16be' ? 'be' : 'le';
+
+          if (!bomSeen && encoding === 'utf-16le' && bytes.length >= 2) {
+            if (bytes[0] === 0xfe && bytes[1] === 0xff) {
+              endian = 'be';
+            }
+          }
+
+          for (var index = 0; index < bytes.length;) {
+            if (index + 1 >= bytes.length) {
+              if (stream) {
+                return { text: output.join(''), pending: Array.from(bytes.slice(index)) };
+              }
+              if (fatal) throw _createInvalidDataError(encoding);
+              output.push('\ufffd');
+              break;
+            }
+
+            var first = bytes[index];
+            var second = bytes[index + 1];
+            var codeUnit = endian === 'le' ? first | (second << 8) : (first << 8) | second;
+            index += 2;
+
+            if (codeUnit >= 0xd800 && codeUnit <= 0xdbff) {
+              if (index + 1 >= bytes.length) {
+                if (stream) {
+                  return { text: output.join(''), pending: Array.from(bytes.slice(index - 2)) };
+                }
+                if (fatal) throw _createInvalidDataError(encoding);
+                output.push('\ufffd');
+                continue;
+              }
+
+              var nextFirst = bytes[index];
+              var nextSecond = bytes[index + 1];
+              var nextCodeUnit =
+                endian === 'le'
+                  ? nextFirst | (nextSecond << 8)
+                  : (nextFirst << 8) | nextSecond;
+
+              if (nextCodeUnit >= 0xdc00 && nextCodeUnit <= 0xdfff) {
+                _appendCodePoint(
+                  output,
+                  0x10000 + ((codeUnit - 0xd800) << 10) + (nextCodeUnit - 0xdc00),
+                );
+                index += 2;
+                continue;
+              }
+
+              if (fatal) throw _createInvalidDataError(encoding);
+              output.push('\ufffd');
+              continue;
+            }
+
+            if (codeUnit >= 0xdc00 && codeUnit <= 0xdfff) {
+              if (fatal) throw _createInvalidDataError(encoding);
+              output.push('\ufffd');
+              continue;
+            }
+
+            output.push(String.fromCharCode(codeUnit));
+          }
+
+          return { text: output.join(''), pending: [] };
+        }
+
+        function TextEncoder() {}
+        TextEncoder.prototype.encode = function encode(input) {
+          return _encodeUtf8(input === undefined ? '' : input);
         };
-        globalThis.TextDecoder.prototype = _OrigTextDecoder.prototype;
-      }
+        TextEncoder.prototype.encodeInto = function encodeInto(input, destination) {
+          var value = String(input);
+          var read = 0;
+          var written = 0;
+          for (var index = 0; index < value.length; index += 1) {
+            var codeUnit = value.charCodeAt(index);
+            var chunk = value[index] || '';
+            if (
+              codeUnit >= 0xd800 &&
+              codeUnit <= 0xdbff &&
+              index + 1 < value.length
+            ) {
+              var nextCodeUnit = value.charCodeAt(index + 1);
+              if (nextCodeUnit >= 0xdc00 && nextCodeUnit <= 0xdfff) {
+                chunk = value.slice(index, index + 2);
+              }
+            }
+            var encoded = _encodeUtf8(chunk);
+            if (written + encoded.length > destination.length) break;
+            destination.set(encoded, written);
+            written += encoded.length;
+            read += chunk.length;
+            if (chunk.length === 2) index += 1;
+          }
+          return { read: read, written: written };
+        };
+        Object.defineProperty(TextEncoder.prototype, 'encoding', {
+          get: function() { return 'utf-8'; },
+        });
+
+        function TextDecoder(label, options) {
+          var normalizedOptions = options == null ? {} : Object(options);
+          this._encoding = _normalizeEncodingLabel(label);
+          this._fatal = Boolean(normalizedOptions.fatal);
+          this._ignoreBOM = Boolean(normalizedOptions.ignoreBOM);
+          this._pendingBytes = [];
+          this._bomSeen = false;
+        }
+        Object.defineProperty(TextDecoder.prototype, 'encoding', {
+          get: function() { return this._encoding; },
+        });
+        Object.defineProperty(TextDecoder.prototype, 'fatal', {
+          get: function() { return this._fatal; },
+        });
+        Object.defineProperty(TextDecoder.prototype, 'ignoreBOM', {
+          get: function() { return this._ignoreBOM; },
+        });
+        TextDecoder.prototype.decode = function decode(input, options) {
+          var normalizedOptions = options == null ? {} : Object(options);
+          var stream = Boolean(normalizedOptions.stream);
+          var incoming = _toUint8Array(input);
+          var merged = new Uint8Array(this._pendingBytes.length + incoming.length);
+          merged.set(this._pendingBytes, 0);
+          merged.set(incoming, this._pendingBytes.length);
+
+          var decoded =
+            this._encoding === 'utf-8'
+              ? _decodeUtf8(merged, this._fatal, stream, this._encoding)
+              : _decodeUtf16(merged, this._encoding, this._fatal, stream, this._bomSeen);
+
+          this._pendingBytes = decoded.pending;
+          var text = decoded.text;
+
+          if (!this._bomSeen && text.length > 0) {
+            if (!this._ignoreBOM && text.charCodeAt(0) === 0xfeff) {
+              text = text.slice(1);
+            }
+            this._bomSeen = true;
+          }
+
+          if (!stream && this._pendingBytes.length > 0) {
+            var pendingLength = this._pendingBytes.length;
+            this._pendingBytes = [];
+            if (this._fatal) throw _createInvalidDataError(this._encoding);
+            return text + '\ufffd'.repeat(Math.ceil(pendingLength / 2));
+          }
+
+          return text;
+        };
+
+        function _normalizeAddEventListenerOptions(options) {
+          if (typeof options === 'boolean') {
+            return { capture: options, once: false, passive: false };
+          }
+          if (options == null) {
+            return { capture: false, once: false, passive: false };
+          }
+          var normalized = Object(options);
+          return {
+            capture: Boolean(normalized.capture),
+            once: Boolean(normalized.once),
+            passive: Boolean(normalized.passive),
+            signal: normalized.signal,
+          };
+        }
+
+        function _normalizeRemoveEventListenerOptions(options) {
+          if (typeof options === 'boolean') return options;
+          if (options == null) return false;
+          return Boolean(Object(options).capture);
+        }
+
+        function _isAbortSignalLike(value) {
+          return (
+            typeof value === 'object' &&
+            value !== null &&
+            'aborted' in value &&
+            typeof value.addEventListener === 'function' &&
+            typeof value.removeEventListener === 'function'
+          );
+        }
+
+        function Event(type, init) {
+          if (arguments.length === 0) {
+            throw new TypeError('The event type must be provided');
+          }
+          var normalizedInit = init == null ? {} : Object(init);
+          this.type = String(type);
+          this.bubbles = Boolean(normalizedInit.bubbles);
+          this.cancelable = Boolean(normalizedInit.cancelable);
+          this.composed = Boolean(normalizedInit.composed);
+          this.detail = null;
+          this.defaultPrevented = false;
+          this.target = null;
+          this.currentTarget = null;
+          this.eventPhase = 0;
+          this.returnValue = true;
+          this.cancelBubble = false;
+          this.timeStamp = Date.now();
+          this.isTrusted = false;
+          this.srcElement = null;
+          this._inPassiveListener = false;
+          this._propagationStopped = false;
+          this._immediatePropagationStopped = false;
+        }
+        Event.NONE = 0;
+        Event.CAPTURING_PHASE = 1;
+        Event.AT_TARGET = 2;
+        Event.BUBBLING_PHASE = 3;
+        Event.prototype.preventDefault = function preventDefault() {
+          if (this.cancelable && !this._inPassiveListener) {
+            this.defaultPrevented = true;
+            this.returnValue = false;
+          }
+        };
+        Event.prototype.stopPropagation = function stopPropagation() {
+          this._propagationStopped = true;
+          this.cancelBubble = true;
+        };
+        Event.prototype.stopImmediatePropagation = function stopImmediatePropagation() {
+          this._propagationStopped = true;
+          this._immediatePropagationStopped = true;
+          this.cancelBubble = true;
+        };
+        Event.prototype.composedPath = function composedPath() {
+          return this.target ? [this.target] : [];
+        };
+
+        function CustomEvent(type, init) {
+          Event.call(this, type, init);
+          var normalizedInit = init == null ? null : Object(init);
+          this.detail =
+            normalizedInit && 'detail' in normalizedInit ? normalizedInit.detail : null;
+        }
+        CustomEvent.prototype = Object.create(Event.prototype);
+        CustomEvent.prototype.constructor = CustomEvent;
+
+        function EventTarget() {
+          this._listeners = new Map();
+        }
+        EventTarget.prototype.addEventListener = function addEventListener(type, listener, options) {
+          var normalized = _normalizeAddEventListenerOptions(options);
+
+          if (normalized.signal !== undefined && !_isAbortSignalLike(normalized.signal)) {
+            throw new TypeError('The "signal" option must be an instance of AbortSignal.');
+          }
+
+          if (listener == null) return undefined;
+          if (typeof listener !== 'function' && (typeof listener !== 'object' || listener === null)) {
+            return undefined;
+          }
+          if (normalized.signal && normalized.signal.aborted) return undefined;
+
+          var records = this._listeners.get(type) || [];
+          for (var i = 0; i < records.length; i += 1) {
+            if (records[i].listener === listener && records[i].capture === normalized.capture) {
+              return undefined;
+            }
+          }
+
+          var record = {
+            listener: listener,
+            capture: normalized.capture,
+            once: normalized.once,
+            passive: normalized.passive,
+            kind: typeof listener === 'function' ? 'function' : 'object',
+            signal: normalized.signal,
+            abortListener: undefined,
+          };
+
+          if (normalized.signal) {
+            var self = this;
+            record.abortListener = function() {
+              self.removeEventListener(type, listener, normalized.capture);
+            };
+            normalized.signal.addEventListener('abort', record.abortListener, { once: true });
+          }
+
+          records.push(record);
+          this._listeners.set(type, records);
+          return undefined;
+        };
+        EventTarget.prototype.removeEventListener = function removeEventListener(type, listener, options) {
+          if (listener == null) return;
+
+          var capture = _normalizeRemoveEventListenerOptions(options);
+          var records = this._listeners.get(type);
+          if (!records) return;
+
+          var nextRecords = [];
+          for (var i = 0; i < records.length; i += 1) {
+            var record = records[i];
+            var match = record.listener === listener && record.capture === capture;
+            if (match) {
+              if (record.signal && record.abortListener) {
+                record.signal.removeEventListener('abort', record.abortListener);
+              }
+            } else {
+              nextRecords.push(record);
+            }
+          }
+
+          if (nextRecords.length === 0) {
+            this._listeners.delete(type);
+          } else {
+            this._listeners.set(type, nextRecords);
+          }
+        };
+        EventTarget.prototype.dispatchEvent = function dispatchEvent(event) {
+          if (!event || typeof event !== 'object' || typeof event.type !== 'string') {
+            throw new TypeError('Argument 1 must be an Event');
+          }
+
+          var records = (this._listeners.get(event.type) || []).slice();
+          event.target = this;
+          event.currentTarget = this;
+          event.eventPhase = 2;
+
+          for (var i = 0; i < records.length; i += 1) {
+            var record = records[i];
+            var active = this._listeners.get(event.type);
+            if (!active || active.indexOf(record) === -1) continue;
+
+            if (record.once) {
+              this.removeEventListener(event.type, record.listener, record.capture);
+            }
+
+            event._inPassiveListener = record.passive;
+            if (record.kind === 'function') {
+              record.listener.call(this, event);
+            } else {
+              var handleEvent = record.listener.handleEvent;
+              if (typeof handleEvent === 'function') {
+                handleEvent.call(record.listener, event);
+              }
+            }
+            event._inPassiveListener = false;
+
+            if (event._immediatePropagationStopped || event._propagationStopped) {
+              break;
+            }
+          }
+
+          event.currentTarget = null;
+          event.eventPhase = 0;
+          return !event.defaultPrevented;
+        };
+
+        globalThis.TextEncoder = TextEncoder;
+        globalThis.TextDecoder = TextDecoder;
+        globalThis.Event = Event;
+        globalThis.CustomEvent = CustomEvent;
+        globalThis.EventTarget = EventTarget;
+      })();
 
       // Patch known polyfill gaps in one place after evaluation.
       function _patchPolyfill(name, result) {
@@ -3179,7 +3747,7 @@
           const moduleObj = { exports: {} };
           _pendingModules[name] = moduleObj;
 
-          let result = eval(polyfillCode);
+          let result = Function('"use strict"; return (' + polyfillCode + ');')();
           result = _patchPolyfill(name, result);
           if (typeof result === 'object' && result !== null) {
             Object.assign(moduleObj.exports, result);

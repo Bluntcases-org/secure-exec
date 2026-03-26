@@ -95,6 +95,19 @@ Bridge-provided `URL` and `URLSearchParams` globals SHALL preserve the Node-obse
 - **WHEN** sandboxed code calls `util.inspect(urlLike)` for bridged `URL`, `URLSearchParams`, or iterator instances, including negative-depth and nested-object cases
 - **THEN** the bridge/runtime polyfill layer MUST continue to invoke the custom inspect hooks instead of falling back to plain `{}` output
 
+### Requirement: WHATWG Encoding And Event Globals Preserve Node-Compatible Semantics
+Bridge/runtime WHATWG globals for text encoding and DOM-style events SHALL preserve the Node-observable behavior that vendored encoding and events tests assert.
+
+#### Scenario: TextDecoder preserves UTF-8 and UTF-16 streaming, BOM, and ERR_* behavior
+- **WHEN** sandboxed code uses global `TextDecoder` with `utf-8`, `utf-16`, `utf-16le`, or `utf-16be`, including `fatal`, `ignoreBOM`, and streaming decode paths
+- **THEN** the bridge/runtime polyfill layer MUST decode scalar values and surrogate pairs correctly across chunk boundaries
+- **AND** unsupported labels MUST throw `RangeError` with `ERR_ENCODING_NOT_SUPPORTED`
+- **AND** invalid encoded data or invalid decode inputs MUST surface Node-compatible `ERR_ENCODING_INVALID_ENCODED_DATA` and `ERR_INVALID_ARG_TYPE` errors
+
+#### Scenario: EventTarget globals preserve listener and AbortSignal semantics
+- **WHEN** sandboxed code uses global `Event`, `CustomEvent`, and `EventTarget` with function listeners, object listeners, constructor option bags, or `AbortSignal` listener removal
+- **THEN** listener `this` binding, constructor option access order, dispatch return values, and abort-driven listener teardown MUST remain Node-compatible for the exercised WHATWG event cases
+
 ### Requirement: Cryptographic Randomness Bridge Uses Host CSPRNG
 Bridge-provided randomness for global `crypto` APIs MUST delegate to host `node:crypto` primitives and MUST NOT use isolate-local pseudo-random fallbacks such as `Math.random()`.
 

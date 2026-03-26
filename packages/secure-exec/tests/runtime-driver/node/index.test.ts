@@ -5392,6 +5392,101 @@ describe("NodeRuntime", () => {
 		});
 	});
 
+	it("supports WHATWG TextDecoder streaming, fatal errors, and UTF-16 labels", async () => {
+		proc = createTestNodeRuntime();
+		const result = await proc.run(`
+			const chunks = [
+				[0x00, 0xd8, 0x00],
+				[0xdc, 0xff, 0xdb],
+				[0xff, 0xdf],
+			];
+			const decoder = new TextDecoder('utf-16le');
+			let streamed = '';
+			for (const chunk of chunks) {
+				streamed += decoder.decode(new Uint8Array(chunk), { stream: true });
+			}
+			streamed += decoder.decode();
+
+			const outcomes = {
+				streamed,
+				utf16Encoding: new TextDecoder('utf-16').encoding,
+				invalidLabel: '',
+				fatal: '',
+			};
+
+			try {
+				new TextDecoder('\\u2028utf-8');
+			} catch (error) {
+				outcomes.invalidLabel = [error.name, error.code].join('|');
+			}
+
+			try {
+				new TextDecoder('utf-8', { fatal: true }).decode(new Uint8Array([0xc0]));
+			} catch (error) {
+				outcomes.fatal = [error.name, error.code, error.message].join('|');
+			}
+
+			module.exports = outcomes;
+		`);
+		expect(result.exports).toEqual({
+			streamed: "\u{10000}\u{10ffff}",
+			utf16Encoding: "utf-16le",
+			invalidLabel: "RangeError|ERR_ENCODING_NOT_SUPPORTED",
+			fatal: "TypeError|ERR_ENCODING_INVALID_ENCODED_DATA|The encoded data was not valid for encoding utf-8",
+		});
+	});
+
+	it("supports WHATWG EventTarget object listeners and AbortSignal removal", async () => {
+		proc = createTestNodeRuntime();
+		const result = await proc.run(`
+			const outcomes = {
+				objectThis: false,
+				functionThis: false,
+				signalCalls: 0,
+				invalidSignal: '',
+			};
+
+			const objectTarget = new EventTarget();
+			const objectListener = {
+				handleEvent(event) {
+					outcomes.objectThis = this === objectListener && event.type === 'object';
+				},
+			};
+			objectTarget.addEventListener('object', objectListener);
+			objectTarget.dispatchEvent(new Event('object'));
+
+			const functionTarget = new EventTarget();
+			function functionListener() {
+				outcomes.functionThis = this === functionTarget;
+			}
+			functionTarget.addEventListener('function', functionListener);
+			functionTarget.dispatchEvent(new Event('function'));
+
+			const signalTarget = new EventTarget();
+			const controller = new AbortController();
+			signalTarget.addEventListener('signal', () => {
+				outcomes.signalCalls += 1;
+			}, { signal: controller.signal });
+			signalTarget.dispatchEvent(new Event('signal'));
+			controller.abort();
+			signalTarget.dispatchEvent(new Event('signal'));
+
+			try {
+				signalTarget.addEventListener('signal', () => {}, { signal: 1 });
+			} catch (error) {
+				outcomes.invalidSignal = error.name;
+			}
+
+			module.exports = outcomes;
+		`);
+		expect(result.exports).toEqual({
+			objectThis: true,
+			functionThis: true,
+			signalCalls: 1,
+			invalidSignal: "TypeError",
+		});
+	});
+
 	it("deferred fs APIs respect permission deny", async () => {
 		const vfs = createFs();
 		await vfs.mkdir("/data");

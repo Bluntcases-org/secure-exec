@@ -1,7 +1,10 @@
 'use strict';
 
-const assert = require('assert');
 const path = require('path');
+
+function getAssert() {
+  return require('assert');
+}
 
 // Track functions that must be called before process exits
 const mustCallChecks = [];
@@ -115,7 +118,7 @@ function mustSucceed(fn, exact) {
     fn = undefined;
   }
   return mustCall(function(err, ...args) {
-    assert.ifError(err);
+    getAssert().ifError(err);
     if (typeof fn === 'function') {
       return fn.apply(this, args);
     }
@@ -135,20 +138,20 @@ function expectsError(validator, exact) {
   if (validator && typeof validator === 'object') {
     check = (error) => {
       if (validator.code !== undefined) {
-        assert.strictEqual(error.code, validator.code);
+        getAssert().strictEqual(error.code, validator.code);
       }
       if (validator.type !== undefined) {
-        assert(error instanceof validator.type,
+        getAssert()(error instanceof validator.type,
           `Expected error to be instance of ${validator.type.name}, got ${error.constructor.name}`);
       }
       if (validator.name !== undefined) {
-        assert.strictEqual(error.name, validator.name);
+        getAssert().strictEqual(error.name, validator.name);
       }
       if (validator.message !== undefined) {
         if (typeof validator.message === 'string') {
-          assert.strictEqual(error.message, validator.message);
+          getAssert().strictEqual(error.message, validator.message);
         } else if (validator.message instanceof RegExp) {
-          assert.match(error.message, validator.message);
+          getAssert().match(error.message, validator.message);
         }
       }
       return true;
@@ -196,13 +199,13 @@ function expectWarning(nameOrMap, expected, code) {
   }
 
   process.on('warning', mustCall((warning) => {
-    assert.strictEqual(warning.name, nameOrMap);
+    getAssert().strictEqual(warning.name, nameOrMap);
     const msg = String(warning.message);
-    assert(expectedWarnings.has(msg),
+    getAssert()(expectedWarnings.has(msg),
       `Unexpected warning message: "${msg}"`);
     const warnCode = expectedWarnings.get(msg);
     if (warnCode !== undefined) {
-      assert.strictEqual(warning.code, warnCode);
+      getAssert().strictEqual(warning.code, warnCode);
     }
     expectedWarnings.delete(msg);
   }, expectedWarnings.size));

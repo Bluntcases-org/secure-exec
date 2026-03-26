@@ -698,7 +698,7 @@
         "Typecheck passes"
       ],
       "priority": 31.6,
-      "passes": false,
+      "passes": true,
       "notes": "Current exact red vendored files for this bucket include test-whatwg-encoding-custom-api-basics.js, test-whatwg-encoding-custom-fatal-streaming.js, test-whatwg-encoding-custom-textdecoder-api-invalid-label.js, test-whatwg-encoding-custom-textdecoder-fatal.js, test-whatwg-encoding-custom-textdecoder-ignorebom.js, test-whatwg-encoding-custom-textdecoder-invalid-arg.js, test-whatwg-encoding-custom-textdecoder-streaming.js, test-whatwg-encoding-custom-textdecoder-utf16-surrogates.js, test-whatwg-events-add-event-listener-options-passive.js, test-whatwg-events-add-event-listener-options-signal.js, test-whatwg-events-customevent.js, test-whatwg-events-eventtarget-this-of-listener.js, and test-whatwg-events-event-constructors.js."
     },
     {

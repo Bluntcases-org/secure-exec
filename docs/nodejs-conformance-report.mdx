@@ -13,24 +13,24 @@ icon: "chart-bar"
 | Node.js version | 22.14.0 |
 | Source | v22.14.0 (test/parallel/) |
 | Total tests | 3532 |
-| Passing (genuine) | 1082 (30.6%) |
+| Passing (genuine) | 1094 (31.0%) |
 | Passing (vacuous self-skip) | 50 |
-| Passing (total) | 1132 (32.0%) |
-| Expected fail | 2288 |
-| Skip | 112 |
+| Passing (total) | 1144 (32.4%) |
+| Expected fail | 2275 |
+| Skip | 113 |
 | Last updated | 2026-03-26 |
 
 ## Failure Categories
 
 | Category | Tests |
 | --- | --- |
-| implementation-gap | 940 |
+| implementation-gap | 928 |
 | unsupported-module | 755 |
 | requires-v8-flags | 247 |
 | requires-exec-path | 200 |
 | unsupported-api | 155 |
-| test-infra | 98 |
-| vacuous-skip | 50 |
+| test-infra | 97 |
+| vacuous-skip | 51 |
 | native-addon | 3 |
 | security-constraint | 2 |
 
@@ -240,17 +240,17 @@ icon: "chart-bar"
 | webstorage | 1 | 0 | 1 | 0 | 0.0% |
 | webstream | 4 | 0 | 4 | 0 | 0.0% |
 | webstreams | 5 | 0 | 5 | 0 | 0.0% |
-| whatwg | 60 | 25 | 35 | 0 | 41.7% |
+| whatwg | 60 | 37 | 22 | 1 | 62.7% |
 | windows | 2 | 1 (1 vacuous) | 1 | 0 | 50.0% |
 | worker | 133 | 11 | 122 | 0 | 8.3% |
 | wrap | 4 | 0 | 4 | 0 | 0.0% |
 | x509 | 1 | 0 | 1 | 0 | 0.0% |
 | zlib | 53 | 17 | 33 | 3 | 34.0% |
-| **Total** | **3532** | **1132** | **2288** | **112** | **33.1%** |
+| **Total** | **3532** | **1144** | **2275** | **113** | **33.5%** |
 
 ## Expectations Detail
 
-### implementation-gap (658 entries)
+### implementation-gap (646 entries)
 
 **Glob patterns:**
 
@@ -258,7 +258,7 @@ icon: "chart-bar"
 - `test-http2-!(allow-http1|client-request-options-errors|client-setLocalWindowSize|error-order|goaway-delayed-request|goaway-opaquedata|misbehaving-flow-control|misbehaving-flow-control-paused|request-response-proto|respond-file-filehandle|server-push-stream|server-push-stream-errors-args|server-push-stream-head|server-setLocalWindowSize|session-settings|status-code-invalid|update-settings|window-size).js` — outside the landed allowHTTP1, push/settings, request-response, and window-size slices, the remaining http2 suite still fails on compatibility wrappers, secure-session bootstrap, multiplexing/teardown, and file-response helper gaps
 - `test-https-*.js` — https conformance still hangs on most TLS-backed client/server lifecycle and certificate-handling paths, so the remaining broad slice is skipped pending exact inventory
 
-*655 individual tests — see expectations.json for full list.*
+*643 individual tests — see expectations.json for full list.*
 
 ### unsupported-module (208 entries)
 
@@ -802,14 +802,14 @@ icon: "chart-bar"
 
 </details>
 
-### test-infra (52 entries)
+### test-infra (51 entries)
 
 **Glob patterns:**
 
 - `test-runner-*.js` — Node.js test runner infrastructure — not runtime behavior
 - `test-eslint-*.js` — ESLint integration tests — Node.js CI tooling, not runtime
 
-<details><summary>50 individual tests</summary>
+<details><summary>49 individual tests</summary>
 
 | Test | Reason |
 | --- | --- |
@@ -817,7 +817,6 @@ icon: "chart-bar"
 | `test-benchmark-cli.js` | Cannot find module '../../benchmark/_cli.js' — benchmark CLI helper not vendored in conformance test tree |
 | `test-http-client-req-error-dont-double-fire.js` | Cannot find module '../common/internet' — internet connectivity helper not vendored in conformance test tree |
 | `test-inspect-async-hook-setup-at-inspect.js` | TypeError: common.skipIfInspectorDisabled is not a function — skipIfInspectorDisabled() helper not implemented in conformance common shim; test requires V8 inspector |
-| `test-whatwg-events-event-constructors.js` | test uses require('../common/wpt') WPT harness which is not implemented in sandbox conformance test harness |
 | `test-cluster-dgram-ipv6only.js` | passes in sandbox — overrides glob pattern |
 | `test-cluster-net-listen-ipv6only-false.js` | passes in sandbox — overrides glob pattern |
 | `test-cluster-shared-handle-bind-privileged-port.js` | passes in sandbox — overrides glob pattern |
@@ -878,12 +877,13 @@ icon: "chart-bar"
 
 </details>
 
-### vacuous-skip (50 entries)
+### vacuous-skip (51 entries)
 
-<details><summary>50 individual tests</summary>
+<details><summary>51 individual tests</summary>
 
 | Test | Reason |
 | --- | --- |
+| `test-whatwg-events-add-event-listener-options-passive.js` | vendored file self-skips its remaining passive-listener assertions with common.skip('TODO: passive listeners is still broken') |
 | `test-crypto-aes-wrap.js` | vacuous pass — test self-skips via common.skip() because common.hasCrypto is false |
 | `test-crypto-des3-wrap.js` | vacuous pass — test self-skips via common.skip() because common.hasCrypto is false |
 | `test-crypto-dh-shared.js` | vacuous pass — test self-skips via common.skip() because common.hasCrypto is false |
