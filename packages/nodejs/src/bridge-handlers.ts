@@ -3471,6 +3471,36 @@ export function buildKernelTimerDispatchHandlers(
 	return handlers;
 }
 
+export interface KernelStdinDispatchDeps {
+	liveStdinSource?: import("./isolate-bootstrap.js").LiveStdinSource;
+	budgetState: BudgetState;
+	maxBridgeCalls?: number;
+}
+
+export function buildKernelStdinDispatchHandlers(
+	deps: KernelStdinDispatchDeps,
+): BridgeHandlers {
+	const handlers: BridgeHandlers = {};
+	const K = HOST_BRIDGE_GLOBAL_KEYS;
+
+	handlers[K.kernelStdinRead] = async () => {
+			checkBridgeBudget(deps);
+			if (!deps.liveStdinSource) {
+				return { done: true };
+			}
+			const chunk = await deps.liveStdinSource.read();
+			if (chunk === null || chunk.length === 0) {
+				return { done: true };
+			}
+			return {
+				done: false,
+				dataBase64: Buffer.from(chunk).toString("base64"),
+			};
+		};
+
+	return handlers;
+}
+
 export interface KernelHandleDispatchDeps {
 	processTable?: import("@secure-exec/core").ProcessTable;
 	pid: number;

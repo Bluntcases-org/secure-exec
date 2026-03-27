@@ -131,6 +131,7 @@ export const HOST_BRIDGE_GLOBAL_KEYS = {
 	resolveModuleSync: "_resolveModuleSync",
 	loadFileSync: "_loadFileSync",
 	ptySetRawMode: "_ptySetRawMode",
+	kernelStdinRead: "_kernelStdinRead",
 	processConfig: "_processConfig",
 	osConfig: "_osConfig",
 	log: "_log",
@@ -223,6 +224,10 @@ export type ModuleCacheBridgeRecord = Record<string, unknown>;
 export type ProcessLogBridgeRef = BridgeApplySyncRef<[string], void>;
 export type ProcessErrorBridgeRef = BridgeApplySyncRef<[string], void>;
 export type ScheduleTimerBridgeRef = BridgeApplyRef<[number], void>;
+export type KernelStdinReadBridgeRef = BridgeApplyRef<
+	[],
+	{ done: boolean; dataBase64?: string }
+>;
 export type CryptoRandomFillBridgeRef = BridgeApplySyncRef<[number], string>;
 export type CryptoRandomUuidBridgeRef = BridgeApplySyncRef<[], string>;
 export type CryptoHashDigestBridgeRef = BridgeApplySyncRef<[string, string], string>;

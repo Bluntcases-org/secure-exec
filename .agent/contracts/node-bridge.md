@@ -134,6 +134,19 @@ Bridge/runtime bootstrap SHALL expose the modern Web API and worker-thread compa
 - **AND** compatibility helpers like `worker_threads.markAsUncloneable` and `stream.Readable.fromWeb()` MUST be reachable during that same bootstrap path
 - **AND** the runtime MUST satisfy that dependency chain through generic runtime/bootstrap behavior rather than a package-specific redirect or mock
 
+### Requirement: Bridged `process.kill()` Preserves Self-Signal Semantics
+The process bridge SHALL preserve Node-compatible self-signal behavior for `process.kill(process.pid, signal)` so interactive TUIs and signal handlers can refresh state without spuriously terminating the sandbox.
+
+#### Scenario: Unhandled self `SIGWINCH` is ignored
+- **WHEN** sandboxed code calls `process.kill(process.pid, 'SIGWINCH')` without a registered `SIGWINCH` listener
+- **THEN** the runtime MUST return `true`
+- **AND** execution MUST continue instead of exiting with `128 + 28`
+
+#### Scenario: Registered self signal handlers run in-process
+- **WHEN** sandboxed code registers `process.on('SIGTERM', handler)` or another signal listener and then calls `process.kill(process.pid, signal)`
+- **THEN** the bridge MUST emit that signal event to the registered handlers
+- **AND** the process MUST remain alive unless user code exits explicitly from the handler
+
 ### Requirement: Cryptographic Randomness Bridge Uses Host CSPRNG
 Bridge-provided randomness for global `crypto` APIs MUST delegate to host `node:crypto` primitives and MUST NOT use isolate-local pseudo-random fallbacks such as `Math.random()`.
 

@@ -606,6 +606,92 @@ describe("bridge-side resource hardening", () => {
 	// process.kill signal handling — SIGINT and other signals
 	// -------------------------------------------------------------------
 
+	describe("async process callback error routing", () => {
+		it("process.nextTick(process.exit) preserves the exit code", async () => {
+			const capture = createConsoleCapture();
+			proc = createTestNodeRuntime({ onStdio: capture.onStdio });
+
+			const result = await proc.exec(`
+				process.nextTick(() => process.exit(7));
+				console.log('scheduled-nexttick-exit');
+			`);
+
+			expect(result.code).toBe(7);
+			expect(capture.stdout().trim()).toBe("scheduled-nexttick-exit");
+		});
+
+		it("process.nextTick errors surface through uncaughtException", async () => {
+			const capture = createConsoleCapture();
+			proc = createTestNodeRuntime({ onStdio: capture.onStdio });
+
+			const result = await proc.exec(`
+				process.on('uncaughtException', (error) => {
+					console.log('UNCAUGHT:' + error.message);
+					process.exit(0);
+				});
+				process.nextTick(() => {
+					throw new Error('boom-nexttick');
+				});
+				console.log('scheduled-nexttick-throw');
+			`);
+
+			expect(result.code).toBe(0);
+			expect(capture.stdout().trim()).toBe("scheduled-nexttick-throw\nUNCAUGHT:boom-nexttick");
+		});
+
+		it("setTimeout(process.exit) preserves the exit code", async () => {
+			const capture = createConsoleCapture();
+			proc = createTestNodeRuntime({ onStdio: capture.onStdio });
+
+			const result = await proc.exec(`
+				setTimeout(() => process.exit(7), 0);
+				console.log('scheduled-timeout-exit');
+			`);
+
+			expect(result.code).toBe(7);
+			expect(capture.stdout().trim()).toBe("scheduled-timeout-exit");
+		});
+
+		it("setTimeout errors surface through uncaughtException", async () => {
+			const capture = createConsoleCapture();
+			proc = createTestNodeRuntime({ onStdio: capture.onStdio });
+
+			const result = await proc.exec(`
+				process.on('uncaughtException', (error) => {
+					console.log('UNCAUGHT:' + error.message);
+					process.exit(0);
+				});
+				setTimeout(() => {
+					throw new Error('boom-timeout');
+				}, 0);
+				console.log('scheduled-timeout-throw');
+			`);
+
+			expect(result.code).toBe(0);
+			expect(capture.stdout().trim()).toBe("scheduled-timeout-throw\nUNCAUGHT:boom-timeout");
+		});
+	});
+
+	describe("Intl.Segmenter stability", () => {
+		it("segments graphemes without tearing down the runtime", async () => {
+			const capture = createConsoleCapture();
+			proc = createTestNodeRuntime({ onStdio: capture.onStdio });
+
+			const result = await proc.exec(`
+				const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+				const ascii = Array.from(segmenter.segment('abc thinking off'), (part) => part.segment);
+				const bullet = Array.from(segmenter.segment('abc • thinking off'), (part) => part.segment);
+				console.log(JSON.stringify({ ascii, bullet }));
+			`);
+
+			expect(result.code).toBe(0);
+			expect(JSON.parse(capture.stdout().trim())).toEqual({
+				ascii: ['a', 'b', 'c', ' ', 't', 'h', 'i', 'n', 'k', 'i', 'n', 'g', ' ', 'o', 'f', 'f'],
+				bullet: ['a', 'b', 'c', ' ', '•', ' ', 't', 'h', 'i', 'n', 'k', 'i', 'n', 'g', ' ', 'o', 'f', 'f'],
+			});
+		});
+	});
+
 	describe("process.kill signal handling", () => {
 		it("process.kill(process.pid, 'SIGINT') exits with 130", async () => {
 			const capture = createConsoleCapture();
@@ -652,6 +738,33 @@ describe("bridge-side resource hardening", () => {
 
 			// SIGKILL = signal 9, exit code = 128 + 9 = 137
 			expect(result.code).toBe(137);
+		});
+
+		it("process.kill(process.pid, 'SIGWINCH') is ignored by default", async () => {
+			const capture = createConsoleCapture();
+			proc = createTestNodeRuntime({ onStdio: capture.onStdio });
+
+			const result = await proc.exec(`
+				process.kill(process.pid, 'SIGWINCH');
+				console.log('after');
+			`);
+
+			expect(result.code).toBe(0);
+			expect(capture.stdout().trim()).toBe('after');
+		});
+
+		it("process.kill(process.pid, 'SIGTERM') emits handlers without exiting", async () => {
+			const capture = createConsoleCapture();
+			proc = createTestNodeRuntime({ onStdio: capture.onStdio });
+
+			const result = await proc.exec(`
+				process.on('SIGTERM', (signal) => console.log(signal));
+				process.kill(process.pid, 'SIGTERM');
+				console.log('after');
+			`);
+
+			expect(result.code).toBe(0);
+			expect(capture.stdout().trim()).toBe('SIGTERM\nafter');
 		});
 	});
 

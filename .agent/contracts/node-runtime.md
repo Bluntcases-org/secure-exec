@@ -173,6 +173,18 @@ The `__dynamicImport` bridge function SHALL return a Promise that resolves to th
 - **WHEN** user code calls `await import("./nonexistent")`
 - **THEN** the returned Promise MUST reject with an error indicating the module cannot be resolved
 
+### Requirement: JavaScript Module Loading Preserves Node Shebang Semantics
+JavaScript entrypoints and dependency files that begin with a Node-style shebang (`#!...`) SHALL load through both CommonJS and ESM sandbox paths without surfacing a syntax error from the host-side wrapper or transform stages.
+
+#### Scenario: CommonJS wrapper loads a shebang-bearing ESM CLI entrypoint
+- **WHEN** sandboxed code reaches `await import("/pkg/dist/cli.js")` from an exec-mode CommonJS entrypoint and `/pkg/dist/cli.js` begins with `#!/usr/bin/env node`
+- **THEN** the runtime MUST normalize the shebang before any CommonJS wrapper compilation step
+- **AND** the module MUST continue loading through the normal transform/evaluation path instead of failing with `SyntaxError: Invalid or unexpected token`
+
+#### Scenario: ESM loader reads a BOM-prefixed shebang-bearing module
+- **WHEN** the sandbox loads a JavaScript module whose first bytes are UTF-8 BOM followed by a Node-style shebang and ESM syntax
+- **THEN** module-syntax detection and ESM evaluation MUST still succeed without the shebang line being treated as executable JavaScript
+
 ### Requirement: ESM Top-Level Await Completes Before Execution Finalization
 When sandboxed ESM execution uses top-level `await`, the runtime SHALL keep the entry-module evaluation promise alive until it settles instead of finalizing execution early.
 
@@ -187,6 +199,22 @@ When sandboxed ESM execution uses top-level `await`, the runtime SHALL keep the 
 #### Scenario: Dynamic import waits for imported module top-level await
 - **WHEN** sandboxed code executes `await import("./mod.mjs")` and `./mod.mjs` contains top-level `await`
 - **THEN** the import Promise MUST not resolve until the imported module's async evaluation has completed and its namespace is ready
+
+### Requirement: Intl Segmentation APIs Stay Operational In The Sandbox
+The Node runtime SHALL initialize the underlying V8/ICU internationalization data needed for `Intl` segmentation APIs so Unicode-aware third-party code can execute without tearing down the runtime.
+
+#### Scenario: Intl.Segmenter segments ASCII and non-ASCII graphemes
+- **WHEN** sandboxed code constructs `new Intl.Segmenter(undefined, { granularity: "grapheme" })` and iterates `segment()` results for strings such as `"abc thinking off"` and `"abc • thinking off"`
+- **THEN** the runtime MUST return the expected grapheme segments
+- **AND** execution MUST remain alive instead of failing with a runtime-process crash or IPC disconnect
+
+### Requirement: PTY Raw Mode Preserves Carriage Return Input
+When sandboxed code enables PTY raw mode through `process.stdin.setRawMode(true)`, the runtime SHALL disable canonical translations such as `ICRNL` so interactive TUIs receive the original carriage-return byte for Enter.
+
+#### Scenario: Raw-mode stdin receives CR without newline translation
+- **WHEN** sandboxed PTY-backed code calls `process.stdin.setRawMode(true)` and the PTY master writes `\r`
+- **THEN** `process.stdin` listeners MUST receive byte `13` / `"\r"` rather than translated newline input
+- **AND** restoring cooked mode with `process.stdin.setRawMode(false)` MUST restore the default translated line discipline
 
 ### Requirement: Configurable CPU Time Limit for Node Runtime Execution
 The Node runtime MUST support an optional `cpuTimeLimitMs` execution budget for sandboxed code and MUST enforce it as a shared per-execution deadline across runtime calls that execute user-controlled code.

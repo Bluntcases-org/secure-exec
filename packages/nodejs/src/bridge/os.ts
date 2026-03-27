@@ -31,6 +31,14 @@ const config: Required<OSConfig> = {
   hostname: (typeof _osConfig !== "undefined" && _osConfig.hostname) || "sandbox",
 };
 
+function getRuntimeHomeDir(): string {
+  return globalThis.process?.env?.HOME || config.homedir;
+}
+
+function getRuntimeTmpDir(): string {
+  return globalThis.process?.env?.TMPDIR || config.tmpdir;
+}
+
 // Signal constants (subset — sandbox only emulates Linux signals)
 const signals = {
   SIGHUP: 1,
@@ -182,10 +190,10 @@ const os = {
 
   // Directory information
   homedir(): string {
-    return config.homedir;
+    return getRuntimeHomeDir();
   },
   tmpdir(): string {
-    return config.tmpdir;
+    return getRuntimeTmpDir();
   },
 
   // System information
@@ -200,7 +208,7 @@ const os = {
       uid: 0,
       gid: 0,
       shell: "/bin/bash",
-      homedir: config.homedir,
+      homedir: getRuntimeHomeDir(),
     };
   },
 

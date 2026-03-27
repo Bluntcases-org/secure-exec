@@ -1,4 +1,6 @@
 ## Codebase Patterns
+- `process.stdin.setRawMode(true)` on a kernel-mounted Node runtime must disable PTY `icrnl` and `isig` alongside `icanon`/`echo`; leaving `icrnl` on rewrites Enter from `\r` to `\n` and breaks raw-mode TUIs.
+- Native `v8-runtime` must load ICU common data before V8 platform init (`build.rs` + `v8::icu::set_common_data_74(...)`), or `Intl.Segmenter.segment()` can tear down the sandbox with `IPC connection closed`.
 - Shared bridge contract tuple types must stay aligned with isolate runtime call sites; `_resolveModule` accepts an optional third load-mode argument and `_loadFile` accepts an optional second load-mode argument, or isolate-runtime `check-types:isolate-runtime` will fail.
 - `ModuleAccessFileSystem` must allow read-only host-absolute package asset paths derived from `import.meta.url`, `__filename`, or `realpath()` when they canonicalize back into the configured `node_modules` overlay; real SDKs like Pi walk to sibling `package.json`, README, and theme/template assets that way.
 - Real-provider tool-integration coverage should stay opt-in via a dedicated env flag (for example `SECURE_EXEC_PI_REAL_PROVIDER_E2E=1`) and load secrets at runtime from `process.env` with `~/misc/env.txt` as a local fallback; never commit credentials or silently swap the live provider path back to a mock redirect.
@@ -217,6 +219,15 @@
   - Standalone `dist/` verification has to exercise the built package from a real host `node` process; vitest-importing source files can hide ESM-only failures in host bridge code.
   - `packages/nodejs/src/bridge-handlers.ts` runs on the host as ESM, so any leftover `require("@secure-exec/core")` calls will only fail once the published-style `dist/` path is used.
   - When a spawned verification script only needs to report pass/fail state, explicitly flushing stdout and exiting keeps the smoke test focused on bootstrap behavior instead of shared-runtime process lifetime.
+---
+## [2026-03-26 20:10 PDT] - US-063
+- Implemented the Pi PTY real-provider end-to-end path by stabilizing the native runtime event loop, loading ICU data for `Intl.Segmenter`, fixing PTY raw-mode termios so Enter stays `\r`, and wiring the real-provider test to a host-backed temp worktree and real provider response canary.
+- Added regressions for `Intl.Segmenter` stability and PTY raw-mode carriage-return delivery, then updated the real-provider Pi PTY test to prove boot-ready rendering and a real assistant response in the sandbox PTY.
+- Files changed: `native/v8-runtime/build.rs`, `native/v8-runtime/src/execution.rs`, `native/v8-runtime/src/isolate.rs`, `native/v8-runtime/src/session.rs`, `packages/nodejs/src/bridge/process.ts`, `packages/nodejs/src/kernel-runtime.ts`, `packages/secure-exec/tests/runtime-driver/node/bridge-hardening.test.ts`, `packages/secure-exec/tests/kernel/bridge-gap-behavior.test.ts`, `packages/secure-exec/tests/cli-tools/pi-pty-real-provider.test.ts`, `.agent/contracts/node-runtime.md`, `scripts/ralph/prd.json`, `scripts/ralph/progress.txt`
+- **Learnings for future iterations:**
+  - When a sandboxed TUI crashes with `IPC connection closed` during layout or width calculation, probe `Intl.Segmenter` early; missing ICU data can look like a PTY or provider failure.
+  - Real-provider PTY stories should isolate behavioral assertions from teardown paths; Pi’s real-token response path can be green even when app-level `/exit` remains flaky, and exit behavior is better covered in separate focused tests.
+  - Raw-mode PTY regressions are cheapest to diagnose with a minimal `process.stdin.on('data')` byte probe before rerunning a full provider-backed TUI.
 ---
 ## [2026-03-25 04:31 PDT] - US-009
 - Verified the underlying `runtime.run()` export capture issue is already fixed on the current branch and added standalone `dist/` regression coverage for CommonJS object/scalar/nested `module.exports` plus ESM named exports.

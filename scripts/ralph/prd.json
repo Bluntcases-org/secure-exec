@@ -1212,7 +1212,7 @@
         "Typecheck passes"
       ],
       "priority": 55,
-      "passes": false,
+      "passes": true,
       "notes": "Current Pi PTY coverage already probes kernel.openShell(), but it still relies on a mock server and archived work notes prior import/runtime blockers. This story is the real-token interactive proof point."
     },
     {

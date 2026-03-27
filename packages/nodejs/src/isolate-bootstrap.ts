@@ -23,6 +23,8 @@ export interface NodeExecutionDriverOptions extends RuntimeDriverOptions {
 	bindings?: BindingTree;
 	/** Callback to toggle PTY raw mode — wired by kernel runtime when PTY is attached. */
 	onPtySetRawMode?: (mode: boolean) => void;
+	/** Optional live stdin source for PTY-backed interactive processes. */
+	liveStdinSource?: LiveStdinSource;
 	/** Kernel socket table — routes net.connect through kernel instead of host TCP. */
 	socketTable?: import("@secure-exec/core").SocketTable;
 	/** Kernel process table — registers child processes for cross-runtime visibility. */
@@ -38,6 +40,10 @@ export interface BudgetState {
 	bridgeCalls: number;
 	activeTimers: number;
 	childProcesses: number;
+}
+
+export interface LiveStdinSource {
+	read(): Promise<Uint8Array | null>;
 }
 
 /** Shared mutable state owned by NodeExecutionDriver, passed to extracted modules. */
@@ -68,6 +74,7 @@ export interface DriverDeps {
 	resolutionCache: ResolutionCache;
 	/** Optional callback for PTY setRawMode — wired by kernel when PTY is attached. */
 	onPtySetRawMode?: (mode: boolean) => void;
+	liveStdinSource?: LiveStdinSource;
 }
 
 // Constants

@@ -60,6 +60,58 @@ async function runNodeOnPty(
   return output;
 }
 
+async function waitForOutput(
+  getOutput: () => string,
+  text: string,
+  timeoutMs = 2_000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!getOutput().includes(text)) {
+    if (Date.now() >= deadline) {
+      throw new Error(`Timed out waiting for output: ${text}\nOutput: ${getOutput()}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+}
+
+async function runInteractiveNodeOnPty(
+  kernel: Kernel,
+  code: string,
+  input: string,
+  timeoutMs = 10_000,
+): Promise<{ output: string; exitCode: number }> {
+  const shell = kernel.openShell({
+    command: 'node',
+    args: ['-e', code],
+  });
+
+  let output = '';
+  shell.onData = (data) => {
+    output += new TextDecoder().decode(data);
+  };
+
+  try {
+    await waitForOutput(() => output, 'READY', timeoutMs);
+    shell.write(input);
+
+    const exitCode = await Promise.race([
+      shell.wait(),
+      new Promise<number>((_, reject) =>
+        setTimeout(() => reject(new Error('PTY interactive process timed out')), timeoutMs),
+      ),
+    ]);
+
+    return { output, exitCode };
+  } catch (error) {
+    try {
+      shell.kill();
+    } catch {
+      // Best effort cleanup after failed PTY interaction.
+    }
+    throw error;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // PTY isTTY detection
 // ---------------------------------------------------------------------------
@@ -286,6 +338,50 @@ describe('bridge gap: setRawMode via PTY', () => {
     expect(output).toContain('RAW_OK');
   }, 15_000);
 
+  it('delivers live PTY stdin data to process.stdin listeners after startup', async () => {
+    ctx = await createNodeKernel();
+    const { output, exitCode } = await runInteractiveNodeOnPty(
+      ctx.kernel,
+      `
+        process.stdin.setEncoding('utf8');
+        process.stdin.setRawMode(true);
+        process.stdin.resume();
+        process.stdout.write('READY\\n');
+        process.stdin.once('data', (chunk) => {
+          process.stdout.write('INPUT:' + JSON.stringify(chunk) + '\\n');
+          process.exit(0);
+        });
+      `,
+      'Z',
+      15_000,
+    );
+
+    expect(exitCode).toBe(0);
+    expect(output).toContain('INPUT:"Z"');
+  }, 15_000);
+
+  it('preserves carriage return bytes in PTY raw mode', async () => {
+    ctx = await createNodeKernel();
+    const { output, exitCode } = await runInteractiveNodeOnPty(
+      ctx.kernel,
+      `
+        process.stdin.setRawMode(true);
+        process.stdin.resume();
+        process.stdout.write('READY\\n');
+        process.stdin.once('data', (chunk) => {
+          const bytes = Array.from(Buffer.from(chunk));
+          process.stdout.write('BYTES:' + JSON.stringify(bytes) + '\\n');
+          process.exit(0);
+        });
+      `,
+      '\r',
+      15_000,
+    );
+
+    expect(exitCode).toBe(0);
+    expect(output).toContain('BYTES:[13]');
+  }, 15_000);
+
   it('setRawMode(false) restores PTY defaults', async () => {
     ctx = await createNodeKernel();
     const output = await runNodeOnPty(
@@ -293,6 +389,26 @@ describe('bridge gap: setRawMode via PTY', () => {
       "process.stdin.setRawMode(true); process.stdin.setRawMode(false); console.log('RESTORE_OK')",
     );
     expect(output).toContain('RESTORE_OK');
+  }, 15_000);
+
+  it('survives pi-tui ProcessTerminal startup on a PTY', async () => {
+    ctx = await createNodeKernel();
+    const output = await runNodeOnPty(
+      ctx.kernel,
+      `
+        const { ProcessTerminal } = require('@mariozechner/pi-tui');
+        const terminal = new ProcessTerminal();
+        terminal.start(() => {}, () => {});
+        setTimeout(() => {
+          terminal.stop();
+          console.log('PROCESS_TERMINAL_OK');
+          process.exit(0);
+        }, 50);
+      `,
+      15_000,
+      { cwd: '/home/nathan/secure-exec-2' },
+    );
+    expect(output).toContain('PROCESS_TERMINAL_OK');
   }, 15_000);
 
   it('setRawMode throws when stdin is not a TTY', async () => {
@@ -315,5 +431,15 @@ describe('bridge gap: setRawMode via PTY', () => {
     const output = stderr.join('');
     expect(output).toContain('ERR:');
     expect(output).toContain('not a TTY');
+  }, 15_000);
+
+  it('preserves raw stdout writes without injecting newline bytes', async () => {
+    ctx = await createNodeKernel();
+    const output = await runNodeOnPty(
+      ctx.kernel,
+      "process.stdout.write('A'); process.stdout.write('B');",
+    );
+
+    expect(output).toBe('AB');
   }, 15_000);
 });

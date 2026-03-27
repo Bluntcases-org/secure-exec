@@ -53,6 +53,7 @@ import {
 	buildCryptoBridgeHandlers,
 	buildConsoleBridgeHandlers,
 	buildKernelHandleDispatchHandlers,
+	buildKernelStdinDispatchHandlers,
 	buildKernelTimerDispatchHandlers,
 	buildModuleLoadingBridgeHandlers,
 	buildMimeBridgeHandlers,
@@ -138,6 +139,7 @@ interface DriverState {
 	packageTypeCache: Map<string, "module" | "commonjs" | null>;
 	resolutionCache: ResolutionCache;
 	onPtySetRawMode?: (mode: boolean) => void;
+	liveStdinSource?: NodeExecutionDriverOptions["liveStdinSource"];
 }
 
 // Shared V8 runtime process — one per Node.js process, lazy-initialized
@@ -856,6 +858,7 @@ export class NodeExecutionDriver implements RuntimeDriver {
 			packageTypeCache: new Map(),
 			resolutionCache: createResolutionCache(),
 			onPtySetRawMode: options.onPtySetRawMode,
+			liveStdinSource: options.liveStdinSource,
 		};
 
 		// Validate and flatten bindings once at construction time
@@ -1115,6 +1118,11 @@ export class NodeExecutionDriver implements RuntimeDriver {
 				budgetState: s.budgetState,
 				maxBridgeCalls: s.maxBridgeCalls,
 			});
+			const kernelStdinDispatchHandlers = buildKernelStdinDispatchHandlers({
+				liveStdinSource: s.liveStdinSource,
+				budgetState: s.budgetState,
+				maxBridgeCalls: s.maxBridgeCalls,
+			});
 
 			const bridgeHandlers: BridgeHandlers = {
 				...cryptoResult.handlers,
@@ -1123,6 +1131,7 @@ export class NodeExecutionDriver implements RuntimeDriver {
 					budgetState: s.budgetState,
 					maxOutputBytes: s.maxOutputBytes,
 				}),
+				...kernelStdinDispatchHandlers,
 				...buildModuleLoadingBridgeHandlers({
 					filesystem: s.filesystem,
 					resolutionCache: s.resolutionCache,

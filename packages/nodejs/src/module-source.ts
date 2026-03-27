@@ -15,6 +15,19 @@ function isJavaScriptLikePath(filePath: string | undefined): boolean {
 	return filePath === undefined || /\.[cm]?[jt]sx?$/.test(filePath);
 }
 
+function normalizeJavaScriptSource(source: string): string {
+	const bomPrefix = source.charCodeAt(0) === 0xfeff ? "\uFEFF" : "";
+	const shebangOffset = bomPrefix.length;
+	if (!source.startsWith("#!", shebangOffset)) {
+		return source;
+	}
+	return (
+		bomPrefix +
+		"//" +
+		source.slice(shebangOffset + 2)
+	);
+}
+
 function parseSourceSyntax(source: string, filePath?: string) {
 	const [imports, , , hasModuleSyntax] = parse(source, filePath);
 	const hasDynamicImport = imports.some((specifier) => specifier.d >= 0);
@@ -162,6 +175,7 @@ export async function sourceHasModuleSyntax(
 	source: string,
 	filePath?: string,
 ): Promise<boolean> {
+	const normalizedSource = normalizeJavaScriptSource(source);
 	if (filePath?.endsWith(".mjs")) {
 		return true;
 	}
@@ -170,7 +184,7 @@ export async function sourceHasModuleSyntax(
 	}
 
 	await init;
-	return parseSourceSyntax(source, filePath).hasModuleSyntax;
+	return parseSourceSyntax(normalizedSource, filePath).hasModuleSyntax;
 }
 
 export function transformSourceForRequireSync(
@@ -181,16 +195,17 @@ export function transformSourceForRequireSync(
 		return source;
 	}
 
+	const normalizedSource = normalizeJavaScriptSource(source);
 	initSync();
-	const syntax = parseSourceSyntax(source, filePath);
+	const syntax = parseSourceSyntax(normalizedSource, filePath);
 	if (!(syntax.hasModuleSyntax || syntax.hasDynamicImport || syntax.hasImportMeta)) {
-		return source;
+		return normalizedSource;
 	}
 
 	try {
-		return transformSync(source, getRequireTransformOptions(filePath, syntax)).code;
+		return transformSync(normalizedSource, getRequireTransformOptions(filePath, syntax)).code;
 	} catch {
-		return source;
+		return normalizedSource;
 	}
 }
 
@@ -202,18 +217,19 @@ export async function transformSourceForRequire(
 		return source;
 	}
 
+	const normalizedSource = normalizeJavaScriptSource(source);
 	await init;
-	const syntax = parseSourceSyntax(source, filePath);
+	const syntax = parseSourceSyntax(normalizedSource, filePath);
 	if (!(syntax.hasModuleSyntax || syntax.hasDynamicImport || syntax.hasImportMeta)) {
-		return source;
+		return normalizedSource;
 	}
 
 	try {
 		return (
-			await transform(source, getRequireTransformOptions(filePath, syntax))
+			await transform(normalizedSource, getRequireTransformOptions(filePath, syntax))
 		).code;
 	} catch {
-		return source;
+		return normalizedSource;
 	}
 }
 
@@ -225,21 +241,22 @@ export async function transformSourceForImport(
 		return source;
 	}
 
+	const normalizedSource = normalizeJavaScriptSource(source);
 	await init;
-	const syntax = parseSourceSyntax(source, filePath);
+	const syntax = parseSourceSyntax(normalizedSource, filePath);
 	const needsTransform =
-		source.includes(UNICODE_SET_REGEX_MARKER) || syntax.hasImportMeta;
+		normalizedSource.includes(UNICODE_SET_REGEX_MARKER) || syntax.hasImportMeta;
 	if (!(syntax.hasModuleSyntax || syntax.hasDynamicImport || syntax.hasImportMeta)) {
-		return source;
+		return normalizedSource;
 	}
 	if (!needsTransform) {
-		return source;
+		return normalizedSource;
 	}
 
 	try {
-		return (await transform(source, getImportTransformOptions(filePath, syntax))).code;
+		return (await transform(normalizedSource, getImportTransformOptions(filePath, syntax))).code;
 	} catch {
-		return source;
+		return normalizedSource;
 	}
 }
 
@@ -252,24 +269,25 @@ export function transformSourceForImportSync(
 		return source;
 	}
 
-	if (isCommonJsModuleForImportSync(source, formatPath)) {
-		return buildCommonJsImportWrapper(source, filePath);
+	const normalizedSource = normalizeJavaScriptSource(source);
+	if (isCommonJsModuleForImportSync(normalizedSource, formatPath)) {
+		return buildCommonJsImportWrapper(normalizedSource, filePath);
 	}
 
 	initSync();
-	const syntax = parseSourceSyntax(source, filePath);
+	const syntax = parseSourceSyntax(normalizedSource, filePath);
 	const needsTransform =
-		source.includes(UNICODE_SET_REGEX_MARKER) || syntax.hasImportMeta;
+		normalizedSource.includes(UNICODE_SET_REGEX_MARKER) || syntax.hasImportMeta;
 	if (!(syntax.hasModuleSyntax || syntax.hasDynamicImport || syntax.hasImportMeta)) {
-		return source;
+		return normalizedSource;
 	}
 	if (!needsTransform) {
-		return source;
+		return normalizedSource;
 	}
 
 	try {
-		return transformSync(source, getImportTransformOptions(filePath, syntax)).code;
+		return transformSync(normalizedSource, getImportTransformOptions(filePath, syntax)).code;
 	} catch {
-		return source;
+		return normalizedSource;
 	}
 }

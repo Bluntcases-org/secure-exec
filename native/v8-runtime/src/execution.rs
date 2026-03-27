@@ -356,22 +356,26 @@ pub fn execute_script(
             }
         };
 
+        // Flush microtasks once after every exec()-style script so process.nextTick()
+        // and zero-delay bridge callbacks run before we decide whether more event-loop
+        // work is pending.
+        tc.perform_microtask_checkpoint();
+
+        if let Some(exception) = tc.exception() {
+            let (c, err) = exception_to_result(tc, exception);
+            return (c, Some(err));
+        }
+
+        if let Some(state) = tc.get_slot_mut::<crate::isolate::PromiseRejectState>() {
+            if let Some((_, err)) = state.unhandled.drain().next() {
+                return (1, Some(err));
+            }
+        }
+
         // Surface rejected async completions for exec()-style scripts that
         // return a Promise (for example an async IIFE ending in await import()).
         if completion.is_promise() {
             let promise = v8::Local::<v8::Promise>::try_from(completion).unwrap();
-            tc.perform_microtask_checkpoint();
-
-            if let Some(exception) = tc.exception() {
-                let (c, err) = exception_to_result(tc, exception);
-                return (c, Some(err));
-            }
-
-            if let Some(state) = tc.get_slot_mut::<crate::isolate::PromiseRejectState>() {
-                if let Some((_, err)) = state.unhandled.drain().next() {
-                    return (1, Some(err));
-                }
-            }
 
             if promise.state() == v8::PromiseState::Rejected {
                 let rejection = promise.result(tc);
@@ -415,7 +419,7 @@ pub fn extract_process_exit_code(
 /// Extract error info and exit code from a V8 exception.
 /// For ProcessExitError (detected via _isProcessExit sentinel), returns the error's exit code.
 /// For other errors, returns exit code 1.
-fn exception_to_result(
+pub(crate) fn exception_to_result(
     scope: &mut v8::HandleScope,
     exception: v8::Local<v8::Value>,
 ) -> (i32, ExecutionError) {
@@ -640,7 +644,9 @@ fn set_pending_module_evaluation(
     });
 }
 
-fn take_unhandled_promise_rejection(scope: &mut v8::HandleScope) -> Option<ExecutionError> {
+pub(crate) fn take_unhandled_promise_rejection(
+    scope: &mut v8::HandleScope,
+) -> Option<ExecutionError> {
     scope
         .get_slot_mut::<crate::isolate::PromiseRejectState>()
         .and_then(|state| state.unhandled.drain().next().map(|(_, err)| err))

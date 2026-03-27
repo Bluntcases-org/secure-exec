@@ -118,6 +118,17 @@ export async function createV8Runtime(
 	let processAlive = true;
 	let exitError: Error | null = null;
 
+	function formatRuntimeCloseError(baseMessage: string): Error {
+		const details: string[] = [baseMessage];
+		if (exitError) {
+			details.push(`runtime: ${exitError.message}`);
+		}
+		if (stderrBuf) {
+			details.push(`stderr: ${stderrBuf}`);
+		}
+		return new Error(details.join("\n"));
+	}
+
 	child.on("exit", (code, signal) => {
 		processAlive = false;
 		if (code !== 0 && code !== null) {
@@ -181,12 +192,13 @@ export async function createV8Runtime(
 		},
 		onClose: () => {
 			ipcClient = null;
-			// Reject all pending executions — the Rust process may have
-			// deadlocked without exiting, so we can't rely on the 'exit'
-			// event alone.
-			rejectPendingSessions(
-				new Error("IPC connection closed"),
-			);
+			// Give the child 'exit' event one tick to populate exitError/stderr
+			// before collapsing everything into a generic IPC-close failure.
+			setTimeout(() => {
+				rejectPendingSessions(
+					formatRuntimeCloseError("IPC connection closed"),
+				);
+			}, 0);
 		},
 		onError: (err) => {
 			// Surface IPC errors as exit errors if process is still alive

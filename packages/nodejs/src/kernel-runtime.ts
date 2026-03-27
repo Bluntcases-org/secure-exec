@@ -30,6 +30,7 @@ import {
 import type {
   CommandExecutor,
 } from '@secure-exec/core';
+import type { LiveStdinSource } from './isolate-bootstrap.js';
 
 export interface NodeRuntimeOptions {
   /** Memory limit in MB for each V8 isolate (default: 128). */
@@ -541,15 +542,33 @@ class NodeRuntimeDriver implements RuntimeDriver {
           stdoutIsTTY,
           stderrIsTTY,
         },
+        osConfig: {
+          homedir: ctx.env.HOME || '/root',
+          tmpdir: ctx.env.TMPDIR || '/tmp',
+        },
       });
 
       // Wire PTY raw mode callback when stdin is a terminal
       const onPtySetRawMode = stdinIsTTY
         ? (mode: boolean) => {
-            kernel.ptySetDiscipline(ctx.pid, 0, {
-              canonical: !mode,
+            kernel.tcsetattr(ctx.pid, 0, {
+              icanon: !mode,
               echo: !mode,
+              isig: !mode,
+              icrnl: !mode,
             });
+          }
+        : undefined;
+      const liveStdinSource: LiveStdinSource | undefined = stdinIsTTY
+        ? {
+            async read() {
+              try {
+                const chunk = await kernel.fdRead(ctx.pid, 0, 4096);
+                return chunk.length === 0 ? null : chunk;
+              } catch {
+                return null;
+              }
+            },
           }
         : undefined;
 
@@ -564,6 +583,7 @@ class NodeRuntimeDriver implements RuntimeDriver {
         processTable: kernel.processTable,
         timerTable: kernel.timerTable,
         pid: ctx.pid,
+        liveStdinSource,
       });
       this._activeDrivers.set(ctx.pid, executionDriver);
       const killedSignal = getKilledSignal();
@@ -584,7 +604,7 @@ class NodeRuntimeDriver implements RuntimeDriver {
         cwd: ctx.cwd,
         stdin: stdinData,
         onStdio: (event) => {
-          const data = new TextEncoder().encode(event.message + '\n');
+          const data = new TextEncoder().encode(event.message);
           if (event.channel === 'stdout') {
             ctx.onStdout?.(data);
             proc.onStdout?.(data);
