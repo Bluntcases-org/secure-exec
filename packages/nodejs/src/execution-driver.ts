@@ -1036,10 +1036,16 @@ export class NodeExecutionDriver implements RuntimeDriver {
 		const sessionMode = options.mode === "run" || entryIsEsm ? "run" : "exec";
 		const userCode = entryIsEsm
 			? options.code
-			: transformSourceForRequireSync(
-					options.code,
-					options.filePath ?? "/entry.js",
-				);
+			: (() => {
+					const transformed = transformSourceForRequireSync(
+						options.code,
+						options.filePath ?? "/entry.js",
+					);
+					if (options.mode !== "exec") {
+						return transformed;
+					}
+					return `${transformed}\n;typeof _waitForActiveHandles === "function" ? _waitForActiveHandles() : undefined;`;
+				})();
 
 		// Get or create V8 runtime
 		const v8Runtime = await getSharedV8Runtime();

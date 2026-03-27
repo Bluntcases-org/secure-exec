@@ -3736,11 +3736,29 @@ export function buildChildProcessBridgeHandlers(deps: ChildProcessBridgeDeps): B
 		};
 	}
 
+	type ChildProcessStreamPayload =
+		| { sessionId: number; dataBase64: string }
+		| { sessionId: number; code: number };
+
 	// Serialize a child process event and push it into the V8 isolate
-	const dispatchEvent = (sessionId: number, type: string, data?: Uint8Array | number) => {
+	const dispatchEvent = (sessionId: number, type: "stdout" | "stderr" | "exit", data?: Uint8Array | number) => {
 		try {
-			const payload = JSON.stringify({ sessionId, type, data: data instanceof Uint8Array ? Buffer.from(data).toString("base64") : data });
-			deps.sendStreamEvent("childProcess", Buffer.from(payload));
+			let eventType: "child_stdout" | "child_stderr" | "child_exit";
+			let payload: ChildProcessStreamPayload;
+			if (type === "stdout" || type === "stderr") {
+				eventType = type === "stdout" ? "child_stdout" : "child_stderr";
+				payload = {
+					sessionId,
+					dataBase64: Buffer.from(data as Uint8Array).toString("base64"),
+				};
+			} else {
+				eventType = "child_exit";
+				payload = {
+					sessionId,
+					code: Number(data ?? 1),
+				};
+			}
+			deps.sendStreamEvent(eventType, Buffer.from(JSON.stringify(payload)));
 		} catch {
 			// Context may be disposed
 		}

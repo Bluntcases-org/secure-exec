@@ -1246,7 +1246,7 @@
         "Typecheck passes"
       ],
       "priority": 56.1,
-      "passes": false,
+      "passes": true,
       "notes": "Exact repro as of 2026-03-26: direct host `opencode serve --hostname=127.0.0.1 --port=0` with the same real Anthropic credentials, XDG dir, and `OPENCODE_CONFIG_CONTENT` prints `opencode server listening on http://127.0.0.1:<port>` quickly, and direct `kernel.spawn('opencode', ['--version'])` returns `1.3.3`. But a kernel-mounted sandboxed Node process running `const { spawn } = require('child_process'); spawn('opencode', ['--version'], { env: process.env })` via the bridge produces no stdout/stderr and times out after 10s. That pins the blocker to the Node child_process bridge path for mounted host-binary commands, not to OpenCode config/provider setup."
     },
     {

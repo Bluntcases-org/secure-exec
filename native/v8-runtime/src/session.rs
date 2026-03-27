@@ -535,6 +535,7 @@ fn session_thread(
                         let event_loop_status =
                             if pending.len() > 0
                                 || execution::has_pending_module_evaluation()
+                                || execution::has_pending_script_evaluation()
                                 || !deferred_queue.lock().unwrap().is_empty()
                             {
                                 let scope = &mut v8::HandleScope::new(iso);
@@ -568,6 +569,18 @@ fn session_thread(
                             {
                                 code = next_code;
                                 exports = next_exports;
+                                error = next_error;
+                            }
+                        }
+
+                        if !terminated && mode == 0 && error.is_none() {
+                            let scope = &mut v8::HandleScope::new(iso);
+                            let ctx = v8::Local::new(scope, &exec_context);
+                            let scope = &mut v8::ContextScope::new(scope, ctx);
+                            if let Some((next_code, next_error)) =
+                                execution::finalize_pending_script_evaluation(scope)
+                            {
+                                code = next_code;
                                 error = next_error;
                             }
                         }
@@ -621,6 +634,7 @@ fn session_thread(
                         };
 
                         execution::clear_pending_module_evaluation();
+                        execution::clear_pending_script_evaluation();
                         execution::clear_module_state();
 
                         send_message(&ipc_tx, &result_frame, &mut msg_frame_buf);
@@ -736,6 +750,7 @@ pub(crate) fn run_event_loop(
 ) -> EventLoopStatus {
     while pending.len() > 0
         || execution::pending_module_evaluation_needs_wait(scope)
+        || execution::pending_script_evaluation_needs_wait(scope)
         || deferred
             .map(|dq| !dq.lock().unwrap().is_empty())
             .unwrap_or(false)
@@ -749,7 +764,10 @@ pub(crate) fn run_event_loop(
                     return status;
                 }
             }
-            if pending.len() == 0 && !execution::pending_module_evaluation_needs_wait(scope) {
+            if pending.len() == 0
+                && !execution::pending_module_evaluation_needs_wait(scope)
+                && !execution::pending_script_evaluation_needs_wait(scope)
+            {
                 break;
             }
         }

@@ -376,11 +376,17 @@ pub fn execute_script(
         // return a Promise (for example an async IIFE ending in await import()).
         if completion.is_promise() {
             let promise = v8::Local::<v8::Promise>::try_from(completion).unwrap();
-
-            if promise.state() == v8::PromiseState::Rejected {
-                let rejection = promise.result(tc);
-                let (c, err) = exception_to_result(tc, rejection);
-                return (c, Some(err));
+            match promise.state() {
+                v8::PromiseState::Pending => {
+                    set_pending_script_evaluation(tc, promise);
+                    return (0, None);
+                }
+                v8::PromiseState::Rejected => {
+                    let rejection = promise.result(tc);
+                    let (c, err) = exception_to_result(tc, rejection);
+                    return (c, Some(err));
+                }
+                v8::PromiseState::Fulfilled => {}
             }
         }
     }
@@ -593,9 +599,16 @@ struct PendingModuleEvaluation {
 // (single-threaded per session).
 unsafe impl Send for PendingModuleEvaluation {}
 
+struct PendingScriptEvaluation {
+    promise: v8::Global<v8::Promise>,
+}
+
+unsafe impl Send for PendingScriptEvaluation {}
+
 thread_local! {
     static MODULE_RESOLVE_STATE: RefCell<Option<ModuleResolveState>> = const { RefCell::new(None) };
     static PENDING_MODULE_EVALUATION: RefCell<Option<PendingModuleEvaluation>> = const { RefCell::new(None) };
+    static PENDING_SCRIPT_EVALUATION: RefCell<Option<PendingScriptEvaluation>> = const { RefCell::new(None) };
 }
 
 fn module_request_cache_key(specifier: &str, referrer_name: &str) -> String {
@@ -615,13 +628,34 @@ pub fn clear_pending_module_evaluation() {
     });
 }
 
+pub fn clear_pending_script_evaluation() {
+    PENDING_SCRIPT_EVALUATION.with(|cell| {
+        *cell.borrow_mut() = None;
+    });
+}
+
 #[cfg_attr(test, allow(dead_code))]
 pub fn has_pending_module_evaluation() -> bool {
     PENDING_MODULE_EVALUATION.with(|cell| cell.borrow().is_some())
 }
 
+pub fn has_pending_script_evaluation() -> bool {
+    PENDING_SCRIPT_EVALUATION.with(|cell| cell.borrow().is_some())
+}
+
 pub fn pending_module_evaluation_needs_wait(scope: &mut v8::HandleScope) -> bool {
     PENDING_MODULE_EVALUATION.with(|cell| {
+        let borrow = cell.borrow();
+        let Some(pending) = borrow.as_ref() else {
+            return false;
+        };
+        let promise = v8::Local::new(scope, &pending.promise);
+        promise.state() == v8::PromiseState::Pending
+    })
+}
+
+pub fn pending_script_evaluation_needs_wait(scope: &mut v8::HandleScope) -> bool {
+    PENDING_SCRIPT_EVALUATION.with(|cell| {
         let borrow = cell.borrow();
         let Some(pending) = borrow.as_ref() else {
             return false;
@@ -644,12 +678,57 @@ fn set_pending_module_evaluation(
     });
 }
 
+fn set_pending_script_evaluation(
+    scope: &mut v8::HandleScope,
+    promise: v8::Local<v8::Promise>,
+) {
+    PENDING_SCRIPT_EVALUATION.with(|cell| {
+        *cell.borrow_mut() = Some(PendingScriptEvaluation {
+            promise: v8::Global::new(scope, promise),
+        });
+    });
+}
+
 pub(crate) fn take_unhandled_promise_rejection(
     scope: &mut v8::HandleScope,
 ) -> Option<ExecutionError> {
     scope
         .get_slot_mut::<crate::isolate::PromiseRejectState>()
         .and_then(|state| state.unhandled.drain().next().map(|(_, err)| err))
+}
+
+pub fn finalize_pending_script_evaluation(
+    scope: &mut v8::HandleScope,
+) -> Option<(i32, Option<ExecutionError>)> {
+    let pending = PENDING_SCRIPT_EVALUATION.with(|cell| cell.borrow_mut().take())?;
+    let tc = &mut v8::TryCatch::new(scope);
+    let promise = v8::Local::new(tc, &pending.promise);
+
+    tc.perform_microtask_checkpoint();
+
+    if let Some(exception) = tc.exception() {
+        let (code, err) = exception_to_result(tc, exception);
+        return Some((code, Some(err)));
+    }
+
+    if let Some(err) = take_unhandled_promise_rejection(tc) {
+        return Some((1, Some(err)));
+    }
+
+    match promise.state() {
+        v8::PromiseState::Pending => {
+            PENDING_SCRIPT_EVALUATION.with(|cell| {
+                *cell.borrow_mut() = Some(pending);
+            });
+            None
+        }
+        v8::PromiseState::Rejected => {
+            let rejection = promise.result(tc);
+            let (code, err) = exception_to_result(tc, rejection);
+            Some((code, Some(err)))
+        }
+        v8::PromiseState::Fulfilled => Some((0, None)),
+    }
 }
 
 fn serialize_module_exports(

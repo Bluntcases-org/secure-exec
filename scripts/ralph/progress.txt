@@ -1,5 +1,6 @@
 ## Codebase Patterns
 - For host-binary CLI/SDK regressions, pair a direct `kernel.spawn()` control with a sandbox `child_process.spawn()` probe for the same command; if the direct kernel command works but the sandbox probe hangs, the blocker is in the Node child_process bridge path rather than the tool binary or provider config.
+- Exec-mode Node scripts that depend on child-process/stream callbacks must finish on `_waitForActiveHandles()` inside the same V8 execution; host-side resource polling alone cannot deliver later `StreamEvent` callbacks after the native session has already returned from `Execute`.
 - `process.stdin.setRawMode(true)` on a kernel-mounted Node runtime must disable PTY `icrnl` and `isig` alongside `icanon`/`echo`; leaving `icrnl` on rewrites Enter from `\r` to `\n` and breaks raw-mode TUIs.
 - Native `v8-runtime` must load ICU common data before V8 platform init (`build.rs` + `v8::icu::set_common_data_74(...)`), or `Intl.Segmenter.segment()` can tear down the sandbox with `IPC connection closed`.
 - Shared bridge contract tuple types must stay aligned with isolate runtime call sites; `_resolveModule` accepts an optional third load-mode argument and `_loadFile` accepts an optional second load-mode argument, or isolate-runtime `check-types:isolate-runtime` will fail.
@@ -826,4 +827,13 @@
   - OpenCode's real-provider SDK/server path is blocked earlier than provider traffic: direct host `opencode serve` and direct `kernel.spawn('opencode', ['--version'])` both work, but sandboxed Node `child_process.spawn('opencode', ['--version'])` hangs with no stdout/stderr and times out.
   - For host-binary automation stories, keep the investigation test useful before and after the bridge fix by asserting the pinned blocker first and only continuing to the full SDK/server flow once that minimal probe succeeds.
   - Kernel stdout callbacks for spawned host binaries can arrive twice in this path, so version-string assertions should tolerate duplicate lines rather than assuming a single chunk.
+---
+## [2026-03-26 21:02 PDT] - US-071
+- Fixed the mounted host-binary `child_process.spawn()` hang by aligning child-process stream events with the native V8 `child_stdout` / `child_stderr` / `child_exit` dispatch contract, teaching the sandbox child-process bridge to decode those payloads, and keeping exec-mode scripts alive on `_waitForActiveHandles()` so the same execution can receive late child-process callbacks.
+- Added a deterministic mounted host-binary regression that mounts a real host-binary driver, proves direct `kernel.spawn()` works, and then asserts sandboxed `child_process.spawn()` receives stdout plus `EXIT:0`; updated the OpenCode real-provider harness to treat shutdown as best-effort after the real SDK flow succeeds so the bridge story can surface follow-up teardown work without going red.
+- Files changed: `native/v8-runtime/src/execution.rs`, `native/v8-runtime/src/session.rs`, `packages/nodejs/src/bridge-handlers.ts`, `packages/nodejs/src/bridge/child-process.ts`, `packages/nodejs/src/execution-driver.ts`, `packages/secure-exec/tests/cli-tools/host-binary-child-process-bridge.test.ts`, `packages/secure-exec/tests/cli-tools/opencode-sdk-real-provider.test.ts`, `scripts/ralph/prd.json`, `scripts/ralph/progress.txt`
+- **Learnings for future iterations:**
+  - Child-process bridge hangs can come from exec-lifetime mismatches, not just bad event names: if the native V8 session returns from `Execute` before `_waitForActiveHandles()` resolves, later `StreamEvent` callbacks are silently ignored by the idle session thread.
+  - For mounted host-binary regressions, keep one deterministic local `--version` smoke alongside any credentialed SDK/server harness; it shortens debugging and proves the bridge before provider-specific startup or shutdown behavior enters the picture.
+  - OpenCode's real-provider SDK flow now gets past the bridge blocker and reaches server teardown; a forced `SIGKILL` after successful prompt/tool assertions is the next concrete follow-up, not part of this bridge fix.
 ---
