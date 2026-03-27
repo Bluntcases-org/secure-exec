@@ -2,7 +2,6 @@ import { createResolutionCache } from "./package-bundler.js";
 import { getConsoleSetupCode } from "@secure-exec/core/internal/shared/console-formatter";
 import { getRequireSetupCode } from "@secure-exec/core/internal/shared/require-setup";
 import { getIsolateRuntimeSource, getInitialBridgeGlobalsSetupCode } from "@secure-exec/core";
-import { transformDynamicImport } from "@secure-exec/core/internal/shared/esm-utils";
 import {
 	createCommandExecutorStub,
 	createFsStub,
@@ -40,6 +39,7 @@ import {
 	DEFAULT_SANDBOX_HOME,
 	DEFAULT_SANDBOX_TMPDIR,
 } from "./isolate-bootstrap.js";
+import { transformSourceForRequireSync } from "./module-source.js";
 import { shouldRunAsESM } from "./module-resolver.js";
 import {
 	TIMEOUT_ERROR_MESSAGE,
@@ -53,8 +53,10 @@ import {
 	buildCryptoBridgeHandlers,
 	buildConsoleBridgeHandlers,
 	buildKernelHandleDispatchHandlers,
+	buildKernelStdinDispatchHandlers,
 	buildKernelTimerDispatchHandlers,
 	buildModuleLoadingBridgeHandlers,
+	buildMimeBridgeHandlers,
 	buildTimerBridgeHandlers,
 	buildFsBridgeHandlers,
 	buildKernelFdBridgeHandlers,
@@ -130,12 +132,14 @@ interface DriverState {
 	activeHttpServerIds: Set<number>;
 	activeHttpServerClosers: Map<number, () => Promise<void>>;
 	pendingHttpServerStarts: { count: number };
+	activeHttpClientRequests: { count: number };
 	activeChildProcesses: Map<number, SpawnedProcess>;
 	activeHostTimers: Set<ReturnType<typeof setTimeout>>;
 	moduleFormatCache: Map<string, "esm" | "cjs" | "json">;
 	packageTypeCache: Map<string, "module" | "commonjs" | null>;
 	resolutionCache: ResolutionCache;
 	onPtySetRawMode?: (mode: boolean) => void;
+	liveStdinSource?: NodeExecutionDriverOptions["liveStdinSource"];
 }
 
 // Shared V8 runtime process — one per Node.js process, lazy-initialized
@@ -160,7 +164,63 @@ async function getSharedV8Runtime(): Promise<V8Runtime> {
 }
 
 // Minimal polyfills for APIs the bridge IIFE expects but the Rust V8 runtime doesn't provide.
+const REGEXP_COMPAT_POLYFILL = String.raw`
+if (typeof globalThis.RegExp === 'function' && !globalThis.RegExp.__secureExecRgiEmojiCompat) {
+  const NativeRegExp = globalThis.RegExp;
+  const RGI_EMOJI_PATTERN = '^\\p{RGI_Emoji}$';
+  const RGI_EMOJI_BASE_CLASS = '[\\u{00A9}\\u{00AE}\\u{203C}\\u{2049}\\u{2122}\\u{2139}\\u{2194}-\\u{21AA}\\u{231A}-\\u{23FF}\\u{24C2}\\u{25AA}-\\u{27BF}\\u{2934}-\\u{2935}\\u{2B05}-\\u{2B55}\\u{3030}\\u{303D}\\u{3297}\\u{3299}\\u{1F000}-\\u{1FAFF}]';
+  const RGI_EMOJI_KEYCAP = '[#*0-9]\\uFE0F?\\u20E3';
+  const RGI_EMOJI_FALLBACK_SOURCE =
+    '^(?:' +
+    RGI_EMOJI_KEYCAP +
+    '|\\p{Regional_Indicator}{2}|' +
+    RGI_EMOJI_BASE_CLASS +
+    '(?:\\uFE0F|\\u200D(?:' +
+    RGI_EMOJI_KEYCAP +
+    '|' +
+    RGI_EMOJI_BASE_CLASS +
+    ')|[\\u{1F3FB}-\\u{1F3FF}])*)$';
+  try {
+    new NativeRegExp(RGI_EMOJI_PATTERN, 'v');
+  } catch (error) {
+    if (String(error && error.message || error).includes('RGI_Emoji')) {
+      function CompatRegExp(pattern, flags) {
+        const normalizedPattern =
+          pattern instanceof NativeRegExp && flags === undefined
+            ? pattern.source
+            : String(pattern);
+        const normalizedFlags =
+          flags === undefined
+            ? (pattern instanceof NativeRegExp ? pattern.flags : '')
+            : String(flags);
+        try {
+          return new NativeRegExp(pattern, flags);
+        } catch (innerError) {
+          if (normalizedPattern === RGI_EMOJI_PATTERN && normalizedFlags === 'v') {
+            return new NativeRegExp(RGI_EMOJI_FALLBACK_SOURCE, 'u');
+          }
+          throw innerError;
+        }
+      }
+      Object.setPrototypeOf(CompatRegExp, NativeRegExp);
+      CompatRegExp.prototype = NativeRegExp.prototype;
+      Object.defineProperty(CompatRegExp.prototype, 'constructor', {
+        value: CompatRegExp,
+        writable: true,
+        configurable: true,
+      });
+      CompatRegExp.__secureExecRgiEmojiCompat = true;
+      globalThis.RegExp = CompatRegExp;
+    }
+  }
+}
+`;
+
 const V8_POLYFILLS = `
+if (typeof global === 'undefined') {
+  globalThis.global = globalThis;
+}
+${REGEXP_COMPAT_POLYFILL}
 if (typeof SharedArrayBuffer === 'undefined') {
   globalThis.SharedArrayBuffer = class SharedArrayBuffer extends ArrayBuffer {};
   var _abBL = Object.getOwnPropertyDescriptor(ArrayBuffer.prototype, 'byteLength');
@@ -335,8 +395,265 @@ if (
     return controller.signal;
   };
 }
+if (
+  typeof globalThis.AbortSignal === 'function' &&
+  typeof globalThis.AbortController === 'function' &&
+  typeof globalThis.AbortSignal.timeout !== 'function'
+) {
+  globalThis.AbortSignal.timeout = function timeout(milliseconds) {
+    const delay = Number(milliseconds);
+    if (!Number.isFinite(delay) || delay < 0) {
+      throw new RangeError('The value of "milliseconds" is out of range. It must be a finite, non-negative number.');
+    }
+    const controller = new globalThis.AbortController();
+    const timer = setTimeout(() => {
+      controller.abort(
+        new globalThis.DOMException(
+          'The operation was aborted due to timeout',
+          'TimeoutError',
+        ),
+      );
+    }, delay);
+    if (typeof timer?.unref === 'function') {
+      timer.unref();
+    }
+    return controller.signal;
+  };
+}
+if (
+  typeof globalThis.AbortSignal === 'function' &&
+  typeof globalThis.AbortController === 'function' &&
+  typeof globalThis.AbortSignal.any !== 'function'
+) {
+  globalThis.AbortSignal.any = function any(signals) {
+    if (
+      signals === null ||
+      signals === undefined ||
+      typeof signals[Symbol.iterator] !== 'function'
+    ) {
+      throw new TypeError('The "signals" argument must be an iterable.');
+    }
+
+    const controller = new globalThis.AbortController();
+    const cleanup = [];
+    const abortFromSignal = (signal) => {
+      for (const dispose of cleanup) {
+        dispose();
+      }
+      cleanup.length = 0;
+      controller.abort(signal.reason);
+    };
+
+    for (const signal of signals) {
+      if (
+        !signal ||
+        typeof signal.aborted !== 'boolean' ||
+        typeof signal.addEventListener !== 'function' ||
+        typeof signal.removeEventListener !== 'function'
+      ) {
+        throw new TypeError('The "signals" argument must contain only AbortSignal instances.');
+      }
+      if (signal.aborted) {
+        abortFromSignal(signal);
+        break;
+      }
+      const listener = () => {
+        abortFromSignal(signal);
+      };
+      signal.addEventListener('abort', listener, { once: true });
+      cleanup.push(() => {
+        signal.removeEventListener('abort', listener);
+      });
+    }
+
+    return controller.signal;
+  };
+}
 if (typeof navigator === 'undefined') {
   globalThis.navigator = { userAgent: 'secure-exec-v8' };
+}
+if (typeof DOMException === 'undefined') {
+  const DOM_EXCEPTION_LEGACY_CODES = {
+    IndexSizeError: 1,
+    DOMStringSizeError: 2,
+    HierarchyRequestError: 3,
+    WrongDocumentError: 4,
+    InvalidCharacterError: 5,
+    NoDataAllowedError: 6,
+    NoModificationAllowedError: 7,
+    NotFoundError: 8,
+    NotSupportedError: 9,
+    InUseAttributeError: 10,
+    InvalidStateError: 11,
+    SyntaxError: 12,
+    InvalidModificationError: 13,
+    NamespaceError: 14,
+    InvalidAccessError: 15,
+    ValidationError: 16,
+    TypeMismatchError: 17,
+    SecurityError: 18,
+    NetworkError: 19,
+    AbortError: 20,
+    URLMismatchError: 21,
+    QuotaExceededError: 22,
+    TimeoutError: 23,
+    InvalidNodeTypeError: 24,
+    DataCloneError: 25,
+  };
+  class DOMException extends Error {
+    constructor(message = '', name = 'Error') {
+      super(String(message));
+      this.name = String(name);
+      this.code = DOM_EXCEPTION_LEGACY_CODES[this.name] ?? 0;
+    }
+    get [Symbol.toStringTag]() { return 'DOMException'; }
+  }
+  for (const [name, code] of Object.entries(DOM_EXCEPTION_LEGACY_CODES)) {
+    const constantName = name.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toUpperCase();
+    Object.defineProperty(DOMException, constantName, {
+      value: code,
+      writable: false,
+      configurable: false,
+      enumerable: true,
+    });
+    Object.defineProperty(DOMException.prototype, constantName, {
+      value: code,
+      writable: false,
+      configurable: false,
+      enumerable: true,
+    });
+  }
+  Object.defineProperty(globalThis, 'DOMException', {
+    value: DOMException,
+    writable: false,
+    configurable: false,
+    enumerable: true,
+  });
+}
+if (typeof Blob === 'undefined') {
+  globalThis.Blob = class Blob {
+    constructor(parts = [], options = {}) {
+      this._parts = Array.isArray(parts) ? parts.slice() : [];
+      this.type = options && options.type ? String(options.type).toLowerCase() : '';
+      this.size = this._parts.reduce((total, part) => {
+        if (typeof part === 'string') return total + part.length;
+        if (part && typeof part.byteLength === 'number') return total + part.byteLength;
+        return total;
+      }, 0);
+    }
+    arrayBuffer() { return Promise.resolve(new ArrayBuffer(0)); }
+    text() { return Promise.resolve(''); }
+    slice() { return new globalThis.Blob(); }
+    stream() { throw new Error('Blob.stream is not supported in sandbox'); }
+    get [Symbol.toStringTag]() { return 'Blob'; }
+  };
+  Object.defineProperty(globalThis, 'Blob', {
+    value: globalThis.Blob,
+    writable: false,
+    configurable: false,
+    enumerable: true,
+  });
+}
+if (typeof File === 'undefined') {
+  globalThis.File = class File extends globalThis.Blob {
+    constructor(parts = [], name = '', options = {}) {
+      super(parts, options);
+      this.name = String(name);
+      this.lastModified =
+        options && typeof options.lastModified === 'number'
+          ? options.lastModified
+          : Date.now();
+      this.webkitRelativePath = '';
+    }
+    get [Symbol.toStringTag]() { return 'File'; }
+  };
+  Object.defineProperty(globalThis, 'File', {
+    value: globalThis.File,
+    writable: false,
+    configurable: false,
+    enumerable: true,
+  });
+}
+if (typeof FormData === 'undefined') {
+  class FormData {
+    constructor() {
+      this._entries = [];
+    }
+    append(name, value) {
+      this._entries.push([String(name), value]);
+    }
+    get(name) {
+      const key = String(name);
+      for (const entry of this._entries) {
+        if (entry[0] === key) return entry[1];
+      }
+      return null;
+    }
+    getAll(name) {
+      const key = String(name);
+      return this._entries.filter((entry) => entry[0] === key).map((entry) => entry[1]);
+    }
+    has(name) {
+      return this.get(name) !== null;
+    }
+    delete(name) {
+      const key = String(name);
+      this._entries = this._entries.filter((entry) => entry[0] !== key);
+    }
+    entries() {
+      return this._entries[Symbol.iterator]();
+    }
+    [Symbol.iterator]() {
+      return this.entries();
+    }
+    get [Symbol.toStringTag]() { return 'FormData'; }
+  }
+  Object.defineProperty(globalThis, 'FormData', {
+    value: FormData,
+    writable: false,
+    configurable: false,
+    enumerable: true,
+  });
+}
+if (typeof MessageEvent === 'undefined') {
+  globalThis.MessageEvent = class MessageEvent {
+    constructor(type, options = {}) {
+      this.type = String(type);
+      this.data = Object.prototype.hasOwnProperty.call(options, 'data')
+        ? options.data
+        : undefined;
+    }
+  };
+}
+if (typeof MessagePort === 'undefined') {
+  globalThis.MessagePort = class MessagePort {
+    constructor() {
+      this.onmessage = null;
+      this._pairedPort = null;
+    }
+    postMessage(data) {
+      const target = this._pairedPort;
+      if (!target) return;
+      const event = new globalThis.MessageEvent('message', { data });
+      if (typeof target.onmessage === 'function') {
+        target.onmessage.call(target, event);
+      }
+    }
+    start() {}
+    close() {
+      this._pairedPort = null;
+    }
+  };
+}
+if (typeof MessageChannel === 'undefined') {
+  globalThis.MessageChannel = class MessageChannel {
+    constructor() {
+      this.port1 = new globalThis.MessagePort();
+      this.port2 = new globalThis.MessagePort();
+      this.port1._pairedPort = this.port2;
+      this.port2._pairedPort = this.port1;
+    }
+  };
 }
 `;
 
@@ -471,7 +788,7 @@ export class NodeExecutionDriver implements RuntimeDriver {
 		const permissions = system.permissions;
 		if (!this.socketTable) {
 			this.socketTable = new SocketTable({
-				hostAdapter: createNodeHostNetworkAdapter(),
+				hostAdapter: system.network ? createNodeHostNetworkAdapter() : undefined,
 				networkCheck: permissions?.network,
 			});
 		}
@@ -534,12 +851,14 @@ export class NodeExecutionDriver implements RuntimeDriver {
 			activeHttpServerIds: new Set(),
 			activeHttpServerClosers: new Map(),
 			pendingHttpServerStarts: { count: 0 },
+			activeHttpClientRequests: { count: 0 },
 			activeChildProcesses: new Map(),
 			activeHostTimers: new Set(),
 			moduleFormatCache: new Map(),
 			packageTypeCache: new Map(),
 			resolutionCache: createResolutionCache(),
 			onPtySetRawMode: options.onPtySetRawMode,
+			liveStdinSource: options.liveStdinSource,
 		};
 
 		// Validate and flatten bindings once at construction time
@@ -560,8 +879,20 @@ export class NodeExecutionDriver implements RuntimeDriver {
 	get unsafeIsolate(): unknown { return null; }
 
 	private hasManagedResources(): boolean {
+		const hasBridgeHandles =
+			this.pid !== undefined &&
+			this.processTable !== undefined &&
+			(() => {
+				try {
+					return this.processTable.getHandles(this.pid!).size > 0;
+				} catch {
+					return false;
+				}
+			})();
 		return (
+			hasBridgeHandles ||
 			this.state.pendingHttpServerStarts.count > 0 ||
+			this.state.activeHttpClientRequests.count > 0 ||
 			this.state.activeHttpServerIds.size > 0 ||
 			this.state.activeChildProcesses.size > 0 ||
 			(!this.ownsProcessTable && this.state.activeHostTimers.size > 0)
@@ -705,7 +1036,16 @@ export class NodeExecutionDriver implements RuntimeDriver {
 		const sessionMode = options.mode === "run" || entryIsEsm ? "run" : "exec";
 		const userCode = entryIsEsm
 			? options.code
-			: transformDynamicImport(options.code);
+			: (() => {
+					const transformed = transformSourceForRequireSync(
+						options.code,
+						options.filePath ?? "/entry.js",
+					);
+					if (options.mode !== "exec") {
+						return transformed;
+					}
+					return `${transformed}\n;typeof _waitForActiveHandles === "function" ? _waitForActiveHandles() : undefined;`;
+				})();
 
 		// Get or create V8 runtime
 		const v8Runtime = await getSharedV8Runtime();
@@ -759,6 +1099,7 @@ export class NodeExecutionDriver implements RuntimeDriver {
 				activeHttpServerIds: s.activeHttpServerIds,
 				activeHttpServerClosers: s.activeHttpServerClosers,
 				pendingHttpServerStarts: s.pendingHttpServerStarts,
+				activeHttpClientRequests: s.activeHttpClientRequests,
 				sendStreamEvent,
 				socketTable: this.socketTable,
 				pid: this.pid,
@@ -783,6 +1124,11 @@ export class NodeExecutionDriver implements RuntimeDriver {
 				budgetState: s.budgetState,
 				maxBridgeCalls: s.maxBridgeCalls,
 			});
+			const kernelStdinDispatchHandlers = buildKernelStdinDispatchHandlers({
+				liveStdinSource: s.liveStdinSource,
+				budgetState: s.budgetState,
+				maxBridgeCalls: s.maxBridgeCalls,
+			});
 
 			const bridgeHandlers: BridgeHandlers = {
 				...cryptoResult.handlers,
@@ -791,6 +1137,7 @@ export class NodeExecutionDriver implements RuntimeDriver {
 					budgetState: s.budgetState,
 					maxOutputBytes: s.maxOutputBytes,
 				}),
+				...kernelStdinDispatchHandlers,
 				...buildModuleLoadingBridgeHandlers({
 					filesystem: s.filesystem,
 					resolutionCache: s.resolutionCache,
@@ -818,6 +1165,7 @@ export class NodeExecutionDriver implements RuntimeDriver {
 						onPtySetRawMode: s.onPtySetRawMode,
 						stdinIsTTY: s.processConfig.stdinIsTTY,
 					}),
+					...buildMimeBridgeHandlers(),
 					// Kernel FD table handlers
 					...kernelFdResult.handlers,
 					...kernelTimerDispatchHandlers,
@@ -1136,6 +1484,21 @@ function buildPostRestoreScript(
 
 	// Apply execution overrides (env, cwd, stdin) for exec mode
 	if (mode === "exec") {
+		const commonJsFileConfig = (() => {
+			if (filePath) {
+				const dirname = filePath.includes("/")
+					? filePath.substring(0, filePath.lastIndexOf("/")) || "/"
+					: "/";
+				return { filePath, dirname };
+			}
+			if (processConfig.cwd) {
+				return {
+					filePath: `${processConfig.cwd.replace(/\/$/, "") || "/"}/[eval].js`,
+					dirname: processConfig.cwd,
+				};
+			}
+			return null;
+		})();
 		if (processConfig.env) {
 			parts.push(`globalThis.__runtimeProcessEnvOverride = ${JSON.stringify(processConfig.env)};`);
 			parts.push(getIsolateRuntimeSource("overrideProcessEnv"));
@@ -1150,11 +1513,8 @@ function buildPostRestoreScript(
 		}
 		// Set CommonJS globals
 		parts.push(getIsolateRuntimeSource("initCommonjsModuleGlobals"));
-		if (filePath) {
-			const dirname = filePath.includes("/")
-				? filePath.substring(0, filePath.lastIndexOf("/")) || "/"
-				: "/";
-			parts.push(`globalThis.__runtimeCommonJsFileConfig = ${JSON.stringify({ filePath, dirname })};`);
+		if (commonJsFileConfig) {
+			parts.push(`globalThis.__runtimeCommonJsFileConfig = ${JSON.stringify(commonJsFileConfig)};`);
 			parts.push(getIsolateRuntimeSource("setCommonjsFileGlobals"));
 		}
 	} else {

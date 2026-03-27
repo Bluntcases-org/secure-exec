@@ -53,11 +53,11 @@ const childProcessInstances = new Map<number, ChildProcess>();
  * Routes stdout/stderr chunks and exit codes to the corresponding ChildProcess
  * instance by session ID, and unregisters the active handle on exit.
  */
-const childProcessDispatch = (
+function routeChildProcessEvent(
   sessionId: number,
   type: "stdout" | "stderr" | "exit",
-  data: Uint8Array | number
-): void => {
+  data: Uint8Array | number,
+): void {
   const child = childProcessInstances.get(sessionId);
   if (!child) return;
 
@@ -81,6 +81,81 @@ const childProcessDispatch = (
     if (typeof _unregisterHandle === "function") {
       _unregisterHandle(`child:${sessionId}`);
     }
+  }
+}
+
+const childProcessDispatch = (
+  eventTypeOrSessionId: string | number,
+  payloadOrType: unknown,
+  data?: Uint8Array | number
+): void => {
+  if (typeof eventTypeOrSessionId === "number") {
+    routeChildProcessEvent(
+      eventTypeOrSessionId,
+      payloadOrType as "stdout" | "stderr" | "exit",
+      data as Uint8Array | number,
+    );
+    return;
+  }
+
+  const payload = (() => {
+    if (payloadOrType && typeof payloadOrType === "object") {
+      return payloadOrType as {
+        sessionId?: unknown;
+        dataBase64?: unknown;
+        data?: unknown;
+        code?: unknown;
+      };
+    }
+    if (typeof payloadOrType === "string") {
+      try {
+        return JSON.parse(payloadOrType) as {
+          sessionId?: unknown;
+          dataBase64?: unknown;
+          data?: unknown;
+          code?: unknown;
+        };
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  })();
+  const sessionId = typeof payload?.sessionId === "number"
+    ? payload.sessionId
+    : Number(payload?.sessionId);
+  if (!Number.isFinite(sessionId)) {
+    return;
+  }
+
+  if (eventTypeOrSessionId === "child_stdout" || eventTypeOrSessionId === "child_stderr") {
+    const encoded =
+      typeof payload?.dataBase64 === "string"
+        ? payload.dataBase64
+        : typeof payload?.data === "string"
+          ? payload.data
+          : "";
+    const bytes =
+      typeof Buffer !== "undefined"
+        ? Buffer.from(encoded, "base64")
+        : new Uint8Array(
+            atob(encoded)
+              .split("")
+              .map((char) => char.charCodeAt(0)),
+          );
+    routeChildProcessEvent(
+      sessionId,
+      eventTypeOrSessionId === "child_stdout" ? "stdout" : "stderr",
+      bytes,
+    );
+    return;
+  }
+
+  if (eventTypeOrSessionId === "child_exit") {
+    const code = typeof payload?.code === "number"
+      ? payload.code
+      : Number(payload?.code ?? 1);
+    routeChildProcessEvent(sessionId, "exit", code);
   }
 };
 exposeCustomGlobal("_childProcessDispatch", childProcessDispatch);

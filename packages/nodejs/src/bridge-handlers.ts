@@ -5,8 +5,11 @@
 
 import * as net from "node:net";
 import * as http from "node:http";
+import * as https from "node:https";
 import * as http2 from "node:http2";
 import * as tls from "node:tls";
+import * as hostUtil from "node:util";
+import * as zlib from "node:zlib";
 import { Duplex, PassThrough } from "node:stream";
 import { readFileSync, realpathSync, existsSync } from "node:fs";
 import { dirname as pathDirname, join as pathJoin, resolve as pathResolve } from "node:path";
@@ -65,13 +68,19 @@ import {
 } from "@secure-exec/core";
 import { normalizeBuiltinSpecifier } from "./builtin-modules.js";
 import { resolveModule, loadFile } from "./package-bundler.js";
-import { transformDynamicImport, isESM } from "@secure-exec/core/internal/shared/esm-utils";
 import { bundlePolyfill, hasPolyfill } from "./polyfills.js";
 import {
 	createBuiltinESMWrapper,
+	getBuiltinBindingExpression,
 	getStaticBuiltinWrapperSource,
 	getEmptyBuiltinESMWrapper,
 } from "./esm-compiler.js";
+import {
+	transformSourceForImport,
+	transformSourceForImportSync,
+	transformSourceForRequire,
+	transformSourceForRequireSync,
+} from "./module-source.js";
 import {
 	checkBridgeBudget,
 	assertPayloadByteLength,
@@ -2848,136 +2857,56 @@ export interface ModuleResolutionBridgeDeps {
 	hostToSandboxPath: (hostPath: string) => string;
 }
 
-/**
- * Convert ESM source to CJS-compatible code for require() loading.
- * Handles import declarations, export declarations, and re-exports.
- */
-/** Strip // and /* comments from an export/import list string. */
-function stripComments(s: string): string {
-	return s.replace(/\/\/[^\n]*/g, "").replace(/\/\*[\s\S]*?\*\//g, "");
+function normalizeModuleResolveContext(referrer: string): string {
+	if (!referrer || referrer.endsWith("/")) {
+		return referrer || "/";
+	}
+
+	return pathDirname(referrer) !== referrer && /\.[^/]+$/.test(referrer)
+		? pathDirname(referrer)
+		: referrer;
 }
 
-function convertEsmToCjs(source: string, filePath: string): string {
-	if (!isESM(source, filePath)) return source;
-
-	let code = source;
-
-	// Remove const __filename/dirname declarations (already provided by CJS wrapper)
-	code = code.replace(/^\s*(?:const|let|var)\s+__filename\s*=\s*[^;]+;?\s*$/gm, "// __filename provided by CJS wrapper");
-	code = code.replace(/^\s*(?:const|let|var)\s+__dirname\s*=\s*[^;]+;?\s*$/gm, "// __dirname provided by CJS wrapper");
-
-	// import X from 'Y' → const X = require('Y')
-	code = code.replace(
-		/^\s*import\s+(\w+)\s+from\s+['"]([^'"]+)['"]\s*;?/gm,
-		"const $1 = (function(m) { return m && m.__esModule ? m.default : m; })(require('$2'));",
-	);
-
-	// import { a, b as c } from 'Y' → const { a, b: c } = require('Y')
-	code = code.replace(
-		/^\s*import\s+\{([^}]+)\}\s+from\s+['"]([^'"]+)['"]\s*;?/gm,
-		(_match, imports: string, mod: string) => {
-			const mapped = stripComments(imports).split(",").map((s: string) => {
-				const t = s.trim();
-				if (!t) return null;
-				const parts = t.split(/\s+as\s+/);
-				return parts.length === 2 ? `${parts[0].trim()}: ${parts[1].trim()}` : t;
-			}).filter(Boolean).join(", ");
-			return `const { ${mapped} } = require('${mod}');`;
-		},
-	);
-
-	// import * as X from 'Y' → const X = require('Y')
-	code = code.replace(
-		/^\s*import\s+\*\s+as\s+(\w+)\s+from\s+['"]([^'"]+)['"]\s*;?/gm,
-		"const $1 = require('$2');",
-	);
-
-	// Side-effect imports: import 'Y' → require('Y')
-	code = code.replace(
-		/^\s*import\s+['"]([^'"]+)['"]\s*;?/gm,
-		"require('$1');",
-	);
-
-	// export { a, b } from 'Y' → re-export
-	code = code.replace(
-		/^\s*export\s+\{([^}]+)\}\s+from\s+['"]([^'"]+)['"]\s*;?/gm,
-		(_match, exports: string, mod: string) => {
-			return stripComments(exports).split(",").map((s: string) => {
-				const t = s.trim();
-				if (!t) return "";
-				const parts = t.split(/\s+as\s+/);
-				const local = parts[0].trim();
-				const exported = parts.length === 2 ? parts[1].trim() : local;
-				return `Object.defineProperty(exports, '${exported}', { get: () => require('${mod}').${local}, enumerable: true });`;
-			}).filter(Boolean).join("\n");
-		},
-	);
-
-	// export * from 'Y'
-	code = code.replace(
-		/^\s*export\s+\*\s+from\s+['"]([^'"]+)['"]\s*;?/gm,
-		"Object.assign(exports, require('$1'));",
-	);
-
-	// export default X → module.exports.default = X
-	code = code.replace(
-		/^\s*export\s+default\s+/gm,
-		"module.exports.default = ",
-	);
-
-	// export const/let/var X = ... → const/let/var X = ...; exports.X = X;
-	code = code.replace(
-		/^\s*export\s+(const|let|var)\s+(\w+)\s*=/gm,
-		"$1 $2 =",
-	);
-	// Capture the names separately to add exports at the end
-	const exportedVars: string[] = [];
-	for (const m of source.matchAll(/^\s*export\s+(?:const|let|var)\s+(\w+)\s*=/gm)) {
-		exportedVars.push(m[1]);
+function selectPackageExportTarget(
+	entry: unknown,
+	mode: "require" | "import",
+): string | null {
+	if (typeof entry === "string") {
+		return entry;
 	}
 
-	// export function X(...) → function X(...); exports.X = X;
-	code = code.replace(
-		/^\s*export\s+function\s+(\w+)/gm,
-		"function $1",
-	);
-	for (const m of source.matchAll(/^\s*export\s+function\s+(\w+)/gm)) {
-		exportedVars.push(m[1]);
+	if (Array.isArray(entry)) {
+		for (const candidate of entry) {
+			const resolved = selectPackageExportTarget(candidate, mode);
+			if (resolved) {
+				return resolved;
+			}
+		}
+		return null;
 	}
 
-	// export class X → class X; exports.X = X;
-	code = code.replace(
-		/^\s*export\s+class\s+(\w+)/gm,
-		"class $1",
-	);
-	for (const m of source.matchAll(/^\s*export\s+class\s+(\w+)/gm)) {
-		exportedVars.push(m[1]);
+	if (!entry || typeof entry !== "object") {
+		return null;
 	}
 
-	// export { a, b } (local re-export without from)
-	code = code.replace(
-		/^\s*export\s+\{([^}]+)\}\s*;?/gm,
-		(_match, exports: string) => {
-			return stripComments(exports).split(",").map((s: string) => {
-				const t = s.trim();
-				if (!t) return "";
-				const parts = t.split(/\s+as\s+/);
-				const local = parts[0].trim();
-				const exported = parts.length === 2 ? parts[1].trim() : local;
-				return `Object.defineProperty(exports, '${exported}', { get: () => ${local}, enumerable: true });`;
-			}).filter(Boolean).join("\n");
-		},
-	);
+	const conditionalEntry = entry as {
+		default?: unknown;
+		import?: unknown;
+		require?: unknown;
+	};
+	const candidates =
+		mode === "import"
+			? [conditionalEntry.import, conditionalEntry.default, conditionalEntry.require]
+			: [conditionalEntry.require, conditionalEntry.default, conditionalEntry.import];
 
-	// Append named exports for exported vars/functions/classes
-	if (exportedVars.length > 0) {
-		const lines = exportedVars.map(
-			(name) => `Object.defineProperty(exports, '${name}', { get: () => ${name}, enumerable: true });`,
-		);
-		code += "\n" + lines.join("\n");
+	for (const candidate of candidates) {
+		const resolved = selectPackageExportTarget(candidate, mode);
+		if (resolved) {
+			return resolved;
+		}
 	}
 
-	return code;
+	return null;
 }
 
 /**
@@ -3003,19 +2932,16 @@ function resolvePackageExport(
 			const pkg = JSON.parse(readFileSync(pkgJsonPath, "utf-8"));
 			let entry: string | undefined;
 			if (pkg.exports) {
-				const exportEntry = pkg.exports[subpath];
-				if (typeof exportEntry === "string") entry = exportEntry;
-				else if (exportEntry) {
-					const conditionalEntry = exportEntry as {
-						import?: string;
-						require?: string;
-						default?: string;
-					};
-					entry =
-						mode === "import"
-							? conditionalEntry.import ?? conditionalEntry.default ?? conditionalEntry.require
-							: conditionalEntry.require ?? conditionalEntry.default ?? conditionalEntry.import;
-				}
+				const exportEntry =
+					subpath === "." &&
+					typeof pkg.exports === "object" &&
+					pkg.exports !== null &&
+					!Array.isArray(pkg.exports) &&
+					!("." in (pkg.exports as Record<string, unknown>))
+						? pkg.exports
+						: (pkg.exports as Record<string, unknown>)[subpath];
+				const resolvedEntry = selectPackageExportTarget(exportEntry, mode);
+				if (resolvedEntry) entry = resolvedEntry;
 			}
 			if (!entry && subpath === ".") entry = pkg.main;
 			if (entry) return pathResolve(pathDirname(pkgJsonPath), entry);
@@ -3059,8 +2985,13 @@ export function buildModuleResolutionBridgeHandlers(
 		if (builtin) return builtin;
 
 		// Translate sandbox fromDir to host path for resolution context
-		const sandboxDir = String(fromDir);
-		const hostDir = deps.sandboxToHostPath(sandboxDir) ?? sandboxDir;
+		const referrer = String(fromDir);
+		const sandboxDir = normalizeModuleResolveContext(referrer);
+		const hostDir = normalizeModuleResolveContext(
+			deps.sandboxToHostPath(referrer) ??
+				deps.sandboxToHostPath(sandboxDir) ??
+				sandboxDir,
+		);
 		const resolveFromExports = (dir: string) => {
 			const resolved = resolvePackageExport(req, dir, resolveMode);
 			return resolved ? deps.hostToSandboxPath(resolved) : null;
@@ -3097,20 +3028,12 @@ export function buildModuleResolutionBridgeHandlers(
 		return null;
 	};
 
-	// Sync file read — translates sandbox path and reads via readFileSync.
-	// Transforms dynamic import() to __dynamicImport() and converts ESM to CJS
-	// for npm packages so require() can load ESM-only dependencies.
+	// Sync file read — translates sandbox path and applies parser-backed
+	// CJS transforms when require() needs ESM or import() support.
 	handlers[K.loadFileSync] = (filePath: unknown) => {
 		const sandboxPath = String(filePath);
 		const hostPath = deps.sandboxToHostPath(sandboxPath) ?? sandboxPath;
-
-		try {
-			let source = readFileSync(hostPath, "utf-8");
-			source = convertEsmToCjs(source, hostPath);
-			return transformDynamicImport(source);
-		} catch {
-			return null;
-		}
+		return loadHostModuleSourceSync(hostPath, sandboxPath, "require");
 	};
 
 	return handlers;
@@ -3192,6 +3115,60 @@ export interface ModuleLoadingBridgeDeps {
 	resolveMode?: "require" | "import";
 	/** Convert sandbox path to host path for pnpm/symlink resolution fallback. */
 	sandboxToHostPath?: (sandboxPath: string) => string | null;
+}
+
+function getStaticBuiltinRequireSource(moduleName: string): string | null {
+	switch (moduleName) {
+		case "fs":
+			return "module.exports = globalThis.bridge?.fs || globalThis.bridge?.default || {};";
+		case "fs/promises":
+			return "module.exports = (globalThis.bridge?.fs || globalThis.bridge?.default || {}).promises || {};";
+		case "module":
+			return `module.exports = ${
+				"globalThis.bridge?.module || {" +
+				"createRequire: globalThis._createRequire || function(f) {" +
+				"const dir = f.replace(/\\\\[^\\\\]*$/, '') || '/';" +
+				"return function(m) { return globalThis._requireFrom(m, dir); };" +
+				"}," +
+				"Module: { builtinModules: [] }," +
+				"isBuiltin: () => false," +
+				"builtinModules: []" +
+				"}"
+			};`;
+		case "os":
+			return "module.exports = globalThis._osModule || {};";
+		case "http":
+			return "module.exports = globalThis._httpModule || globalThis.bridge?.network?.http || {};";
+		case "https":
+			return "module.exports = globalThis._httpsModule || globalThis.bridge?.network?.https || {};";
+		case "http2":
+			return "module.exports = globalThis._http2Module || {};";
+		case "dns":
+			return "module.exports = globalThis._dnsModule || globalThis.bridge?.network?.dns || {};";
+		case "child_process":
+			return "module.exports = globalThis._childProcessModule || globalThis.bridge?.childProcess || {};";
+		case "process":
+			return "module.exports = globalThis.process || {};";
+		case "v8":
+			return "module.exports = globalThis._moduleCache?.v8 || {};";
+		default:
+			return null;
+	}
+}
+
+function loadHostModuleSourceSync(
+	readPath: string,
+	logicalPath: string,
+	loadMode: "require" | "import",
+): string | null {
+	try {
+		const source = readFileSync(readPath, "utf-8");
+		return loadMode === "require"
+			? transformSourceForRequireSync(source, logicalPath)
+			: transformSourceForImportSync(source, logicalPath, readPath);
+	} catch {
+		return null;
+	}
 }
 
 /** Build module loading bridge handlers (loadPolyfill, resolveModule, loadFile). */
@@ -3295,13 +3272,13 @@ export function buildModuleLoadingBridgeHandlers(
 	// this handler covers the __dynamicImport() path used in exec mode.
 	handlers[K.dynamicImport] = async (): Promise<null> => null;
 
-	// Async file read + dynamic import transform.
+	// Async file read for CommonJS and ESM loader paths.
 	// Also serves ESM wrappers for built-in modules (fs, path, etc.) when
 	// used from V8's ES module system which calls _loadFile after _resolveModule.
-	handlers[K.loadFile] = async (
+	handlers[K.loadFile] = (
 		path: unknown,
 		requestedMode?: unknown,
-	): Promise<string | null> => {
+	): string | null | Promise<string | null> => {
 		const p = String(path);
 		const loadMode =
 			requestedMode === "require" || requestedMode === "import"
@@ -3309,6 +3286,17 @@ export function buildModuleLoadingBridgeHandlers(
 				: (deps.resolveMode ?? "require");
 		// Built-in module ESM wrappers (V8 module system resolves 'fs' then loads it)
 		const bare = p.replace(/^node:/, "");
+		if (loadMode === "require") {
+			const builtinRequireSource = getStaticBuiltinRequireSource(bare);
+			if (builtinRequireSource) return builtinRequireSource;
+		}
+		const builtinBindingExpression = getBuiltinBindingExpression(bare);
+		if (builtinBindingExpression) {
+			return createBuiltinESMWrapper(
+				builtinBindingExpression,
+				getHostBuiltinNamedExports(bare),
+			);
+		}
 		const builtin = getStaticBuiltinWrapperSource(bare);
 		if (builtin) return builtin;
 		// Polyfill-backed builtins (crypto, zlib, etc.)
@@ -3318,13 +3306,22 @@ export function buildModuleLoadingBridgeHandlers(
 				getHostBuiltinNamedExports(bare),
 			);
 		}
-		// Regular files load differently for CommonJS require() vs V8's ESM loader.
-		let source = await loadFile(p, deps.filesystem);
-		if (source === null) return null;
-		if (loadMode === "require") {
-			source = convertEsmToCjs(source, p);
+
+		const hostPath = deps.sandboxToHostPath?.(p) ?? p;
+		const syncSource = loadHostModuleSourceSync(hostPath, p, loadMode);
+		if (syncSource !== null) {
+			return syncSource;
 		}
-		return transformDynamicImport(source);
+
+		// Regular files load differently for CommonJS require() vs V8's ESM loader.
+		return (async () => {
+			const source = await loadFile(p, deps.filesystem);
+			if (source === null) return null;
+			if (loadMode === "require") {
+				return transformSourceForRequire(source, p);
+			}
+			return transformSourceForImport(source, p);
+		})();
 	};
 
 	return handlers;
@@ -3354,6 +3351,42 @@ export function buildTimerBridgeHandlers(deps: TimerBridgeDeps): BridgeHandlers 
 	};
 
 	return handlers;
+}
+
+function serializeMimeTypeState(value: InstanceType<typeof hostUtil.MIMEType>) {
+	return {
+		value: String(value),
+		essence: value.essence,
+		type: value.type,
+		subtype: value.subtype,
+		params: Array.from(value.params.entries()),
+	};
+}
+
+export function buildMimeBridgeHandlers(): BridgeHandlers {
+	return {
+		mimeBridge: (operation: unknown, input: unknown, ...args: unknown[]) => {
+			const mime = new hostUtil.MIMEType(String(input));
+			switch (String(operation)) {
+				case "parse":
+					return serializeMimeTypeState(mime);
+				case "setType":
+					mime.type = String(args[0]);
+					return serializeMimeTypeState(mime);
+				case "setSubtype":
+					mime.subtype = String(args[0]);
+					return serializeMimeTypeState(mime);
+				case "setParam":
+					mime.params.set(String(args[0]), String(args[1]));
+					return serializeMimeTypeState(mime);
+				case "deleteParam":
+					mime.params.delete(String(args[0]));
+					return serializeMimeTypeState(mime);
+				default:
+					throw new Error(`Unsupported MIME bridge operation: ${String(operation)}`);
+			}
+		},
+	};
 }
 
 export interface KernelTimerDispatchDeps {
@@ -3434,6 +3467,36 @@ export function buildKernelTimerDispatchHandlers(
 		}
 		deps.timerTable.clearTimer(timer.id, deps.pid);
 	};
+
+	return handlers;
+}
+
+export interface KernelStdinDispatchDeps {
+	liveStdinSource?: import("./isolate-bootstrap.js").LiveStdinSource;
+	budgetState: BudgetState;
+	maxBridgeCalls?: number;
+}
+
+export function buildKernelStdinDispatchHandlers(
+	deps: KernelStdinDispatchDeps,
+): BridgeHandlers {
+	const handlers: BridgeHandlers = {};
+	const K = HOST_BRIDGE_GLOBAL_KEYS;
+
+	handlers[K.kernelStdinRead] = async () => {
+			checkBridgeBudget(deps);
+			if (!deps.liveStdinSource) {
+				return { done: true };
+			}
+			const chunk = await deps.liveStdinSource.read();
+			if (chunk === null || chunk.length === 0) {
+				return { done: true };
+			}
+			return {
+				done: false,
+				dataBase64: Buffer.from(chunk).toString("base64"),
+			};
+		};
 
 	return handlers;
 }
@@ -3673,11 +3736,29 @@ export function buildChildProcessBridgeHandlers(deps: ChildProcessBridgeDeps): B
 		};
 	}
 
+	type ChildProcessStreamPayload =
+		| { sessionId: number; dataBase64: string }
+		| { sessionId: number; code: number };
+
 	// Serialize a child process event and push it into the V8 isolate
-	const dispatchEvent = (sessionId: number, type: string, data?: Uint8Array | number) => {
+	const dispatchEvent = (sessionId: number, type: "stdout" | "stderr" | "exit", data?: Uint8Array | number) => {
 		try {
-			const payload = JSON.stringify({ sessionId, type, data: data instanceof Uint8Array ? Buffer.from(data).toString("base64") : data });
-			deps.sendStreamEvent("childProcess", Buffer.from(payload));
+			let eventType: "child_stdout" | "child_stderr" | "child_exit";
+			let payload: ChildProcessStreamPayload;
+			if (type === "stdout" || type === "stderr") {
+				eventType = type === "stdout" ? "child_stdout" : "child_stderr";
+				payload = {
+					sessionId,
+					dataBase64: Buffer.from(data as Uint8Array).toString("base64"),
+				};
+			} else {
+				eventType = "child_exit";
+				payload = {
+					sessionId,
+					code: Number(data ?? 1),
+				};
+			}
+			deps.sendStreamEvent(eventType, Buffer.from(JSON.stringify(payload)));
 		} catch {
 			// Context may be disposed
 		}
@@ -3832,6 +3913,7 @@ export interface NetworkBridgeDeps {
 	activeHttpServerIds: Set<number>;
 	activeHttpServerClosers: Map<number, () => Promise<void>>;
 	pendingHttpServerStarts: { count: number };
+	activeHttpClientRequests: { count: number };
 	/** Push HTTP server/upgrade events into the V8 isolate. */
 	sendStreamEvent: (eventType: string, payload: Uint8Array) => void;
 	/** Kernel socket table for all bridge-managed HTTP server routing. */
@@ -3849,8 +3931,17 @@ export interface NetworkBridgeResult {
 /** Restrict HTTP server hostname to loopback interfaces. */
 function normalizeLoopbackHostname(hostname?: string): string {
 	if (!hostname || hostname === "localhost") return "127.0.0.1";
-	if (hostname === "127.0.0.1" || hostname === "::1") return hostname;
-	if (hostname === "0.0.0.0" || hostname === "::") return "127.0.0.1";
+	// Preserve wildcard binds so kernel listener lookup and server.address()
+	// reflect the caller's requested address while loopback connects still
+	// resolve through SocketTable wildcard matching.
+	if (
+		hostname === "127.0.0.1" ||
+		hostname === "::1" ||
+		hostname === "0.0.0.0" ||
+		hostname === "::"
+	) {
+		return hostname;
+	}
 	throw new Error(
 		`Sandbox HTTP servers are restricted to loopback interfaces. Received hostname: ${hostname}`,
 	);
@@ -3872,6 +3963,75 @@ function debugHttpBridge(...args: unknown[]): void {
 	if (process.env.SECURE_EXEC_DEBUG_HTTP_BRIDGE === "1") {
 		console.error("[secure-exec http bridge]", ...args);
 	}
+}
+
+const MAX_REDIRECTS = 20;
+
+type KernelHttpClientRequestOptions = {
+	method?: string;
+	headers?: Record<string, string>;
+	body?: string | null;
+	rejectUnauthorized?: boolean;
+};
+
+type KernelHttpClientResponse = Awaited<ReturnType<NetworkAdapter["httpRequest"]>> & {
+	rawHeaders?: string[];
+};
+
+function shouldUseKernelHttpClientPath(
+	adapter: NetworkAdapter,
+	urlString: string,
+): boolean {
+	const loopbackAwareAdapter = adapter as NetworkAdapter & {
+		__setLoopbackPortChecker?: (checker: (hostname: string, port: number) => boolean) => void;
+	};
+	if (typeof loopbackAwareAdapter.__setLoopbackPortChecker !== "function") {
+		return false;
+	}
+	try {
+		const parsed = new URL(urlString);
+		return parsed.protocol === "http:" || parsed.protocol === "https:";
+	} catch {
+		return false;
+	}
+}
+
+async function maybeDecompressHttpBody(
+	buffer: Buffer,
+	contentEncoding: string | string[] | undefined,
+): Promise<Buffer> {
+	const encoding = Array.isArray(contentEncoding)
+		? contentEncoding[0]
+		: contentEncoding;
+	if (encoding !== "gzip" && encoding !== "deflate") {
+		return buffer;
+	}
+
+	try {
+		return await new Promise<Buffer>((resolve, reject) => {
+			const decompress = encoding === "gzip" ? zlib.gunzip : zlib.inflate;
+			decompress(buffer, (err, result) => {
+				if (err) reject(err);
+				else resolve(result);
+			});
+		});
+	} catch {
+		// Preserve the original bytes when decompression fails.
+		return buffer;
+	}
+}
+
+function shouldEncodeHttpBodyAsBinary(
+	urlString: string,
+	headers: http.IncomingHttpHeaders,
+): boolean {
+	const contentType = headers["content-type"] || "";
+	const headerValue = Array.isArray(contentType) ? contentType.join(", ") : contentType;
+	return (
+		headerValue.includes("octet-stream") ||
+		headerValue.includes("gzip") ||
+		urlString.endsWith(".tgz")
+	);
 }
 
 /**
@@ -4071,6 +4231,10 @@ export function buildNetworkBridgeHandlers(deps: NetworkBridgeDeps): NetworkBrid
 	const kernelHttp2ClientSessions = new Map<number, KernelHttp2ClientSessionState>();
 	const http2Sessions = new Map<number, http2.ClientHttp2Session | http2.ServerHttp2Session>();
 	const http2Streams = new Map<number, http2.ClientHttp2Stream | http2.ServerHttp2Stream>();
+	type PendingHttp2PushStreamState = {
+		operations: Array<(stream: http2.ServerHttp2Stream) => void>;
+	};
+	const pendingHttp2PushStreams = new Map<number, PendingHttp2PushStreamState>();
 	const http2ServerSessionIds = new WeakMap<http2.ServerHttp2Session, number>();
 	let nextHttp2SessionId = 1;
 	let nextHttp2StreamId = 1;
@@ -4224,6 +4388,194 @@ export function buildNetworkBridgeHandlers(deps: NetworkBridgeDeps): NetworkBrid
 		return false;
 	});
 
+	const performKernelHttpRequest = async (
+		urlString: string,
+		requestOptions: KernelHttpClientRequestOptions,
+	): Promise<KernelHttpClientResponse> => {
+		const url = new URL(urlString);
+		const isHttps = url.protocol === "https:";
+		const host = url.hostname;
+		const port = Number(url.port || (isHttps ? 443 : 80));
+		const socketId = socketTable.create(
+			host.includes(":") ? AF_INET6 : AF_INET,
+			SOCK_STREAM,
+			0,
+			pid,
+		);
+		await socketTable.connect(socketId, { host, port });
+
+		const baseTransport = createKernelSocketDuplex(socketId, socketTable, pid);
+		const requestTransport = isHttps
+			? tls.connect({
+				socket: baseTransport,
+				servername: host,
+				...(requestOptions.rejectUnauthorized !== undefined
+					? { rejectUnauthorized: requestOptions.rejectUnauthorized }
+					: {}),
+			})
+			: baseTransport;
+
+		const transport = isHttps ? https : http;
+
+		return await new Promise<KernelHttpClientResponse>((resolve, reject) => {
+			let settled = false;
+			const settleResolve = (value: KernelHttpClientResponse) => {
+				if (settled) return;
+				settled = true;
+				resolve(value);
+			};
+			const settleReject = (error: unknown) => {
+				if (settled) return;
+				settled = true;
+				reject(error);
+			};
+
+			const req = transport.request({
+				hostname: host,
+				port,
+				path: `${url.pathname}${url.search}`,
+				method: requestOptions.method || "GET",
+				headers: requestOptions.headers || {},
+				agent: false,
+				createConnection: () => requestTransport,
+			}, (res: http.IncomingMessage) => {
+				const chunks: Buffer[] = [];
+				res.on("data", (chunk: Buffer) => {
+					chunks.push(chunk);
+				});
+				res.on("error", (error: Error) => {
+					requestTransport.destroy();
+					settleReject(error);
+				});
+				res.on("end", async () => {
+					const decodedBuffer = await maybeDecompressHttpBody(
+						Buffer.concat(chunks),
+						res.headers["content-encoding"],
+					);
+					const buffer = Buffer.from(decodedBuffer);
+
+					const headers: Record<string, string> = {};
+					const rawHeaders = [...res.rawHeaders];
+					Object.entries(res.headers).forEach(([key, value]) => {
+						if (typeof value === "string") headers[key] = value;
+						else if (Array.isArray(value)) headers[key] = value.join(", ");
+					});
+					delete headers["content-encoding"];
+
+					const trailers: Record<string, string> = {};
+					Object.entries(res.trailers || {}).forEach(([key, value]) => {
+						if (typeof value === "string") trailers[key] = value;
+					});
+
+					const result: KernelHttpClientResponse = {
+						status: res.statusCode || 200,
+						statusText: res.statusMessage || "OK",
+						headers,
+						rawHeaders,
+						url: urlString,
+						body: shouldEncodeHttpBodyAsBinary(urlString, res.headers)
+							? (() => {
+								headers["x-body-encoding"] = "base64";
+								return buffer.toString("base64");
+							})()
+							: buffer.toString("utf8"),
+					};
+					if (Object.keys(trailers).length > 0) {
+						result.trailers = trailers;
+					}
+					requestTransport.destroy();
+					settleResolve(result);
+				});
+			});
+
+			req.on("upgrade", (res: http.IncomingMessage, upgradedSocket: Duplex, head: Buffer) => {
+				const headers: Record<string, string> = {};
+				const rawHeaders = [...res.rawHeaders];
+				Object.entries(res.headers).forEach(([key, value]) => {
+					if (typeof value === "string") headers[key] = value;
+					else if (Array.isArray(value)) headers[key] = value.join(", ");
+				});
+				settleResolve({
+					status: res.statusCode || 101,
+					statusText: res.statusMessage || "Switching Protocols",
+					headers,
+					rawHeaders,
+					body: head.toString("base64"),
+					url: urlString,
+					upgradeSocketId: registerKernelUpgradeSocket(upgradedSocket as Duplex),
+				});
+			});
+
+			req.on("connect", (res: http.IncomingMessage, connectSocket: Duplex, head: Buffer) => {
+				const headers: Record<string, string> = {};
+				const rawHeaders = [...res.rawHeaders];
+				Object.entries(res.headers).forEach(([key, value]) => {
+					if (typeof value === "string") headers[key] = value;
+					else if (Array.isArray(value)) headers[key] = value.join(", ");
+				});
+				settleResolve({
+					status: res.statusCode || 200,
+					statusText: res.statusMessage || "Connection established",
+					headers,
+					rawHeaders,
+					body: head.toString("base64"),
+					url: urlString,
+					upgradeSocketId: registerKernelUpgradeSocket(connectSocket as Duplex),
+				});
+			});
+
+			req.on("error", (error: Error) => {
+				requestTransport.destroy();
+				settleReject(error);
+			});
+
+			if (requestOptions.body) {
+				req.write(requestOptions.body);
+			}
+			req.end();
+		});
+	};
+
+	const performKernelFetch = async (
+		urlString: string,
+		requestOptions: KernelHttpClientRequestOptions,
+	): Promise<Awaited<ReturnType<NetworkAdapter["fetch"]>>> => {
+		let currentUrl = urlString;
+		let redirected = false;
+		let currentOptions = { ...requestOptions };
+
+		for (let redirectCount = 0; redirectCount <= MAX_REDIRECTS; redirectCount += 1) {
+			const response = await performKernelHttpRequest(currentUrl, currentOptions);
+			if ([301, 302, 303, 307, 308].includes(response.status)) {
+				const location = response.headers.location;
+				if (location) {
+					currentUrl = new URL(location, currentUrl).href;
+					redirected = true;
+					if (response.status === 301 || response.status === 302 || response.status === 303) {
+						currentOptions = {
+							...currentOptions,
+							method: "GET",
+							body: null,
+						};
+					}
+					continue;
+				}
+			}
+
+			return {
+				ok: response.status >= 200 && response.status < 300,
+				status: response.status,
+				statusText: response.statusText,
+				headers: { ...response.headers },
+				body: response.body,
+				url: currentUrl,
+				redirected,
+			};
+		}
+
+		throw new Error("Too many redirects");
+	};
+
 	const registerKernelUpgradeSocket = (socket: Duplex): number => {
 		const socketId = nextKernelUpgradeSocketId++;
 		kernelUpgradeSockets.set(socketId, socket);
@@ -4275,10 +4627,19 @@ export function buildNetworkBridgeHandlers(deps: NetworkBridgeDeps): NetworkBrid
 		checkBridgeBudget(deps);
 		const options = parseJsonWithLimit<{ method?: string; headers?: Record<string, string>; body?: string | null }>(
 			"network.fetch options", String(optionsJson), jsonLimit);
-		const result = await adapter.fetch(String(url), options);
-		const json = JSON.stringify(result);
-		assertTextPayloadSize("network.fetch response", json, jsonLimit);
-		return json;
+		deps.activeHttpClientRequests.count += 1;
+		try {
+			const urlString = String(url);
+			const result = shouldUseKernelHttpClientPath(adapter, urlString)
+				? await performKernelFetch(urlString, options)
+				// Legacy fallback for custom adapters and explicit no-network stubs.
+				: await adapter.fetch(urlString, options);
+			const json = JSON.stringify(result);
+			assertTextPayloadSize("network.fetch response", json, jsonLimit);
+			return json;
+		} finally {
+			deps.activeHttpClientRequests.count = Math.max(0, deps.activeHttpClientRequests.count - 1);
+		}
 	};
 
 	handlers[K.networkDnsLookupRaw] = async (hostname: unknown): Promise<string> => {
@@ -4291,10 +4652,19 @@ export function buildNetworkBridgeHandlers(deps: NetworkBridgeDeps): NetworkBrid
 		checkBridgeBudget(deps);
 		const options = parseJsonWithLimit<{ method?: string; headers?: Record<string, string>; body?: string | null; rejectUnauthorized?: boolean }>(
 			"network.httpRequest options", String(optionsJson), jsonLimit);
-		const result = await adapter.httpRequest(String(url), options);
-		const json = JSON.stringify(result);
-		assertTextPayloadSize("network.httpRequest response", json, jsonLimit);
-		return json;
+		deps.activeHttpClientRequests.count += 1;
+		try {
+			const urlString = String(url);
+			const result = shouldUseKernelHttpClientPath(adapter, urlString)
+				? await performKernelHttpRequest(urlString, options)
+				// Legacy fallback for custom adapters and explicit no-network stubs.
+				: await adapter.httpRequest(urlString, options);
+			const json = JSON.stringify(result);
+			assertTextPayloadSize("network.httpRequest response", json, jsonLimit);
+			return json;
+		} finally {
+			deps.activeHttpClientRequests.count = Math.max(0, deps.activeHttpClientRequests.count - 1);
+		}
 	};
 
 	handlers[K.networkHttpServerRespondRaw] = (
@@ -4623,6 +4993,34 @@ export function buildNetworkBridgeHandlers(deps: NetworkBridgeDeps): NetworkBrid
 			name: err.name,
 			code: (err as { code?: unknown }).code,
 		}));
+	};
+
+	const resolveHostHttp2FilePath = (filePath: string): string => {
+		// The sandbox defaults process.execPath to /usr/bin/node, but the host-side
+		// http2 respondWithFile helper needs a real host path when serving the Node binary.
+		if (filePath === "/usr/bin/node" && process.execPath) {
+			return process.execPath;
+		}
+		return filePath;
+	};
+
+	const withHttp2ServerStream = <T>(
+		streamId: number,
+		action: (stream: http2.ServerHttp2Stream) => T,
+		fallback: () => T,
+	): T => {
+		const stream = http2Streams.get(streamId) as http2.ServerHttp2Stream | undefined;
+		if (stream) {
+			return action(stream);
+		}
+		const pending = pendingHttp2PushStreams.get(streamId);
+		if (pending) {
+			pending.operations.push((resolvedStream) => {
+				action(resolvedStream);
+			});
+			return fallback();
+		}
+		throw new Error(`HTTP/2 stream ${String(streamId)} not found`);
 	};
 
 	const attachHttp2ClientStreamListeners = (
@@ -5108,23 +5506,25 @@ export function buildNetworkBridgeHandlers(deps: NetworkBridgeDeps): NetworkBrid
 		streamId: unknown,
 		headersJson: unknown,
 	): void => {
-		const stream = http2Streams.get(Number(streamId)) as http2.ServerHttp2Stream | undefined;
-		if (!stream) {
-			throw new Error(`HTTP/2 stream ${String(streamId)} not found`);
-		}
 		const headers = parseJsonWithLimit<Record<string, string | string[] | number>>(
 			"network.http2Stream.respond headers",
 			String(headersJson),
 			jsonLimit,
 		);
-		stream.respond(headers);
+		withHttp2ServerStream(
+			Number(streamId),
+			(stream) => {
+				stream.respond(headers);
+			},
+			() => undefined,
+		);
 	};
 
-	handlers[K.networkHttp2StreamPushStreamRaw] = async (
+	handlers[K.networkHttp2StreamPushStreamRaw] = (
 		streamId: unknown,
 		headersJson: unknown,
 		optionsJson: unknown,
-	): Promise<string> => {
+	): string => {
 		const stream = http2Streams.get(Number(streamId)) as http2.ServerHttp2Stream | undefined;
 		if (!stream) {
 			throw new Error(`HTTP/2 stream ${String(streamId)} not found`);
@@ -5139,40 +5539,39 @@ export function buildNetworkBridgeHandlers(deps: NetworkBridgeDeps): NetworkBrid
 			String(optionsJson),
 			jsonLimit,
 		);
-		return await new Promise<string>((resolve, reject) => {
-			try {
-				stream.pushStream(
-					headers,
-					options as http2.StreamPriorityOptions,
-					(error, pushStream, pushHeaders) => {
-						if (error) {
-							resolve(JSON.stringify({
-								error: JSON.stringify({
-									message: error.message,
-									name: error.name,
-									code: (error as { code?: unknown }).code,
-								}),
-							}));
-							return;
-						}
-						if (!pushStream) {
-							reject(new Error("HTTP/2 push stream callback returned no stream"));
-							return;
-						}
-						const pushStreamId = nextHttp2StreamId++;
-						http2Streams.set(pushStreamId, pushStream);
-						pushStream.on("close", () => {
-							http2Streams.delete(pushStreamId);
-						});
-						resolve(JSON.stringify({
-							streamId: pushStreamId,
-							headers: JSON.stringify(normalizeHttp2EventHeaders(pushHeaders ?? {})),
-						}));
-					},
-				);
-			} catch (error) {
-				reject(error);
-			}
+		const pushStreamId = nextHttp2StreamId++;
+		pendingHttp2PushStreams.set(pushStreamId, {
+			operations: [],
+		});
+		stream.pushStream(
+			headers,
+			options as http2.StreamPriorityOptions,
+			(error, pushStream, pushHeaders) => {
+				const pending = pendingHttp2PushStreams.get(pushStreamId);
+				if (error) {
+					pendingHttp2PushStreams.delete(pushStreamId);
+					emitHttp2SerializedError("serverStreamError", Number(streamId), error);
+					return;
+				}
+				if (!pushStream) {
+					pendingHttp2PushStreams.delete(pushStreamId);
+					return;
+				}
+				http2Streams.set(pushStreamId, pushStream);
+				pushStream.on("close", () => {
+					http2Streams.delete(pushStreamId);
+					pendingHttp2PushStreams.delete(pushStreamId);
+				});
+				for (const operation of pending?.operations ?? []) {
+					operation(pushStream);
+				}
+				pendingHttp2PushStreams.delete(pushStreamId);
+				void pushHeaders;
+			},
+		);
+		return JSON.stringify({
+			streamId: pushStreamId,
+			headers: JSON.stringify(normalizeHttp2EventHeaders(headers)),
 		});
 	};
 
@@ -5180,26 +5579,46 @@ export function buildNetworkBridgeHandlers(deps: NetworkBridgeDeps): NetworkBrid
 		streamId: unknown,
 		dataBase64: unknown,
 	): boolean => {
-		const stream = http2Streams.get(Number(streamId));
-		if (!stream) {
-			throw new Error(`HTTP/2 stream ${String(streamId)} not found`);
-		}
-		return stream.write(Buffer.from(String(dataBase64), "base64"));
+		return withHttp2ServerStream(
+			Number(streamId),
+			(stream) => stream.write(Buffer.from(String(dataBase64), "base64")),
+			() => true,
+		);
 	};
 
 	handlers[K.networkHttp2StreamEndRaw] = (
 		streamId: unknown,
 		dataBase64: unknown,
 	): void => {
-		const stream = http2Streams.get(Number(streamId));
-		if (!stream) {
-			throw new Error(`HTTP/2 stream ${String(streamId)} not found`);
-		}
-		if (typeof dataBase64 === "string" && dataBase64.length > 0) {
-			stream.end(Buffer.from(dataBase64, "base64"));
-			return;
-		}
-		stream.end();
+		withHttp2ServerStream(
+			Number(streamId),
+			(stream) => {
+				if (typeof dataBase64 === "string" && dataBase64.length > 0) {
+					stream.end(Buffer.from(dataBase64, "base64"));
+					return;
+				}
+				stream.end();
+			},
+			() => undefined,
+		);
+	};
+
+	handlers[K.networkHttp2StreamCloseRaw] = (
+		streamId: unknown,
+		rstCode: unknown,
+	): void => {
+		withHttp2ServerStream(
+			Number(streamId),
+			(stream) => {
+				if (typeof (stream as { close?: (code?: number) => void }).close !== "function") {
+					throw new Error(`HTTP/2 stream ${String(streamId)} not found`);
+				}
+				(stream as { close: (code?: number) => void }).close(
+					typeof rstCode === "number" ? Number(rstCode) : undefined,
+				);
+			},
+			() => undefined,
+		);
 	};
 
 	handlers[K.networkHttp2StreamPauseRaw] = (streamId: unknown): void => {
@@ -5216,10 +5635,6 @@ export function buildNetworkBridgeHandlers(deps: NetworkBridgeDeps): NetworkBrid
 		headersJson: unknown,
 		optionsJson: unknown,
 	): void => {
-		const stream = http2Streams.get(Number(streamId)) as http2.ServerHttp2Stream | undefined;
-		if (!stream) {
-			throw new Error(`HTTP/2 stream ${String(streamId)} not found`);
-		}
 		const headers = parseJsonWithLimit<Record<string, unknown>>(
 			"network.http2Stream.respondWithFile headers",
 			String(headersJson),
@@ -5230,10 +5645,16 @@ export function buildNetworkBridgeHandlers(deps: NetworkBridgeDeps): NetworkBrid
 			String(optionsJson),
 			jsonLimit,
 		);
-		stream.respondWithFile(
-			String(filePath),
-			headers as http2.OutgoingHttpHeaders,
-			options as http2.ServerStreamFileResponseOptionsWithError,
+		withHttp2ServerStream(
+			Number(streamId),
+			(stream) => {
+				stream.respondWithFile(
+					resolveHostHttp2FilePath(String(filePath)),
+					headers as http2.OutgoingHttpHeaders,
+					options as http2.ServerStreamFileResponseOptionsWithError,
+				);
+			},
+			() => undefined,
 		);
 	};
 

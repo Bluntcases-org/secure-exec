@@ -8,6 +8,7 @@
 /// - "child_stdout", "child_stderr", "child_exit" → _childProcessDispatch
 /// - "http_request" → _httpServerDispatch
 /// - "http2" → _http2Dispatch
+/// - "stdin", "stdin_end" → _stdinDispatch
 /// - "timer" → _timerDispatch
 pub fn dispatch_stream_event(scope: &mut v8::HandleScope, event_type: &str, payload: &[u8]) {
     // Look up the dispatch function on the global object
@@ -18,6 +19,7 @@ pub fn dispatch_stream_event(scope: &mut v8::HandleScope, event_type: &str, payl
         "child_stdout" | "child_stderr" | "child_exit" => "_childProcessDispatch",
         "http_request" => "_httpServerDispatch",
         "http2" => "_http2Dispatch",
+        "stdin" | "stdin_end" => "_stdinDispatch",
         "timer" => "_timerDispatch",
         _ => return, // Unknown event type — ignore
     };
@@ -32,9 +34,13 @@ pub fn dispatch_stream_event(scope: &mut v8::HandleScope, event_type: &str, payl
             // Pass event_type and payload as arguments
             let event_str = v8::String::new(scope, event_type).unwrap();
             let payload_val = if !payload.is_empty() {
-                match crate::bridge::deserialize_v8_value(scope, payload) {
-                    Ok(v) => v,
-                    Err(_) => match std::str::from_utf8(payload) {
+                let maybe_v8_payload = {
+                    let tc = &mut v8::TryCatch::new(scope);
+                    crate::bridge::deserialize_v8_value(tc, payload).ok()
+                };
+                match maybe_v8_payload {
+                    Some(v) => v,
+                    None => match std::str::from_utf8(payload) {
                         Ok(text) => match v8::String::new(scope, text) {
                             Some(json_text) => v8::json::parse(scope, json_text)
                                 .map(|value| value.into())

@@ -85,7 +85,12 @@ When a kernel is available, runtime execution SHALL be mediated through the kern
 
 #### Scenario: Standalone NodeRuntime still uses kernel-backed socket routing
 - **WHEN** a caller constructs `NodeRuntime` without `kernel.mount()` and sandboxed code uses `http.createServer()` or `net.connect()`
-- **THEN** the Node execution driver MUST provision an internal `SocketTable` with a host network adapter so listener ownership, loopback routing, and external socket delegation still flow through kernel-managed socket state
+- **THEN** the Node execution driver MUST provision an internal `SocketTable` so listener ownership and loopback routing still flow through kernel-managed socket state
+
+#### Scenario: Standalone NodeRuntime only provisions host socket delegation when network capability is configured
+- **WHEN** standalone `NodeRuntime` construction omits `SystemDriver.network`
+- **THEN** the internal `SocketTable` MUST NOT provision a host network adapter for external socket delegation
+- **AND** external `net` / `http` client socket attempts MUST remain unavailable or denied by contract instead of silently reaching the host network
 
 #### Scenario: Timer and active-handle budgets route through kernel tables
 - **WHEN** the Node execution driver runs with kernel-provided or internally provisioned process/timer tables
@@ -168,6 +173,18 @@ The `__dynamicImport` bridge function SHALL return a Promise that resolves to th
 - **WHEN** user code calls `await import("./nonexistent")`
 - **THEN** the returned Promise MUST reject with an error indicating the module cannot be resolved
 
+### Requirement: JavaScript Module Loading Preserves Node Shebang Semantics
+JavaScript entrypoints and dependency files that begin with a Node-style shebang (`#!...`) SHALL load through both CommonJS and ESM sandbox paths without surfacing a syntax error from the host-side wrapper or transform stages.
+
+#### Scenario: CommonJS wrapper loads a shebang-bearing ESM CLI entrypoint
+- **WHEN** sandboxed code reaches `await import("/pkg/dist/cli.js")` from an exec-mode CommonJS entrypoint and `/pkg/dist/cli.js` begins with `#!/usr/bin/env node`
+- **THEN** the runtime MUST normalize the shebang before any CommonJS wrapper compilation step
+- **AND** the module MUST continue loading through the normal transform/evaluation path instead of failing with `SyntaxError: Invalid or unexpected token`
+
+#### Scenario: ESM loader reads a BOM-prefixed shebang-bearing module
+- **WHEN** the sandbox loads a JavaScript module whose first bytes are UTF-8 BOM followed by a Node-style shebang and ESM syntax
+- **THEN** module-syntax detection and ESM evaluation MUST still succeed without the shebang line being treated as executable JavaScript
+
 ### Requirement: ESM Top-Level Await Completes Before Execution Finalization
 When sandboxed ESM execution uses top-level `await`, the runtime SHALL keep the entry-module evaluation promise alive until it settles instead of finalizing execution early.
 
@@ -182,6 +199,22 @@ When sandboxed ESM execution uses top-level `await`, the runtime SHALL keep the 
 #### Scenario: Dynamic import waits for imported module top-level await
 - **WHEN** sandboxed code executes `await import("./mod.mjs")` and `./mod.mjs` contains top-level `await`
 - **THEN** the import Promise MUST not resolve until the imported module's async evaluation has completed and its namespace is ready
+
+### Requirement: Intl Segmentation APIs Stay Operational In The Sandbox
+The Node runtime SHALL initialize the underlying V8/ICU internationalization data needed for `Intl` segmentation APIs so Unicode-aware third-party code can execute without tearing down the runtime.
+
+#### Scenario: Intl.Segmenter segments ASCII and non-ASCII graphemes
+- **WHEN** sandboxed code constructs `new Intl.Segmenter(undefined, { granularity: "grapheme" })` and iterates `segment()` results for strings such as `"abc thinking off"` and `"abc • thinking off"`
+- **THEN** the runtime MUST return the expected grapheme segments
+- **AND** execution MUST remain alive instead of failing with a runtime-process crash or IPC disconnect
+
+### Requirement: PTY Raw Mode Preserves Carriage Return Input
+When sandboxed code enables PTY raw mode through `process.stdin.setRawMode(true)`, the runtime SHALL disable canonical translations such as `ICRNL` so interactive TUIs receive the original carriage-return byte for Enter.
+
+#### Scenario: Raw-mode stdin receives CR without newline translation
+- **WHEN** sandboxed PTY-backed code calls `process.stdin.setRawMode(true)` and the PTY master writes `\r`
+- **THEN** `process.stdin` listeners MUST receive byte `13` / `"\r"` rather than translated newline input
+- **AND** restoring cooked mode with `process.stdin.setRawMode(false)` MUST restore the default translated line discipline
 
 ### Requirement: Configurable CPU Time Limit for Node Runtime Execution
 The Node runtime MUST support an optional `cpuTimeLimitMs` execution budget for sandboxed code and MUST enforce it as a shared per-execution deadline across runtime calls that execute user-controlled code.
@@ -234,6 +267,11 @@ The runtime MUST classify JavaScript modules using Node-compatible metadata rule
 #### Scenario: .js under type module is treated as ESM
 - **WHEN** a package has `package.json` with `"type": "module"` and sandboxed code loads `./index.js`
 - **THEN** the runtime MUST evaluate the file as ESM semantics (including `import.meta` availability and ESM export behavior)
+
+#### Scenario: Require-transformed ESM keeps module-local `__filename` bindings
+- **WHEN** sandboxed code loads a package that is transformed for `require()` compatibility from ESM source using `import.meta.url`, and that source also declares its own `const __filename = fileURLToPath(import.meta.url)` or `const __dirname = dirname(__filename)`
+- **THEN** the runtime MUST compile and execute that module without colliding with the CommonJS wrapper parameters
+- **AND** any compatibility transform MUST preserve the module's own local bindings instead of rewriting source tokens to the wrapper globals
 
 #### Scenario: .js under type commonjs is treated as CJS
 - **WHEN** a package has `package.json` with `"type": "commonjs"` (or no ESM override) and sandboxed code loads `./index.js` via `require`

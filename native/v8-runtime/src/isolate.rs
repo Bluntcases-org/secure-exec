@@ -7,6 +7,12 @@ use crate::ipc::ExecutionError;
 
 static V8_INIT: Once = Once::new();
 
+#[repr(align(16))]
+struct AlignedBytes<const N: usize>([u8; N]);
+
+static ICU_COMMON_DATA: AlignedBytes<{ include_bytes!(concat!(env!("OUT_DIR"), "/icudtl.dat")).len() }> =
+    AlignedBytes(*include_bytes!(concat!(env!("OUT_DIR"), "/icudtl.dat")));
+
 #[derive(Default)]
 pub struct PromiseRejectState {
     pub unhandled: HashMap<i32, ExecutionError>,
@@ -46,6 +52,8 @@ pub fn configure_isolate(isolate: &mut v8::OwnedIsolate) {
 /// Safe to call multiple times; only the first call takes effect.
 pub fn init_v8_platform() {
     V8_INIT.call_once(|| {
+        v8::icu::set_common_data_74(&ICU_COMMON_DATA.0)
+            .expect("failed to initialize V8 ICU common data");
         let platform = v8::new_default_platform(0, false).make_shared();
         v8::V8::initialize_platform(platform);
         v8::V8::initialize();

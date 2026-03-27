@@ -11,13 +11,23 @@ import {
 	FILETYPE_CHARACTER_DEVICE,
 	O_CREAT,
 	O_EXCL,
+	O_RDONLY,
 	O_TRUNC,
 	O_WRONLY,
+	SA_RESETHAND,
+	SA_RESTART,
+	SIGALRM,
+	SIG_BLOCK,
+	SIGTERM,
+	SIG_UNBLOCK,
 } from "../../src/kernel/types.js";
+import { LOCK_EX, LOCK_UN } from "../../src/kernel/file-lock.js";
 import { createKernel } from "../../src/kernel/kernel.js";
 import { filterEnv, wrapFileSystem } from "../../src/kernel/permissions.js";
 import { MAX_CANON, MAX_PTY_BUFFER_BYTES } from "../../src/kernel/pty.js";
+import { MAX_PIPE_BUFFER_BYTES } from "../../src/kernel/pipe-manager.js";
 import { createProcessScopedFileSystem } from "../../src/kernel/proc-layer.js";
+import { InMemoryFileSystem } from "../../src/shared/in-memory-fs.js";
 
 describe("kernel + MockRuntimeDriver integration", () => {
 	let kernel: Kernel;
@@ -25,6 +35,18 @@ describe("kernel + MockRuntimeDriver integration", () => {
 	afterEach(async () => {
 		await kernel?.dispose();
 	});
+
+	async function createInodeKernelHarness(driver: MockRuntimeDriver) {
+		const filesystem = new InMemoryFileSystem();
+		const kernel = createKernel({ filesystem });
+		await (kernel as any).posixDirsReady;
+		await kernel.mount(driver);
+		return {
+			kernel,
+			filesystem,
+			ki: driver.kernelInterface!,
+		};
+	}
 
 	// -----------------------------------------------------------------------
 	// Basic mount / spawn / exec
@@ -1116,6 +1138,66 @@ describe("kernel + MockRuntimeDriver integration", () => {
 			await parent.wait();
 			await child.wait();
 		});
+
+		it("unlink + dup keeps deferred inode data alive until the final shared FD closes", async () => {
+			const driver = new MockRuntimeDriver(["proc"], {
+				proc: { neverExit: true },
+			});
+			const { kernel: k, filesystem, ki } = await createInodeKernelHarness(driver);
+			kernel = k;
+
+			await filesystem.writeFile("/tmp/deferred-dup.txt", "hello");
+
+			const proc = kernel.spawn("proc", []);
+			const fd = ki.fdOpen(proc.pid, "/tmp/deferred-dup.txt", O_RDONLY);
+			const dupFd = ki.fdDup(proc.pid, fd);
+			const initial = await kernel.stat("/tmp/deferred-dup.txt");
+
+			expect(kernel.inodeTable.get(initial.ino)?.openRefCount).toBe(1);
+
+			await filesystem.removeFile("/tmp/deferred-dup.txt");
+			ki.fdClose(proc.pid, fd);
+
+			expect(await filesystem.exists("/tmp/deferred-dup.txt")).toBe(false);
+			expect(kernel.inodeTable.get(initial.ino)?.openRefCount).toBe(1);
+			expect(new TextDecoder().decode(await ki.fdRead(proc.pid, dupFd, 5))).toBe("hello");
+
+			ki.fdClose(proc.pid, dupFd);
+
+			expect(kernel.inodeTable.get(initial.ino)).toBeNull();
+			expect(() => filesystem.statByInode(initial.ino)).toThrow("inode");
+
+			proc.kill(9);
+			await proc.wait();
+		});
+
+		it("fdDup2 releases an unlinked target inode when it drops the last shared reference", async () => {
+			const driver = new MockRuntimeDriver(["proc"], {
+				proc: { neverExit: true },
+			});
+			const { kernel: k, filesystem, ki } = await createInodeKernelHarness(driver);
+			kernel = k;
+
+			await filesystem.writeFile("/tmp/dup2-source.txt", "source");
+			await filesystem.writeFile("/tmp/dup2-target.txt", "target");
+
+			const proc = kernel.spawn("proc", []);
+			const sourceFd = ki.fdOpen(proc.pid, "/tmp/dup2-source.txt", O_RDONLY);
+			const targetFd = ki.fdOpen(proc.pid, "/tmp/dup2-target.txt", O_RDONLY);
+			const targetStat = await kernel.stat("/tmp/dup2-target.txt");
+
+			await filesystem.removeFile("/tmp/dup2-target.txt");
+			expect(kernel.inodeTable.get(targetStat.ino)?.openRefCount).toBe(1);
+
+			ki.fdDup2(proc.pid, sourceFd, targetFd);
+
+			expect(kernel.inodeTable.get(targetStat.ino)).toBeNull();
+			expect(() => filesystem.statByInode(targetStat.ino)).toThrow("inode");
+			expect(new TextDecoder().decode(await ki.fdRead(proc.pid, targetFd, 6))).toBe("source");
+
+			proc.kill(9);
+			await proc.wait();
+		});
 	});
 
 	// -----------------------------------------------------------------------
@@ -1514,6 +1596,123 @@ describe("kernel + MockRuntimeDriver integration", () => {
 			expect(killSignals).toEqual([15, 9]);
 			expect(code).toBe(128 + 9);
 		});
+
+		it("caught signals stay pending while masked and deliver when unmasked", async () => {
+			const killSignals: number[] = [];
+			const handledSignals: number[] = [];
+			const driver = new MockRuntimeDriver(["daemon"], {
+				daemon: { neverExit: true, killSignals },
+			});
+			({ kernel } = await createTestKernel({ drivers: [driver] }));
+
+			const ki = driver.kernelInterface!;
+			const proc = kernel.spawn("daemon", []);
+
+			ki.processTable.sigaction(proc.pid, 1, {
+				handler: (signal) => handledSignals.push(signal),
+				mask: new Set([SIGTERM]),
+				flags: 0,
+			});
+			ki.processTable.sigprocmask(proc.pid, SIG_BLOCK, new Set([1]));
+
+			proc.kill(1);
+
+			const blockedState = ki.processTable.getSignalState(proc.pid);
+			expect(blockedState.handlers.get(1)).toEqual({
+				handler: expect.any(Function),
+				mask: new Set([SIGTERM]),
+				flags: 0,
+			});
+			expect(blockedState.pendingSignals.has(1)).toBe(true);
+			expect(handledSignals).toEqual([]);
+			expect(killSignals).toEqual([]);
+
+			ki.processTable.sigprocmask(proc.pid, SIG_UNBLOCK, new Set([1]));
+
+			const unblockedState = ki.processTable.getSignalState(proc.pid);
+			expect(unblockedState.pendingSignals.has(1)).toBe(false);
+			expect(handledSignals).toEqual([1]);
+			expect(killSignals).toEqual([]);
+
+			proc.kill(SIGTERM);
+			await expect(proc.wait()).resolves.toBe(128 + SIGTERM);
+		});
+
+		it("SA_RESTART keeps a blocking recv alive for a spawned process", async () => {
+			const driver = new MockRuntimeDriver(["daemon"], {
+				daemon: { neverExit: true, killSignals: [] },
+			});
+			({
+				kernel,
+			} = await createTestKernel({
+				drivers: [driver],
+				permissions: {
+					fs: () => ({ allow: true }),
+					network: () => ({ allow: true }),
+				},
+			}));
+
+			const ki = driver.kernelInterface!;
+			const proc = kernel.spawn("daemon", []);
+
+			ki.processTable.sigaction(proc.pid, SIGALRM, {
+				handler: () => {},
+				mask: new Set(),
+				flags: SA_RESTART,
+			});
+
+			const listenId = ki.socketTable.create(2, 1, 0, proc.pid);
+			await ki.socketTable.bind(listenId, { host: "127.0.0.1", port: 9091 });
+			await ki.socketTable.listen(listenId, 1);
+
+			const clientId = ki.socketTable.create(2, 1, 0, proc.pid);
+			await ki.socketTable.connect(clientId, { host: "127.0.0.1", port: 9091 });
+			const serverId = ki.socketTable.accept(listenId)!;
+
+			const recvPromise = ki.socketTable.recv(serverId, 1024, 0, { block: true, pid: proc.pid });
+			await Promise.resolve();
+
+			proc.kill(SIGALRM);
+			ki.socketTable.send(clientId, new TextEncoder().encode("pong"));
+
+			await expect(recvPromise).resolves.toEqual(new TextEncoder().encode("pong"));
+
+			proc.kill(SIGTERM);
+			await expect(proc.wait()).resolves.toBe(128 + SIGTERM);
+		});
+
+		it("SA_RESETHAND only catches the first delivery for a spawned process", async () => {
+			const killSignals: number[] = [];
+			const handledSignals: number[] = [];
+			const driver = new MockRuntimeDriver(["daemon"], {
+				daemon: { neverExit: true, killSignals },
+			});
+			({ kernel } = await createTestKernel({ drivers: [driver] }));
+
+			const ki = driver.kernelInterface!;
+			const proc = kernel.spawn("daemon", []);
+
+			ki.processTable.sigaction(proc.pid, SIGTERM, {
+				handler: (signal) => handledSignals.push(signal),
+				mask: new Set(),
+				flags: SA_RESETHAND,
+			});
+
+			proc.kill(SIGTERM);
+
+			expect(handledSignals).toEqual([SIGTERM]);
+			expect(killSignals).toEqual([]);
+			expect(ki.processTable.getSignalState(proc.pid).handlers.get(SIGTERM)).toEqual({
+				handler: "default",
+				mask: new Set(),
+				flags: 0,
+			});
+
+			proc.kill(SIGTERM);
+
+			await expect(proc.wait()).resolves.toBe(128 + SIGTERM);
+			expect(killSignals).toEqual([SIGTERM]);
+		});
 	});
 
 	// -----------------------------------------------------------------------
@@ -1603,7 +1802,7 @@ describe("kernel + MockRuntimeDriver integration", () => {
 
 			const proc = kernel.spawn("cmd", []);
 			// FD operations work while process is running
-			const fd = ki.fdOpen(proc.pid, "/tmp/test", 0x201); // O_CREAT | O_WRONLY
+			const fd = ki.fdOpen(proc.pid, "/tmp/test", O_CREAT | O_WRONLY);
 			expect(fd).toBeGreaterThanOrEqual(3);
 
 			await proc.wait();
@@ -1685,6 +1884,101 @@ describe("kernel + MockRuntimeDriver integration", () => {
 	// -----------------------------------------------------------------------
 
 	describe("process exit FD cleanup chain", () => {
+		it("blocking pipe writes through the kernel wait until a reader drains capacity", async () => {
+			const driver = new MockRuntimeDriver(["proc"], {
+				proc: { neverExit: true },
+			});
+			const { kernel: k } = await createTestKernel({ drivers: [driver] });
+			kernel = k;
+			const ki = driver.kernelInterface!;
+
+			const proc = kernel.spawn("proc", []);
+			const { readFd, writeFd } = ki.pipe(proc.pid);
+
+			await Promise.resolve(ki.fdWrite(proc.pid, writeFd, new Uint8Array(MAX_PIPE_BUFFER_BYTES)));
+
+			let settled = false;
+			const blockedWrite = Promise.resolve(ki.fdWrite(proc.pid, writeFd, new Uint8Array([7, 8, 9])));
+			blockedWrite.then(() => {
+				settled = true;
+			});
+
+			await new Promise((resolve) => setTimeout(resolve, 10));
+			expect(settled).toBe(false);
+
+			const drained = await ki.fdRead(proc.pid, readFd, MAX_PIPE_BUFFER_BYTES);
+			expect(drained).toHaveLength(MAX_PIPE_BUFFER_BYTES);
+
+			await expect(blockedWrite).resolves.toBe(3);
+			await expect(ki.fdRead(proc.pid, readFd, 16)).resolves.toEqual(new Uint8Array([7, 8, 9]));
+
+			proc.kill(9);
+			await proc.wait();
+		});
+
+		it("blocking flock through the kernel waits until the prior holder unlocks", async () => {
+			const driver = new MockRuntimeDriver(["proc"], {
+				proc: { neverExit: true },
+			});
+			const { kernel: k } = await createTestKernel({ drivers: [driver] });
+			kernel = k;
+			const ki = driver.kernelInterface!;
+
+			const proc1 = kernel.spawn("proc", []);
+			const proc2 = kernel.spawn("proc", []);
+			const fd1 = ki.fdOpen(proc1.pid, "/tmp/lockfile", O_CREAT);
+			const fd2 = ki.fdOpen(proc2.pid, "/tmp/lockfile", O_CREAT);
+
+			await ki.flock(proc1.pid, fd1, LOCK_EX);
+
+			let acquired = false;
+			const waiter = ki.flock(proc2.pid, fd2, LOCK_EX).then(() => {
+				acquired = true;
+			});
+
+			await new Promise((resolve) => setTimeout(resolve, 10));
+			expect(acquired).toBe(false);
+
+			await ki.flock(proc1.pid, fd1, LOCK_UN);
+			await waiter;
+			expect(acquired).toBe(true);
+
+			proc1.kill(9);
+			proc2.kill(9);
+			await Promise.all([proc1.wait(), proc2.wait()]);
+		});
+
+		it("fdPollWait with timeout -1 stays blocked until a pipe becomes readable", async () => {
+			const driver = new MockRuntimeDriver(["proc"], {
+				proc: { neverExit: true },
+			});
+			const { kernel: k } = await createTestKernel({ drivers: [driver] });
+			kernel = k;
+			const ki = driver.kernelInterface!;
+
+			const proc = kernel.spawn("proc", []);
+			const { readFd, writeFd } = ki.pipe(proc.pid);
+
+			let settled = false;
+			const pollWait = ki.fdPollWait(proc.pid, readFd, -1).then(() => {
+				settled = true;
+			});
+
+			await new Promise((resolve) => setTimeout(resolve, 10));
+			expect(settled).toBe(false);
+
+			await Promise.resolve(ki.fdWrite(proc.pid, writeFd, new TextEncoder().encode("wake")));
+			await pollWait;
+
+			expect(ki.fdPoll(proc.pid, readFd)).toMatchObject({
+				readable: true,
+				invalid: false,
+			});
+
+			proc.kill(9);
+			await proc.wait();
+		});
+
 		it("process exits with pipe write end → reader gets EOF", async () => {
 			const driver = new MockRuntimeDriver(["writer", "reader"], {
 				writer: { neverExit: true },
@@ -5167,26 +5461,33 @@ describe("kernel + MockRuntimeDriver integration", () => {
 		});
 
 		it("create socket and close it", async () => {
-			const driver = new MockRuntimeDriver(["sh"], { sh: { exitCode: 0 } });
+			const driver = new MockRuntimeDriver(["cmd"], { cmd: { neverExit: true } });
 			({ kernel } = await createTestKernel({ drivers: [driver] }));
+			const proc = kernel.spawn("cmd", []);
+			const pid = proc.pid;
 
-			const id = kernel.socketTable.create(2, 1, 0, 1); // AF_INET, SOCK_STREAM
+			const id = kernel.socketTable.create(2, 1, 0, pid); // AF_INET, SOCK_STREAM
 			expect(id).toBeGreaterThan(0);
 
 			const sock = kernel.socketTable.get(id);
 			expect(sock).toBeDefined();
 			expect(sock!.state).toBe("created");
 
-			kernel.socketTable.close(id, 1);
+			kernel.socketTable.close(id, pid);
 			expect(kernel.socketTable.get(id)).toBeNull();
+
+			proc.kill(9);
+			await proc.wait();
 		});
 
 		it("dispose cleans up all sockets", async () => {
-			const driver = new MockRuntimeDriver(["sh"], { sh: { exitCode: 0 } });
+			const driver = new MockRuntimeDriver(["cmd"], { cmd: { neverExit: true } });
 			({ kernel } = await createTestKernel({ drivers: [driver] }));
+			const proc = kernel.spawn("cmd", []);
+			const pid = proc.pid;
 
-			const id1 = kernel.socketTable.create(2, 1, 0, 1);
-			const id2 = kernel.socketTable.create(2, 1, 0, 1);
+			const id1 = kernel.socketTable.create(2, 1, 0, pid);
+			const id2 = kernel.socketTable.create(2, 1, 0, pid);
 			expect(kernel.socketTable.get(id1)).not.toBeNull();
 			expect(kernel.socketTable.get(id2)).not.toBeNull();
 
@@ -5203,17 +5504,24 @@ describe("kernel + MockRuntimeDriver integration", () => {
 			({ kernel } = await createTestKernel({ drivers: [driver] }));
 
 			const proc = kernel.spawn("cmd", []);
+			const otherProc = kernel.spawn("cmd", []);
 			const pid = proc.pid;
+			const otherPid = otherProc.pid;
 
 			// Create sockets owned by this process
 			const id1 = kernel.socketTable.create(2, 1, 0, pid);
 			const id2 = kernel.socketTable.create(2, 1, 0, pid);
-
-			// Create a socket owned by a different pid (should survive)
-			const otherId = kernel.socketTable.create(2, 1, 0, 99999);
+			const otherId = kernel.socketTable.create(2, 1, 0, otherPid);
 
 			expect(kernel.socketTable.get(id1)).toBeDefined();
 			expect(kernel.socketTable.get(id2)).toBeDefined();
+			expect(kernel.socketTable.get(otherId)).toBeDefined();
+			expect(() => kernel.socketTable.create(2, 1, 0, 99999)).toThrow();
+			try {
+				kernel.socketTable.create(2, 1, 0, 99999);
+			} catch (err) {
+				expect((err as { code?: string }).code).toBe("ESRCH");
+			}
 
 			// Kill the process — triggers onProcessExit → closeAllForProcess
 			proc.kill(9);
@@ -5222,29 +5530,54 @@ describe("kernel + MockRuntimeDriver integration", () => {
 			// Sockets owned by the exited process should be cleaned up
 			expect(kernel.socketTable.get(id1)).toBeNull();
 			expect(kernel.socketTable.get(id2)).toBeNull();
-
-			// Socket owned by other pid should survive
 			expect(kernel.socketTable.get(otherId)).not.toBeNull();
+
+			otherProc.kill(9);
+			await otherProc.wait();
 		});
 
 		it("loopback TCP through kernel socket table", async () => {
-			const driver = new MockRuntimeDriver(["sh"], { sh: { exitCode: 0 } });
-			({ kernel } = await createTestKernel({ drivers: [driver] }));
+			const driver = new MockRuntimeDriver(["cmd"], { cmd: { neverExit: true } });
+			const permissions: Permissions = {
+				fs: () => ({ allow: true }),
+				network: () => ({ allow: true }),
+			};
+			({ kernel } = await createTestKernel({ drivers: [driver], permissions }));
+			const proc = kernel.spawn("cmd", []);
+			const pid = proc.pid;
 
-			const serverSock = kernel.socketTable.create(2, 1, 0, 1);
+			const serverSock = kernel.socketTable.create(2, 1, 0, pid);
 			await kernel.socketTable.bind(serverSock, { host: "127.0.0.1", port: 9090 });
 			await kernel.socketTable.listen(serverSock, 5);
+			expect(kernel.socketTable.poll(serverSock)).toMatchObject({
+				readable: false,
+				writable: false,
+				hangup: false,
+			});
 
-			const clientSock = kernel.socketTable.create(2, 1, 0, 1);
+			const clientSock = kernel.socketTable.create(2, 1, 0, pid);
 			await kernel.socketTable.connect(clientSock, { host: "127.0.0.1", port: 9090 });
+			expect(kernel.socketTable.poll(serverSock)).toMatchObject({
+				readable: true,
+				writable: false,
+				hangup: false,
+			});
 
 			const accepted = kernel.socketTable.accept(serverSock);
 			expect(accepted).not.toBeNull();
+			expect(kernel.socketTable.poll(serverSock)).toMatchObject({
+				readable: false,
+				writable: false,
+				hangup: false,
+			});
 
 			// Exchange data
 			kernel.socketTable.send(clientSock, new TextEncoder().encode("hello"));
 			const data = kernel.socketTable.recv(accepted!, 1024);
 			expect(new TextDecoder().decode(data!)).toBe("hello");
+
+			proc.kill(9);
+			await proc.wait();
 		});
 	});
 });

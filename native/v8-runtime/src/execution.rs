@@ -356,27 +356,37 @@ pub fn execute_script(
             }
         };
 
+        // Flush microtasks once after every exec()-style script so process.nextTick()
+        // and zero-delay bridge callbacks run before we decide whether more event-loop
+        // work is pending.
+        tc.perform_microtask_checkpoint();
+
+        if let Some(exception) = tc.exception() {
+            let (c, err) = exception_to_result(tc, exception);
+            return (c, Some(err));
+        }
+
+        if let Some(state) = tc.get_slot_mut::<crate::isolate::PromiseRejectState>() {
+            if let Some((_, err)) = state.unhandled.drain().next() {
+                return (1, Some(err));
+            }
+        }
+
         // Surface rejected async completions for exec()-style scripts that
         // return a Promise (for example an async IIFE ending in await import()).
         if completion.is_promise() {
             let promise = v8::Local::<v8::Promise>::try_from(completion).unwrap();
-            tc.perform_microtask_checkpoint();
-
-            if let Some(exception) = tc.exception() {
-                let (c, err) = exception_to_result(tc, exception);
-                return (c, Some(err));
-            }
-
-            if let Some(state) = tc.get_slot_mut::<crate::isolate::PromiseRejectState>() {
-                if let Some((_, err)) = state.unhandled.drain().next() {
-                    return (1, Some(err));
+            match promise.state() {
+                v8::PromiseState::Pending => {
+                    set_pending_script_evaluation(tc, promise);
+                    return (0, None);
                 }
-            }
-
-            if promise.state() == v8::PromiseState::Rejected {
-                let rejection = promise.result(tc);
-                let (c, err) = exception_to_result(tc, rejection);
-                return (c, Some(err));
+                v8::PromiseState::Rejected => {
+                    let rejection = promise.result(tc);
+                    let (c, err) = exception_to_result(tc, rejection);
+                    return (c, Some(err));
+                }
+                v8::PromiseState::Fulfilled => {}
             }
         }
     }
@@ -415,7 +425,7 @@ pub fn extract_process_exit_code(
 /// Extract error info and exit code from a V8 exception.
 /// For ProcessExitError (detected via _isProcessExit sentinel), returns the error's exit code.
 /// For other errors, returns exit code 1.
-fn exception_to_result(
+pub(crate) fn exception_to_result(
     scope: &mut v8::HandleScope,
     exception: v8::Local<v8::Value>,
 ) -> (i32, ExecutionError) {
@@ -564,7 +574,7 @@ struct ModuleResolveState {
     bridge_ctx: *const BridgeCallContext,
     /// identity_hash → resource_name for referrer lookup
     module_names: HashMap<NonZeroI32, String>,
-    /// resolved_path → Global<Module> cache
+    /// resolved_path and referrer-qualified request keys → Global<Module> cache
     module_cache: HashMap<String, v8::Global<v8::Module>>,
 }
 
@@ -589,9 +599,20 @@ struct PendingModuleEvaluation {
 // (single-threaded per session).
 unsafe impl Send for PendingModuleEvaluation {}
 
+struct PendingScriptEvaluation {
+    promise: v8::Global<v8::Promise>,
+}
+
+unsafe impl Send for PendingScriptEvaluation {}
+
 thread_local! {
     static MODULE_RESOLVE_STATE: RefCell<Option<ModuleResolveState>> = const { RefCell::new(None) };
     static PENDING_MODULE_EVALUATION: RefCell<Option<PendingModuleEvaluation>> = const { RefCell::new(None) };
+    static PENDING_SCRIPT_EVALUATION: RefCell<Option<PendingScriptEvaluation>> = const { RefCell::new(None) };
+}
+
+fn module_request_cache_key(specifier: &str, referrer_name: &str) -> String {
+    format!("{}\0{}", referrer_name, specifier)
 }
 
 #[cfg_attr(test, allow(dead_code))]
@@ -607,13 +628,34 @@ pub fn clear_pending_module_evaluation() {
     });
 }
 
+pub fn clear_pending_script_evaluation() {
+    PENDING_SCRIPT_EVALUATION.with(|cell| {
+        *cell.borrow_mut() = None;
+    });
+}
+
 #[cfg_attr(test, allow(dead_code))]
 pub fn has_pending_module_evaluation() -> bool {
     PENDING_MODULE_EVALUATION.with(|cell| cell.borrow().is_some())
 }
 
+pub fn has_pending_script_evaluation() -> bool {
+    PENDING_SCRIPT_EVALUATION.with(|cell| cell.borrow().is_some())
+}
+
 pub fn pending_module_evaluation_needs_wait(scope: &mut v8::HandleScope) -> bool {
     PENDING_MODULE_EVALUATION.with(|cell| {
+        let borrow = cell.borrow();
+        let Some(pending) = borrow.as_ref() else {
+            return false;
+        };
+        let promise = v8::Local::new(scope, &pending.promise);
+        promise.state() == v8::PromiseState::Pending
+    })
+}
+
+pub fn pending_script_evaluation_needs_wait(scope: &mut v8::HandleScope) -> bool {
+    PENDING_SCRIPT_EVALUATION.with(|cell| {
         let borrow = cell.borrow();
         let Some(pending) = borrow.as_ref() else {
             return false;
@@ -636,10 +678,57 @@ fn set_pending_module_evaluation(
     });
 }
 
-fn take_unhandled_promise_rejection(scope: &mut v8::HandleScope) -> Option<ExecutionError> {
+fn set_pending_script_evaluation(
+    scope: &mut v8::HandleScope,
+    promise: v8::Local<v8::Promise>,
+) {
+    PENDING_SCRIPT_EVALUATION.with(|cell| {
+        *cell.borrow_mut() = Some(PendingScriptEvaluation {
+            promise: v8::Global::new(scope, promise),
+        });
+    });
+}
+
+pub(crate) fn take_unhandled_promise_rejection(
+    scope: &mut v8::HandleScope,
+) -> Option<ExecutionError> {
     scope
         .get_slot_mut::<crate::isolate::PromiseRejectState>()
         .and_then(|state| state.unhandled.drain().next().map(|(_, err)| err))
+}
+
+pub fn finalize_pending_script_evaluation(
+    scope: &mut v8::HandleScope,
+) -> Option<(i32, Option<ExecutionError>)> {
+    let pending = PENDING_SCRIPT_EVALUATION.with(|cell| cell.borrow_mut().take())?;
+    let tc = &mut v8::TryCatch::new(scope);
+    let promise = v8::Local::new(tc, &pending.promise);
+
+    tc.perform_microtask_checkpoint();
+
+    if let Some(exception) = tc.exception() {
+        let (code, err) = exception_to_result(tc, exception);
+        return Some((code, Some(err)));
+    }
+
+    if let Some(err) = take_unhandled_promise_rejection(tc) {
+        return Some((1, Some(err)));
+    }
+
+    match promise.state() {
+        v8::PromiseState::Pending => {
+            PENDING_SCRIPT_EVALUATION.with(|cell| {
+                *cell.borrow_mut() = Some(pending);
+            });
+            None
+        }
+        v8::PromiseState::Rejected => {
+            let rejection = promise.result(tc);
+            let (code, err) = exception_to_result(tc, rejection);
+            Some((code, Some(err)))
+        }
+        v8::PromiseState::Fulfilled => Some((0, None)),
+    }
 }
 
 fn serialize_module_exports(
@@ -936,12 +1025,13 @@ fn extract_uncached_imports(
         let data = requests.get(scope, i).unwrap();
         let request: v8::Local<v8::ModuleRequest> = data.cast();
         let specifier = request.get_specifier().to_rust_string_lossy(scope);
+        let cache_key = module_request_cache_key(&specifier, referrer_name);
 
-        // Skip if already cached (by specifier or resolved path)
+        // Skip if already cached for this referrer-qualified request.
         let already_cached = MODULE_RESOLVE_STATE.with(|cell| {
             let borrow = cell.borrow();
             let state = borrow.as_ref().unwrap();
-            state.module_cache.contains_key(&specifier)
+            state.module_cache.contains_key(&cache_key)
         });
         if !already_cached {
             uncached.push((specifier, referrer_name.to_string()));
@@ -973,8 +1063,8 @@ fn prefetch_module_imports(
             let local_mod = v8::Local::new(scope, global_mod);
             let imports = extract_uncached_imports(scope, local_mod, referrer);
             for (spec, ref_name) in imports {
-                // Deduplicate within this batch
-                if !batch.iter().any(|(s, _)| s == &spec) {
+                // Deduplicate within this batch by the full request identity.
+                if !batch.iter().any(|(s, r)| s == &spec && r == &ref_name) {
                     batch.push((spec, ref_name));
                 }
             }
@@ -1048,7 +1138,10 @@ fn prefetch_module_imports(
                             .insert(resolved_path.clone(), global.clone());
                         state
                             .module_cache
-                            .insert(batch[i].0.clone(), global.clone());
+                            .insert(
+                                module_request_cache_key(&batch[i].0, &batch[i].1),
+                                global.clone(),
+                            );
                     }
                 });
 
@@ -1065,11 +1158,13 @@ fn resolve_or_compile_module<'s>(
     specifier_str: &str,
     referrer_name: &str,
 ) -> Option<v8::Local<'s, v8::Module>> {
-    // Phase 1: Check cache by specifier.
+    let request_cache_key = module_request_cache_key(specifier_str, referrer_name);
+
+    // Phase 1: Check cache by referrer-qualified request.
     let cached_global = MODULE_RESOLVE_STATE.with(|cell| {
         let borrow = cell.borrow();
         let state = borrow.as_ref()?;
-        state.module_cache.get(specifier_str).cloned()
+        state.module_cache.get(&request_cache_key).cloned()
     });
     if let Some(cached) = cached_global {
         return Some(v8::Local::new(scope, &cached));
@@ -1130,7 +1225,7 @@ fn resolve_or_compile_module<'s>(
             let global = v8::Global::new(scope, module);
             state
                 .module_cache
-                .insert(specifier_str.to_string(), global.clone());
+                .insert(request_cache_key.clone(), global.clone());
             state.module_cache.insert(resolved_path, global);
         }
     });

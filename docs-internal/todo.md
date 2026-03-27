@@ -163,10 +163,13 @@ docs-internal/specs/cli-tool-e2e.md
   - Phases: Pi headless → Pi interactive/PTY → OpenCode headless (binary spawn + SDK) → OpenCode interactive/PTY → Claude Code headless → Claude Code interactive/PTY
   - OpenCode is a Bun binary (hardest) — tests the child_process spawn path and SDK HTTP/SSE client path (not in-VM execution); done before Claude Code to front-load risk
   - Prerequisite bridge gaps: controllable `isTTY`, `setRawMode()` under PTY, HTTPS client verification, Stream Transform/PassThrough, SSE/EventSource client
+  - [x] Pi SDK real-provider sandbox validation via `createAgentSession()` with runtime-loaded credentials
 
 - [x] Review the Node driver against the intended long-term runtime contract. *(done — `.agent/contracts/node-runtime.md` and `node-bridge.md` exist)*
 
 - [x] Define the minimal driver surface needed for Rivet integration. *(done — `RuntimeDriver` interface in `packages/kernel/src/types.ts`)*
+
+- [ ] Support long-running processes (e.g. dev servers) without `await new Promise(() => {})` — sandbox should keep exec alive while active handles (listeners, timers) exist, matching Node's event loop semantics.
 
 - [ ] Add a codemode example.
   - Provide a focused example that demonstrates secure-exec usage in a realistic tool flow.

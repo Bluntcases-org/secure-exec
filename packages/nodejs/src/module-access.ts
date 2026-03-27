@@ -98,17 +98,42 @@ function isNativeAddonPath(pathValue: string): boolean {
 function collectOverlayAllowedRoots(hostNodeModulesRoot: string): string[] {
 	const roots = new Set<string>([hostNodeModulesRoot]);
 	const symlinkScanRoots = [hostNodeModulesRoot, path.join(hostNodeModulesRoot, ".pnpm", "node_modules")];
+	const scannedSymlinkDirs = new Set<string>();
+
+	const findNearestNodeModulesAncestor = (targetPath: string): string | null => {
+		let current = path.resolve(targetPath);
+		while (true) {
+			if (path.basename(current) === "node_modules") {
+				return current;
+			}
+			const parent = path.dirname(current);
+			if (parent === current) {
+				return null;
+			}
+			current = parent;
+		}
+	};
 
 	const addSymlinkTarget = (entryPath: string): void => {
 		try {
 			const target = fsSync.realpathSync(entryPath);
 			roots.add(target);
+			const packageNodeModulesRoot = findNearestNodeModulesAncestor(target);
+			if (packageNodeModulesRoot) {
+				roots.add(packageNodeModulesRoot);
+				scanDirForSymlinks(packageNodeModulesRoot);
+			}
 		} catch {
 			// Ignore broken symlinks.
 		}
 	};
 
 	const scanDirForSymlinks = (scanRoot: string): void => {
+		if (scannedSymlinkDirs.has(scanRoot)) {
+			return;
+		}
+		scannedSymlinkDirs.add(scanRoot);
+
 		let entries: fsSync.Dirent[] = [];
 		try {
 			entries = fsSync.readdirSync(scanRoot, { withFileTypes: true });
@@ -153,6 +178,7 @@ function collectOverlayAllowedRoots(hostNodeModulesRoot: string): string[] {
  */
 export class ModuleAccessFileSystem implements VirtualFileSystem {
 	private readonly baseFileSystem?: VirtualFileSystem;
+	private readonly configuredNodeModulesRoot: string;
 	private readonly hostNodeModulesRoot: string | null;
 	private readonly overlayAllowedRoots: string[];
 
@@ -169,6 +195,7 @@ export class ModuleAccessFileSystem implements VirtualFileSystem {
 
 		const cwd = path.resolve(cwdInput);
 		const nodeModulesPath = path.join(cwd, "node_modules");
+		this.configuredNodeModulesRoot = nodeModulesPath;
 		try {
 			this.hostNodeModulesRoot = fsSync.realpathSync(nodeModulesPath);
 			this.overlayAllowedRoots = collectOverlayAllowedRoots(this.hostNodeModulesRoot);
@@ -204,7 +231,10 @@ export class ModuleAccessFileSystem implements VirtualFileSystem {
 	}
 
 	private isReadOnlyProjectionPath(virtualPath: string): boolean {
-		return startsWithPath(virtualPath, SANDBOX_NODE_MODULES_ROOT);
+		return (
+			startsWithPath(virtualPath, SANDBOX_NODE_MODULES_ROOT) ||
+			this.isProjectedHostPath(virtualPath)
+		);
 	}
 
 	private shouldMergeBase(pathValue: string): boolean {
@@ -232,6 +262,35 @@ export class ModuleAccessFileSystem implements VirtualFileSystem {
 			return this.hostNodeModulesRoot;
 		}
 		return path.join(this.hostNodeModulesRoot, ...relative.split("/"));
+	}
+
+	private isProjectedHostPath(pathValue: string): boolean {
+		if (!path.isAbsolute(pathValue)) {
+			return false;
+		}
+
+		const resolved = path.resolve(pathValue);
+		if (isWithinPath(resolved, this.configuredNodeModulesRoot)) {
+			return true;
+		}
+		if (
+			this.hostNodeModulesRoot &&
+			isWithinPath(resolved, this.hostNodeModulesRoot)
+		) {
+			return true;
+		}
+		return this.overlayAllowedRoots.some((root) => isWithinPath(resolved, root));
+	}
+
+	private getOverlayHostPathCandidate(pathValue: string): string | null {
+		const overlayPath = this.overlayHostPathFor(pathValue);
+		if (overlayPath) {
+			return overlayPath;
+		}
+		if (!this.isProjectedHostPath(pathValue)) {
+			return null;
+		}
+		return path.resolve(pathValue);
 	}
 
 	prepareOpenSync(pathValue: string, flags: number): boolean {
@@ -274,7 +333,7 @@ export class ModuleAccessFileSystem implements VirtualFileSystem {
 			);
 		}
 
-		const hostPath = this.overlayHostPathFor(virtualPath);
+		const hostPath = this.getOverlayHostPathCandidate(virtualPath);
 		if (!hostPath) {
 			return null;
 		}

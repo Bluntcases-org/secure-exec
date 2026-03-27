@@ -5,13 +5,13 @@
   "generatedAt": "2026-03-26",
   "summary": {
     "total": 3532,
-    "pass": 1132,
-    "genuinePass": 1082,
+    "pass": 1171,
+    "genuinePass": 1121,
     "vacuousPass": 50,
-    "fail": 2288,
-    "skip": 112,
-    "passRate": "32.0%",
-    "genuinePassRate": "30.6%"
+    "fail": 2248,
+    "skip": 113,
+    "passRate": "33.2%",
+    "genuinePassRate": "31.7%"
   },
   "modules": {
     "abortcontroller": {
@@ -569,9 +569,9 @@
     },
     "global": {
       "total": 11,
-      "pass": 3,
+      "pass": 4,
       "vacuousPass": 0,
-      "fail": 8,
+      "fail": 7,
       "skip": 0
     },
     "h2": {
@@ -625,9 +625,9 @@
     },
     "http2": {
       "total": 256,
-      "pass": 18,
+      "pass": 28,
       "vacuousPass": 0,
-      "fail": 238,
+      "fail": 228,
       "skip": 0
     },
     "https": {
@@ -758,9 +758,9 @@
     },
     "mime": {
       "total": 2,
-      "pass": 0,
+      "pass": 1,
       "vacuousPass": 0,
-      "fail": 2,
+      "fail": 1,
       "skip": 0
     },
     "module": {
@@ -1430,10 +1430,10 @@
     },
     "whatwg": {
       "total": 60,
-      "pass": 25,
+      "pass": 52,
       "vacuousPass": 0,
-      "fail": 35,
-      "skip": 0
+      "fail": 7,
+      "skip": 1
     },
     "windows": {
       "total": 2,
@@ -1472,14 +1472,50 @@
     }
   },
   "categories": {
-    "implementation-gap": 940,
+    "implementation-gap": 914,
     "native-addon": 3,
     "requires-exec-path": 200,
-    "requires-v8-flags": 247,
+    "requires-v8-flags": 236,
     "security-constraint": 2,
-    "test-infra": 98,
-    "unsupported-api": 155,
+    "test-infra": 97,
+    "unsupported-api": 154,
     "unsupported-module": 755,
     "vacuous-skip": 50
+  },
+  "implementationIntents": {
+    "implementable": {
+      "total": 1153,
+      "fail": 1043,
+      "skip": 110,
+      "categories": {
+        "implementation-gap": 914,
+        "test-infra": 28,
+        "unsupported-api": 64,
+        "unsupported-module": 147
+      }
+    },
+    "will-not-implement": {
+      "total": 596,
+      "fail": 595,
+      "skip": 1,
+      "categories": {
+        "requires-v8-flags": 236,
+        "security-constraint": 2,
+        "test-infra": 69,
+        "unsupported-api": 6,
+        "unsupported-module": 283
+      }
+    },
+    "cannot-implement": {
+      "total": 612,
+      "fail": 610,
+      "skip": 2,
+      "categories": {
+        "native-addon": 3,
+        "requires-exec-path": 200,
+        "unsupported-api": 84,
+        "unsupported-module": 325
+      }
+    }
   }
 }

@@ -84,6 +84,16 @@ When a kernel is available, the kernel's `wrapFileSystem` deny-by-default permis
 ### Requirement: Projected Node-Modules Paths MUST Be Read-Only
 When driver-managed node_modules overlay/projection is active (including always-on `/app/node_modules` overlay), projected sandbox module paths (including `/app/node_modules` and descendants) MUST be treated as read-only runtime state.
 
+#### Scenario: Host-absolute package asset reads stay inside the projected closure
+- **WHEN** sandboxed package code derives a host-absolute path for its own projected module files from `import.meta.url`, `__filename`, or `realpath()` and then reads sibling assets such as `package.json`, `README.md`, or bundled theme/template files
+- **THEN** those read operations MUST succeed when the canonical path still resolves inside the configured projected `node_modules` closure
+- **AND** the same host-absolute projected paths MUST remain read-only for write, rename, mkdir, unlink, and rmdir operations
+
+#### Scenario: Pnpm virtual-store dependency targets stay inside the projected closure
+- **WHEN** a projected package resolves a transitive dependency through pnpm virtual-store symlinks (for example package-internal `imports` such as Chalk resolving `#ansi-styles` to another package directory under `.pnpm/.../node_modules/...`)
+- **THEN** the module overlay MUST treat those canonical dependency paths as part of the same read-only projected closure
+- **AND** sandboxed reads of those host-absolute dependency files MUST succeed without granting access to unrelated host filesystem paths outside the reachable package closure
+
 #### Scenario: Sandboxed write targets projected module file
 - **WHEN** sandboxed code attempts `writeFile`, `unlink`, or `rename` for a path under projected `/app/node_modules`
 - **THEN** the operation MUST be denied with `EACCES` regardless of broader filesystem allow rules
@@ -102,4 +112,3 @@ Node-modules overlay access SHALL NOT grant implicit read access to non-overlay 
 #### Scenario: Overlay availability does not auto-allow unrelated host reads
 - **WHEN** always-on `/app/node_modules` overlay is available and sandboxed code attempts to read `/etc/passwd` without explicit fs permission allowance
 - **THEN** runtime MUST deny the read with `EACCES`
-

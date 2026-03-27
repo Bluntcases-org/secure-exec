@@ -79,6 +79,11 @@ This hardening policy MUST NOT force Node stdlib globals to non-writable/non-con
 - **WHEN** bridge setup exposes a Node stdlib global surface (for example `process`, timers, `Buffer`, `URL`, `fetch`, or `console`)
 - **THEN** the bridge MUST preserve Node-compatible behavior and MUST NOT require non-writable/non-configurable descriptors for that stdlib global due to this policy alone
 
+#### Scenario: Bridge exposes Node global alias
+- **WHEN** sandboxed code or bridged dependencies access `global`
+- **THEN** the bridge/runtime bootstrap MUST expose `global` as an alias of `globalThis`
+- **AND** Node globals such as `process` and `Buffer` MUST remain reachable through that alias
+
 ### Requirement: WHATWG URL Bridge Preserves Node Validation And Scalar-Value Semantics
 Bridge-provided `URL` and `URLSearchParams` globals SHALL preserve the Node-observable validation, coercion, and inspection behavior that vendored conformance tests assert.
 
@@ -94,6 +99,53 @@ Bridge-provided `URL` and `URLSearchParams` globals SHALL preserve the Node-obse
 #### Scenario: WHATWG URL custom inspect hooks stay reachable through util.inspect
 - **WHEN** sandboxed code calls `util.inspect(urlLike)` for bridged `URL`, `URLSearchParams`, or iterator instances, including negative-depth and nested-object cases
 - **THEN** the bridge/runtime polyfill layer MUST continue to invoke the custom inspect hooks instead of falling back to plain `{}` output
+
+### Requirement: WHATWG Encoding And Event Globals Preserve Node-Compatible Semantics
+Bridge/runtime WHATWG globals for text encoding and DOM-style events SHALL preserve the Node-observable behavior that vendored encoding and events tests assert.
+
+#### Scenario: TextDecoder preserves UTF-8 and UTF-16 streaming, BOM, and ERR_* behavior
+- **WHEN** sandboxed code uses global `TextDecoder` with `utf-8`, `utf-16`, `utf-16le`, or `utf-16be`, including `fatal`, `ignoreBOM`, and streaming decode paths
+- **THEN** the bridge/runtime polyfill layer MUST decode scalar values and surrogate pairs correctly across chunk boundaries
+- **AND** unsupported labels MUST throw `RangeError` with `ERR_ENCODING_NOT_SUPPORTED`
+- **AND** invalid encoded data or invalid decode inputs MUST surface Node-compatible `ERR_ENCODING_INVALID_ENCODED_DATA` and `ERR_INVALID_ARG_TYPE` errors
+
+#### Scenario: EventTarget globals preserve listener and AbortSignal semantics
+- **WHEN** sandboxed code uses global `Event`, `CustomEvent`, and `EventTarget` with function listeners, object listeners, constructor option bags, or `AbortSignal` listener removal
+- **THEN** listener `this` binding, constructor option access order, dispatch return values, and abort-driven listener teardown MUST remain Node-compatible for the exercised WHATWG event cases
+
+### Requirement: Web Streams And MIME Polyfills Preserve Shared Node-Compatible Surfaces
+Bridge/runtime Web Streams and MIME polyfills SHALL preserve the Node-observable constructor identity, CommonJS loading, and helper-module behavior that vendored WHATWG conformance tests assert.
+
+#### Scenario: `stream/web` and internal Web Streams helpers load through CJS-compatible custom polyfills
+- **WHEN** sandboxed code calls `require('stream/web')` or vendored helpers such as `require('internal/webstreams/readablestream')`, `require('internal/webstreams/adapters')`, or `require('internal/worker/js_transferable')`
+- **THEN** the runtime MUST resolve those modules through custom polyfill entry points that can be evaluated by the CommonJS loader without raw ESM `export` syntax failures
+- **AND** global constructors like `ReadableStream`, `WritableStream`, `TransformStream`, `CompressionStream`, and `DecompressionStream` MUST share identity with the exports returned from `require('stream/web')`
+
+#### Scenario: `util.MIMEType` and `util.MIMEParams` share the internal MIME helper behavior
+- **WHEN** sandboxed code reads `require('util').MIMEType` or `require('util').MIMEParams`
+- **THEN** the runtime MUST source those constructors from the shared `internal/mime` helper so parsing, serialization, and parameter mutation preserve Node-compatible behavior
+
+### Requirement: Early Bootstrap Globals Cover Undici-Class Dependency Chains
+Bridge/runtime bootstrap SHALL expose the modern Web API and worker-thread compatibility helpers that third-party packages such as `undici` read at module scope before the bridge network module finishes loading.
+
+#### Scenario: PTY Node process requires undici before any network bridge import
+- **WHEN** a kernel-mediated PTY session runs `node -e "require('undici')"` or another third-party dependency chain that eagerly evaluates `undici`
+- **THEN** bootstrap-time globals such as `DOMException`, `Blob`, `File`, `FormData`, `MessagePort`, `MessageChannel`, `MessageEvent`, `AbortSignal.timeout`, and `AbortSignal.any` MUST already exist
+- **AND** compatibility helpers like `worker_threads.markAsUncloneable` and `stream.Readable.fromWeb()` MUST be reachable during that same bootstrap path
+- **AND** the runtime MUST satisfy that dependency chain through generic runtime/bootstrap behavior rather than a package-specific redirect or mock
+
+### Requirement: Bridged `process.kill()` Preserves Self-Signal Semantics
+The process bridge SHALL preserve Node-compatible self-signal behavior for `process.kill(process.pid, signal)` so interactive TUIs and signal handlers can refresh state without spuriously terminating the sandbox.
+
+#### Scenario: Unhandled self `SIGWINCH` is ignored
+- **WHEN** sandboxed code calls `process.kill(process.pid, 'SIGWINCH')` without a registered `SIGWINCH` listener
+- **THEN** the runtime MUST return `true`
+- **AND** execution MUST continue instead of exiting with `128 + 28`
+
+#### Scenario: Registered self signal handlers run in-process
+- **WHEN** sandboxed code registers `process.on('SIGTERM', handler)` or another signal listener and then calls `process.kill(process.pid, signal)`
+- **THEN** the bridge MUST emit that signal event to the registered handlers
+- **AND** the process MUST remain alive unless user code exits explicitly from the handler
 
 ### Requirement: Cryptographic Randomness Bridge Uses Host CSPRNG
 Bridge-provided randomness for global `crypto` APIs MUST delegate to host `node:crypto` primitives and MUST NOT use isolate-local pseudo-random fallbacks such as `Math.random()`.
@@ -317,6 +369,12 @@ Bridge-provided `http2` APIs SHALL preserve the basic client/server session and 
 - **AND** `stream.respond(...)`, `stream.write(...)`, and `stream.end(...)` MUST drive the corresponding host HTTP2 response headers/body/close lifecycle
 - **AND** the paired client stream MUST emit `'response'`, `'data'`, `'end'`, and `'close'` with Node-compatible ordering for basic request/response flows
 
+#### Scenario: Sandboxed code serves files through HTTP2 stream helpers
+- **WHEN** sandboxed code calls `stream.respondWithFile(...)` or `stream.respondWithFD(...)` for a file visible through the bridge filesystem or a bridged `FileHandle`
+- **THEN** the bridge MUST preserve Node-compatible validation for `offset`, `length`, destroyed-stream, and headers-sent cases
+- **AND** VFS-backed responses MUST preserve `statCheck(...)` mutations, range slicing, and auto/populated `content-length` and related headers closely enough for the vendored HTTP2 file-response fixtures
+- **AND** HTTP2 error-path shims exposed through `internal/test/binding` and `internal/http2/util` MUST share the same `Http2Stream`/`NghttpError` constructors used by the bridge so mocked nghttp2 failures exercise the real sandbox wrapper logic
+
 #### Scenario: Sandboxed code uses HTTP2 push, settings negotiation, or GOAWAY lifecycle
 - **WHEN** sandboxed code calls `stream.pushStream(...)`, `session.settings(...)`, `server.updateSettings(...)`, `session.goaway(...)`, or inspects `session.localSettings`, `session.remoteSettings`, and `pendingSettingsAck`
 - **THEN** the bridge MUST delegate push-stream creation, settings exchange, and GOAWAY delivery to the host `node:http2` session
@@ -337,6 +395,12 @@ Bridge-provided `http2` APIs SHALL preserve the basic client/server session and 
 
 ### Requirement: HTTP ClientRequest Bridge Preserves Abort Destroy And Timeout Lifecycle Semantics
 Bridge-provided `http.ClientRequest` behavior SHALL preserve the observable abort, destroy, timeout, and abort-signal lifecycle that Node.js tests inspect.
+
+#### Scenario: Sandboxed HTTP clients route through kernel sockets before any default host adapter fallback
+- **WHEN** sandboxed code calls `http.request()`, `https.request()`, or global `fetch()` against an `http:` / `https:` URL while the standard loopback-aware Node network adapter is active
+- **THEN** the bridge MUST open a kernel-managed socket path for both loopback and external client traffic instead of short-circuiting directly to in-process listeners or calling the adapter's high-level `fetch` / `httpRequest` helpers
+- **AND** network allow/deny decisions for that kernel-backed path MUST come from kernel socket permission enforcement
+- **AND** any retained direct-adapter client fallback MUST be limited to explicitly legacy custom-adapter or no-network stub cases outside kernel-consolidation claims
 
 #### Scenario: Sandboxed code aborts or destroys an HTTP request
 - **WHEN** sandboxed code calls `req.abort()` or `req.destroy()` on an `http.ClientRequest`

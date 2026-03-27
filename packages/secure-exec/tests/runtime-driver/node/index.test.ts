@@ -1,4 +1,5 @@
 import * as nodeHttp from "node:http";
+import * as nodeNet from "node:net";
 import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -122,6 +123,65 @@ describe("NodeRuntime", () => {
 			"/entry.mjs",
 		);
 		expect(result.exports).toEqual({ default: 99, named: "value" });
+	});
+
+	it("imports stream/promises through the ESM builtin wrapper", async () => {
+		const capture = createConsoleCapture();
+		proc = createTestNodeRuntime({ onStdio: capture.onStdio });
+		const result = await proc.exec(
+			`
+	      import { finished, pipeline } from "stream/promises";
+	      console.log(typeof finished + ":" + typeof pipeline);
+	    `,
+			{ filePath: "/entry.mjs" },
+		);
+		expect(result.code).toBe(0);
+		expect(capture.stdout()).toBe("function:function\n");
+	});
+
+	it("imports host builtin fs named exports through the ESM wrapper", async () => {
+		const capture = createConsoleCapture();
+		proc = createTestNodeRuntime({ onStdio: capture.onStdio });
+		const result = await proc.exec(
+			`
+	      import { closeSync, readFileSync } from "fs";
+	      console.log(typeof closeSync + ":" + typeof readFileSync);
+	    `,
+			{ filePath: "/entry.mjs" },
+		);
+		expect(result.code).toBe(0);
+		expect(capture.stdout()).toBe("function:function\n");
+	});
+
+	it("keeps relative ESM module caches scoped to each referrer", async () => {
+		const filesystem = createFs();
+		await filesystem.writeFile("/root/a/common/index.mjs", "export const onlyA = 1;");
+		await filesystem.writeFile(
+			"/root/a/sub/one.mjs",
+			'import { onlyA } from "../common/index.mjs"; export const one = onlyA;',
+		);
+		await filesystem.writeFile("/root/b/common/index.mjs", "export const onlyB = 2;");
+		await filesystem.writeFile(
+			"/root/b/sub/two.mjs",
+			'import { onlyB } from "../common/index.mjs"; export const two = onlyB;',
+		);
+
+		const capture = createConsoleCapture();
+		proc = createTestNodeRuntime({
+			filesystem,
+			permissions: allowAllFs,
+			onStdio: capture.onStdio,
+		});
+		const result = await proc.exec(
+			`
+	      import { one } from "/root/a/sub/one.mjs";
+	      import { two } from "/root/b/sub/two.mjs";
+	      console.log(one + ":" + two);
+	    `,
+			{ filePath: "/entry.mjs" },
+		);
+		expect(result.code).toBe(0);
+		expect(capture.stdout()).toBe("1:2\n");
 	});
 
 	it("drops console output by default without a hook", async () => {
@@ -272,6 +332,25 @@ describe("NodeRuntime", () => {
 	    `);
 		expect(result.code).toBe(0);
 		expect(capture.stdout().trim()).toBe("true 36 16");
+	});
+
+	it("exposes crypto.randomUUID through both CommonJS and ESM module surfaces", async () => {
+		const capture = createConsoleCapture();
+		proc = createTestNodeRuntime({ onStdio: capture.onStdio });
+		const result = await proc.exec(
+			`
+	      import * as cryptoNs from "node:crypto";
+	      const cjs = require("node:crypto");
+	      console.log(
+	        typeof cjs.randomUUID,
+	        typeof cryptoNs.randomUUID,
+	        typeof cryptoNs.default?.randomUUID,
+	      );
+	    `,
+			{ filePath: "/entry.mjs" },
+		);
+		expect(result.code).toBe(0);
+		expect(capture.stdout().trim()).toBe("function function function");
 	});
 
 	it("prevents sandbox override of host entropy bridge hooks", async () => {
@@ -944,6 +1023,119 @@ describe("NodeRuntime", () => {
 		expect(capture.stdout()).toBe("before\nside-effect\nafter\n");
 	});
 
+	it("falls back to a compat RegExp for unsupported RGI_Emoji property escapes", async () => {
+		proc = createTestNodeRuntime();
+		const result = await proc.run(`
+	      const emoji = new RegExp("^\\\\p{RGI_Emoji}$", "v");
+	      module.exports = {
+	        emoji: emoji.test("😀"),
+	        ascii: emoji.test("A"),
+	      };
+	    `);
+
+		expect(result.code).toBe(0);
+		expect(result.exports).toEqual({
+			emoji: true,
+			ascii: false,
+		});
+	});
+
+	it("loads imported ESM modules that use unicode-set regex literals", async () => {
+		const fs = createFs();
+		await fs.mkdir("/app");
+		await fs.writeFile(
+			"/app/unicode.mjs",
+			`
+	      const zeroWidthRegex = /^(?:\\p{Default_Ignorable_Code_Point}|\\p{Control}|\\p{Mark}|\\p{Surrogate})+$/v;
+	      const rgiEmojiRegex = /^\\p{RGI_Emoji}$/v;
+
+	      export const probe = {
+	        zeroWidth: zeroWidthRegex.test("\\u200D"),
+	        emoji: rgiEmojiRegex.test("😀"),
+	        ascii: rgiEmojiRegex.test("A"),
+	      };
+	    `,
+		);
+
+		proc = createTestNodeRuntime({
+			filesystem: fs,
+			permissions: allowAllFs,
+		});
+		const result = await proc.run(
+			`
+	      import { probe } from "./unicode.mjs";
+	      export default probe;
+	    `,
+			"/app/entry.mjs",
+		);
+
+		expect(result.code).toBe(0);
+		expect(result.exports).toEqual({
+			default: {
+				zeroWidth: true,
+				emoji: true,
+				ascii: false,
+			},
+		});
+	});
+
+	it("keeps CJS comment and string text from triggering ESM entry classification", async () => {
+		proc = createTestNodeRuntime();
+		const result = await proc.run(
+			`
+	      const text = "import('./not-a-real-module.mjs')";
+	      /*
+	      export const fake = true;
+	      */
+	      module.exports = text;
+	    `,
+			"/entry.js",
+		);
+
+		expect(result.code).toBe(0);
+		expect(result.exports).toBe("import('./not-a-real-module.mjs')");
+	});
+
+	it("resolves import() inside require()-loaded CJS modules without rewriting strings", async () => {
+		const fs = createFs();
+		await fs.mkdir("/app");
+		await fs.writeFile(
+			"/app/loader.cjs",
+			`
+	      const literal = "import('./fake.mjs')";
+	      module.exports = async function load() {
+	        const mod = await import("./dep.mjs");
+	        return literal + "|" + mod.value;
+	      };
+	    `,
+		);
+		await fs.writeFile(
+			"/app/dep.mjs",
+			`
+	      export const value = 42;
+	    `,
+		);
+
+		const capture = createConsoleCapture();
+		proc = createTestNodeRuntime({
+			filesystem: fs,
+			permissions: allowAllFs,
+			onStdio: capture.onStdio,
+		});
+		const result = await proc.exec(
+			`
+	      (async () => {
+	        const value = await require("./loader.cjs")();
+	        console.log(value);
+	      })();
+	    `,
+			{ filePath: "/app/entry.js" },
+		);
+
+		expect(result.code).toBe(0);
+		expect(capture.stdout()).toBe("import('./fake.mjs')|42\n");
+	});
+
 	it("does not evaluate dynamic imports in untaken branches", async () => {
 		const fs = createFs();
 		await fs.mkdir("/app");
@@ -1579,6 +1771,67 @@ describe("NodeRuntime", () => {
 			expect(payload.mutableDescriptors[name]?.writable).toBe(true);
 			expect(payload.mutableDescriptors[name]?.configurable).toBe(true);
 		}
+	});
+
+	it("exposes global as a Node-compatible alias of globalThis", async () => {
+		const capture = createConsoleCapture();
+		proc = createTestNodeRuntime({
+			onStdio: capture.onStdio,
+		});
+		const result = await proc.exec(
+			`
+		      console.log(JSON.stringify({
+		        sameObject: global === globalThis,
+		        processAlias: global.process === process,
+		        bufferAlias: global.Buffer === Buffer,
+		      }));
+		    `,
+			{ filePath: "/entry.js" },
+		);
+		expect(result.code).toBe(0);
+		const payload = JSON.parse(capture.stdout().trim()) as {
+			sameObject: boolean;
+			processAlias: boolean;
+			bufferAlias: boolean;
+		};
+		expect(payload.sameObject).toBe(true);
+		expect(payload.processAlias).toBe(true);
+		expect(payload.bufferAlias).toBe(true);
+	});
+
+	it("preserves Promise subclass methods after stream/web installs promise tracking", async () => {
+		const capture = createConsoleCapture();
+		proc = createTestNodeRuntime({ onStdio: capture.onStdio });
+		const result = await proc.exec(`
+	      (async () => {
+	        require("node:stream/web");
+
+	        class ApiPromise extends Promise {
+	          withResponse() {
+	            return "ok";
+	          }
+	        }
+
+	        const request = new ApiPromise((resolve) => resolve(42));
+	        await request;
+	        console.log(JSON.stringify({
+	          constructorName: request.constructor?.name ?? null,
+	          protoName: Object.getPrototypeOf(request)?.constructor?.name ?? null,
+	          hasWithResponse: typeof request.withResponse,
+	          instanceofPromise: request instanceof Promise,
+	        }));
+	      })().catch((error) => {
+	        console.error(error instanceof Error ? error.stack ?? error.message : String(error));
+	        process.exitCode = 1;
+	      });
+	    `);
+		expect(result.code).toBe(0);
+		expect(JSON.parse(capture.stdout().trim())).toEqual({
+			constructorName: "ApiPromise",
+			protoName: "ApiPromise",
+			hasWithResponse: "function",
+			instanceofPromise: true,
+		});
 	});
 
 	it("enforces shared cpuTimeLimitMs deadline during active-handle wait", async () => {
@@ -2251,6 +2504,251 @@ describe("NodeRuntime", () => {
 		expect(result.code).toBe(0);
 		expect(capture.stdout()).toContain("headers text/plain 16");
 		expect(capture.stdout()).toContain("body file-handle-body");
+	});
+
+	it("serves bridged http2 respondWithFile responses from the sandbox VFS with statCheck and range metadata", async () => {
+		const capture = createConsoleCapture();
+		const filesystem = createInMemoryFileSystem();
+		proc = createTestNodeRuntime({
+			onStdio: capture.onStdio,
+			filesystem,
+			driver: createNodeDriver({
+				filesystem,
+				networkAdapter: createDefaultNetworkAdapter(),
+				permissions: allowFsNetworkEnv,
+			}),
+		});
+
+		const result = await proc.exec(`
+			const fs = require('fs');
+			const http2 = require('http2');
+			const {
+				HTTP2_HEADER_CONTENT_TYPE,
+				HTTP2_HEADER_CONTENT_LENGTH,
+				HTTP2_HEADER_LAST_MODIFIED,
+			} = http2.constants;
+			fs.writeFileSync('/tmp/http2-range.txt', '0123456789abcdef');
+			const stat = fs.statSync('/tmp/http2-range.txt');
+			const server = http2.createServer();
+			server.on('stream', (stream) => {
+				stream.respondWithFile('/tmp/http2-range.txt', {
+					[HTTP2_HEADER_CONTENT_TYPE]: 'text/plain',
+				}, {
+					offset: 8,
+					length: 3,
+					statCheck(fileStat, headers, options) {
+						headers[HTTP2_HEADER_LAST_MODIFIED] = fileStat.mtime.toUTCString();
+						console.log('statcheck', options.offset, options.length, fileStat.size);
+					},
+				});
+			});
+			server.listen(0, () => {
+				const client = http2.connect('http://localhost:' + server.address().port);
+				const req = client.request();
+				let body = '';
+				req.setEncoding('utf8');
+				req.on('response', (headers) => {
+					console.log(
+						'headers',
+						headers[HTTP2_HEADER_CONTENT_TYPE],
+						headers[HTTP2_HEADER_CONTENT_LENGTH],
+						headers[HTTP2_HEADER_LAST_MODIFIED] === stat.mtime.toUTCString(),
+					);
+				});
+				req.on('data', (chunk) => body += chunk);
+				req.on('end', () => {
+					console.log('body', body);
+					client.close();
+					server.close();
+				});
+				req.end();
+			});
+		`);
+
+		expect(result.code).toBe(0);
+		expect(capture.stdout()).toContain("statcheck 8 3 16");
+		expect(capture.stdout()).toContain("headers text/plain 3 true");
+		expect(capture.stdout()).toContain("body 89a");
+	});
+
+	it("matches bridged http2 respondWithFile validation and invalid fd errors", async () => {
+		const capture = createConsoleCapture();
+		const filesystem = createInMemoryFileSystem();
+		proc = createTestNodeRuntime({
+			onStdio: capture.onStdio,
+			filesystem,
+			driver: createNodeDriver({
+				filesystem,
+				networkAdapter: createDefaultNetworkAdapter(),
+				permissions: allowFsNetworkEnv,
+			}),
+		});
+
+		const result = await proc.exec(`
+			const fs = require('fs');
+			const http2 = require('http2');
+			fs.writeFileSync('/tmp/http2-errors.txt', 'file-body');
+			let phase = 0;
+			const server = http2.createServer();
+			server.on('stream', (stream) => {
+				phase += 1;
+				if (phase === 1) {
+					try {
+						stream.respondWithFile('/tmp/http2-errors.txt', {}, { offset: 'bad' });
+					} catch (error) {
+						console.log('offset-error', error.code, error.message);
+					}
+					try {
+						stream.respondWithFile('/tmp/http2-errors.txt', { ':status': 204 });
+					} catch (error) {
+						console.log('status-error', error.code, error.message);
+					}
+					stream.respond({ ':status': 200 });
+					try {
+						stream.respondWithFile('/tmp/http2-errors.txt');
+					} catch (error) {
+						console.log('headers-error', error.code, error.message);
+					}
+					stream.destroy();
+					try {
+						stream.respondWithFile('/tmp/http2-errors.txt');
+					} catch (error) {
+						console.log('destroyed-error', error.code, error.message);
+					}
+					return;
+				}
+				stream.on('error', (error) => {
+					console.log('stream-error', error.code, error.message);
+				});
+				stream.respondWithFD(999999);
+			});
+			server.listen(0, () => {
+				const client = http2.connect('http://localhost:' + server.address().port);
+				const req1 = client.request();
+				req1.on('close', () => {
+					const req2 = client.request();
+					req2.on('error', (error) => {
+						console.log('client-error', error.code, error.message);
+					});
+					req2.on('close', () => {
+						client.close();
+						server.close();
+					});
+					req2.end();
+				});
+				req1.end();
+			});
+		`);
+
+		expect(result.code).toBe(0);
+		expect(capture.stdout()).toContain("offset-error ERR_INVALID_ARG_VALUE");
+		expect(capture.stdout()).toContain("status-error ERR_HTTP2_PAYLOAD_FORBIDDEN");
+		expect(capture.stdout()).toContain("headers-error ERR_HTTP2_HEADERS_SENT");
+		expect(capture.stdout()).toContain("destroyed-error ERR_HTTP2_INVALID_STREAM");
+		expect(capture.stdout()).toContain("stream-error ERR_HTTP2_STREAM_ERROR Stream closed with error code NGHTTP2_INTERNAL_ERROR");
+		expect(capture.stdout()).toContain("client-error ERR_HTTP2_STREAM_ERROR Stream closed with error code NGHTTP2_INTERNAL_ERROR");
+	}, 10000);
+
+	it("shares bridged http2 internal NghttpError constructors with internal/test/binding error mocks", async () => {
+		const capture = createConsoleCapture();
+		const filesystem = createInMemoryFileSystem();
+		proc = createTestNodeRuntime({
+			onStdio: capture.onStdio,
+			filesystem,
+			driver: createNodeDriver({
+				filesystem,
+				networkAdapter: createDefaultNetworkAdapter(),
+				permissions: allowFsNetworkEnv,
+			}),
+		});
+
+		const result = await proc.exec(`
+			const fs = require('fs');
+			const http2 = require('http2');
+			const { internalBinding } = require('internal/test/binding');
+			const { Http2Stream, constants, nghttp2ErrorString } = internalBinding('http2');
+			const { NghttpError } = require('internal/http2/util');
+			fs.writeFileSync('/tmp/http2-ngerror.txt', 'file-body');
+			Http2Stream.prototype.respond = () => constants.NGHTTP2_ERR_INVALID_ARGUMENT;
+			const server = http2.createServer();
+			server.on('stream', (stream) => {
+				stream.on('error', (error) => {
+					console.log(
+						'stream-error',
+						error instanceof NghttpError,
+						error.code,
+						error.message === nghttp2ErrorString(constants.NGHTTP2_ERR_INVALID_ARGUMENT),
+					);
+				});
+				stream.respondWithFile('/tmp/http2-ngerror.txt');
+			});
+			server.listen(0, () => {
+				const client = http2.connect('http://localhost:' + server.address().port);
+				const req = client.request();
+				req.on('error', (error) => {
+					console.log('client-error', error.code, error.message);
+				});
+				req.on('close', () => {
+					client.close();
+					server.close();
+				});
+				req.end();
+			});
+		`);
+
+		expect(result.code).toBe(0);
+		expect(capture.stdout()).toContain("stream-error true ERR_HTTP2_ERROR true");
+		expect(capture.stdout()).toContain("client-error ERR_HTTP2_STREAM_ERROR Stream closed with error code NGHTTP2_INTERNAL_ERROR");
+	});
+
+	it("serves host-backed http2 respondWithFile fallbacks and honors borrowed net.Socket destroy on the session socket", async () => {
+		const capture = createConsoleCapture();
+		proc = createTestNodeRuntime({
+			onStdio: capture.onStdio,
+			driver: createNodeDriver({
+				filesystem: new NodeFileSystem(),
+				networkAdapter: createDefaultNetworkAdapter(),
+				permissions: allowFsNetworkEnv,
+			}),
+		});
+
+		const result = await proc.exec(`
+			const assert = require('assert');
+			const http2 = require('http2');
+			const net = require('net');
+			const server = http2.createServer();
+			server.on('stream', (stream) => {
+				stream.on('error', (err) => {
+					console.log('server-error', err.code);
+				});
+				stream.respondWithFile(process.execPath, {
+					'content-type': 'application/octet-stream',
+				});
+			});
+			server.on('close', () => {
+				console.log('server-close');
+			});
+			server.listen(0, () => {
+				const client = http2.connect('http://localhost:' + server.address().port);
+				const req = client.request();
+				req.on('response', () => {
+					console.log('response');
+				});
+				req.once('data', () => {
+					net.Socket.prototype.destroy.call(client.socket);
+					server.close();
+				});
+				req.on('close', () => {
+					console.log('client-close');
+				});
+				req.end();
+			});
+		`);
+
+		expect(result.code).toBe(0);
+		expect(capture.stdout()).toContain("response");
+		expect(capture.stdout()).toContain("client-close");
+		expect(capture.stdout()).toContain("server-close");
 	});
 
 	it("handles bridged secure http2 allowHTTP1 fallback requests", async () => {
@@ -5392,6 +5890,101 @@ describe("NodeRuntime", () => {
 		});
 	});
 
+	it("supports WHATWG TextDecoder streaming, fatal errors, and UTF-16 labels", async () => {
+		proc = createTestNodeRuntime();
+		const result = await proc.run(`
+			const chunks = [
+				[0x00, 0xd8, 0x00],
+				[0xdc, 0xff, 0xdb],
+				[0xff, 0xdf],
+			];
+			const decoder = new TextDecoder('utf-16le');
+			let streamed = '';
+			for (const chunk of chunks) {
+				streamed += decoder.decode(new Uint8Array(chunk), { stream: true });
+			}
+			streamed += decoder.decode();
+
+			const outcomes = {
+				streamed,
+				utf16Encoding: new TextDecoder('utf-16').encoding,
+				invalidLabel: '',
+				fatal: '',
+			};
+
+			try {
+				new TextDecoder('\\u2028utf-8');
+			} catch (error) {
+				outcomes.invalidLabel = [error.name, error.code].join('|');
+			}
+
+			try {
+				new TextDecoder('utf-8', { fatal: true }).decode(new Uint8Array([0xc0]));
+			} catch (error) {
+				outcomes.fatal = [error.name, error.code, error.message].join('|');
+			}
+
+			module.exports = outcomes;
+		`);
+		expect(result.exports).toEqual({
+			streamed: "\u{10000}\u{10ffff}",
+			utf16Encoding: "utf-16le",
+			invalidLabel: "RangeError|ERR_ENCODING_NOT_SUPPORTED",
+			fatal: "TypeError|ERR_ENCODING_INVALID_ENCODED_DATA|The encoded data was not valid for encoding utf-8",
+		});
+	});
+
+	it("supports WHATWG EventTarget object listeners and AbortSignal removal", async () => {
+		proc = createTestNodeRuntime();
+		const result = await proc.run(`
+			const outcomes = {
+				objectThis: false,
+				functionThis: false,
+				signalCalls: 0,
+				invalidSignal: '',
+			};
+
+			const objectTarget = new EventTarget();
+			const objectListener = {
+				handleEvent(event) {
+					outcomes.objectThis = this === objectListener && event.type === 'object';
+				},
+			};
+			objectTarget.addEventListener('object', objectListener);
+			objectTarget.dispatchEvent(new Event('object'));
+
+			const functionTarget = new EventTarget();
+			function functionListener() {
+				outcomes.functionThis = this === functionTarget;
+			}
+			functionTarget.addEventListener('function', functionListener);
+			functionTarget.dispatchEvent(new Event('function'));
+
+			const signalTarget = new EventTarget();
+			const controller = new AbortController();
+			signalTarget.addEventListener('signal', () => {
+				outcomes.signalCalls += 1;
+			}, { signal: controller.signal });
+			signalTarget.dispatchEvent(new Event('signal'));
+			controller.abort();
+			signalTarget.dispatchEvent(new Event('signal'));
+
+			try {
+				signalTarget.addEventListener('signal', () => {}, { signal: 1 });
+			} catch (error) {
+				outcomes.invalidSignal = error.name;
+			}
+
+			module.exports = outcomes;
+		`);
+		expect(result.exports).toEqual({
+			objectThis: true,
+			functionThis: true,
+			signalCalls: 1,
+			invalidSignal: "TypeError",
+		});
+	});
+
 	it("deferred fs APIs respect permission deny", async () => {
 		const vfs = createFs();
 		await vfs.mkdir("/data");
@@ -5639,5 +6232,345 @@ describe("NodeRuntime", () => {
 		const exports = result.exports as { default: { blocked: boolean; error: string } };
 		expect(exports.default.blocked).toBe(true);
 		expect(exports.default.error).toContain("EACCES");
+	});
+
+	it("keeps fetch unavailable when the standalone runtime omits the network adapter", async () => {
+		let requestCount = 0;
+		const server = nodeHttp.createServer((_req, res) => {
+			requestCount += 1;
+			res.writeHead(200, { "content-type": "text/plain" });
+			res.end("host-network-should-stay-unavailable");
+		});
+		await new Promise<void>((resolve, reject) => {
+			server.once("error", reject);
+			server.listen(0, "127.0.0.1", () => resolve());
+		});
+
+		const address = server.address();
+		if (!address || typeof address === "string") {
+			throw new Error("expected an inet listener address");
+		}
+
+		try {
+			proc = createTestNodeRuntime({
+				permissions: { ...allowAllNetwork },
+			});
+			const result = await proc.run(
+				`
+				export default await (async () => {
+					try {
+						const response = await fetch("http://127.0.0.1:${address.port}/");
+						return {
+							ok: true,
+							body: await response.text(),
+						};
+					} catch (error) {
+						return {
+							ok: false,
+							code: error?.code,
+							message: error?.message ?? String(error),
+						};
+					}
+				})();
+				`,
+				"/entry.mjs",
+			);
+			expect(result.code).toBe(0);
+			expect(result.exports).toEqual({
+				default: {
+					ok: false,
+					code: undefined,
+					message: expect.stringContaining("ENOSYS"),
+				},
+			});
+			expect(requestCount).toBe(0);
+		} finally {
+			await new Promise<void>((resolve, reject) => {
+				server.close((error) => {
+					if (error) reject(error);
+					else resolve();
+				});
+			});
+		}
+	});
+
+	it("keeps detached fetch requests alive until the response resolves", async () => {
+		const capture = createConsoleCapture();
+		const server = nodeHttp.createServer((_req, res) => {
+			setTimeout(() => {
+				res.writeHead(200, { "content-type": "text/plain" });
+				res.end("fetch-detached-ok");
+			}, 25);
+		});
+		await new Promise<void>((resolve, reject) => {
+			server.once("error", reject);
+			server.listen(0, "127.0.0.1", () => resolve());
+		});
+
+		const address = server.address();
+		if (!address || typeof address === "string") {
+			throw new Error("expected an inet listener address");
+		}
+
+		try {
+			proc = createTestNodeRuntime({
+				onStdio: capture.onStdio,
+				driver: createNodeDriver({
+					useDefaultNetwork: true,
+					permissions: { ...allowAllNetwork },
+				}),
+			});
+			const result = await proc.exec(`
+		      (async () => {
+		        const response = await fetch("http://127.0.0.1:${address.port}/");
+		        console.log(await response.text());
+		      })().catch((error) => {
+		        console.error(error instanceof Error ? error.stack ?? error.message : String(error));
+		        process.exitCode = 1;
+		      });
+		    `);
+			expect(result.code).toBe(0);
+			expect(capture.stdout().trim()).toBe("fetch-detached-ok");
+		} finally {
+			await new Promise<void>((resolve, reject) => {
+				server.close((error) => {
+					if (error) reject(error);
+					else resolve();
+				});
+			});
+		}
+	});
+
+	it("forwards Headers instances through fetch request init", async () => {
+		const capture = createConsoleCapture();
+		const server = nodeHttp.createServer((req, res) => {
+			res.writeHead(200, { "content-type": "text/plain; charset=utf-8" });
+			res.end(String(req.headers["x-probe-header"] ?? ""));
+		});
+		await new Promise<void>((resolve, reject) => {
+			server.once("error", reject);
+			server.listen(0, "127.0.0.1", () => resolve());
+		});
+
+		const address = server.address();
+		if (!address || typeof address === "string") {
+			throw new Error("expected an inet listener address");
+		}
+
+		try {
+			proc = createTestNodeRuntime({
+				onStdio: capture.onStdio,
+				driver: createNodeDriver({
+					useDefaultNetwork: true,
+					permissions: { ...allowAllNetwork },
+				}),
+			});
+			const result = await proc.exec(`
+		      (async () => {
+		        const headers = new Headers();
+		        headers.set("x-probe-header", "headers-instance-ok");
+		        const response = await fetch("http://127.0.0.1:${address.port}/", { headers });
+		        console.log(await response.text());
+		      })().catch((error) => {
+		        console.error(error instanceof Error ? error.stack ?? error.message : String(error));
+		        process.exitCode = 1;
+		      });
+		    `);
+			expect(result.code).toBe(0);
+			expect(capture.stdout().trim()).toBe("headers-instance-ok");
+		} finally {
+			await new Promise<void>((resolve, reject) => {
+				server.close((error) => {
+					if (error) reject(error);
+					else resolve();
+				});
+			});
+		}
+	});
+
+	it("exposes buffered fetch response bodies as readable streams", async () => {
+		const capture = createConsoleCapture();
+		const server = nodeHttp.createServer((_req, res) => {
+			res.writeHead(200, { "content-type": "text/plain; charset=utf-8" });
+			res.end("fetch-stream-body");
+		});
+		await new Promise<void>((resolve, reject) => {
+			server.once("error", reject);
+			server.listen(0, "127.0.0.1", () => resolve());
+		});
+
+		const address = server.address();
+		if (!address || typeof address === "string") {
+			throw new Error("expected an inet listener address");
+		}
+
+		try {
+			proc = createTestNodeRuntime({
+				onStdio: capture.onStdio,
+				driver: createNodeDriver({
+					useDefaultNetwork: true,
+					permissions: { ...allowAllNetwork },
+				}),
+			});
+			const result = await proc.exec(`
+		      (async () => {
+		        const response = await fetch("http://127.0.0.1:${address.port}/");
+		        const reader = response.body?.getReader();
+		        const first = reader ? await reader.read() : null;
+		        const text = first?.value ? new TextDecoder().decode(first.value) : "";
+		        console.log(JSON.stringify({
+		          hasBody: typeof response.body?.getReader === "function",
+		          done: first?.done ?? null,
+		          text,
+		        }));
+		      })().catch((error) => {
+		        console.error(error instanceof Error ? error.stack ?? error.message : String(error));
+		        process.exitCode = 1;
+		      });
+		    `);
+			expect(result.code).toBe(0);
+			expect(JSON.parse(capture.stdout().trim())).toEqual({
+				hasBody: true,
+				done: false,
+				text: "fetch-stream-body",
+			});
+		} finally {
+			await new Promise<void>((resolve, reject) => {
+				server.close((error) => {
+					if (error) reject(error);
+					else resolve();
+				});
+			});
+		}
+	});
+
+	it("invokes process.stdout.write callbacks for empty flush writes", async () => {
+		const capture = createConsoleCapture();
+		proc = createTestNodeRuntime({
+			onStdio: capture.onStdio,
+		});
+		const result = await proc.exec(`
+	      (async () => {
+	        await new Promise((resolve, reject) => {
+	          process.stdout.write("", (error) => {
+	            if (error) reject(error);
+	            else resolve();
+	          });
+	        });
+	        console.log("flush-ok");
+	      })().catch((error) => {
+	        console.error(error instanceof Error ? error.stack ?? error.message : String(error));
+	        process.exitCode = 1;
+	      });
+	    `);
+		expect(result.code).toBe(0);
+		expect(capture.stdout().trim()).toBe("flush-ok");
+	});
+
+	it("does not let http.get or net.connect reach host listeners when the standalone runtime omits the network adapter", async () => {
+		const httpServer = nodeHttp.createServer((_req, res) => {
+			res.writeHead(200, { "content-type": "text/plain" });
+			res.end("host-http-should-not-be-reachable");
+		});
+		await new Promise<void>((resolve, reject) => {
+			httpServer.once("error", reject);
+			httpServer.listen(0, "127.0.0.1", () => resolve());
+		});
+
+		const netServer = nodeNet.createServer((socket) => {
+			socket.end("host-net-should-not-be-reachable");
+		});
+		await new Promise<void>((resolve, reject) => {
+			netServer.once("error", reject);
+			netServer.listen(0, "127.0.0.1", () => resolve());
+		});
+
+		const httpAddress = httpServer.address();
+		const netAddress = netServer.address();
+		if (!httpAddress || typeof httpAddress === "string") {
+			throw new Error("expected an inet HTTP listener address");
+		}
+		if (!netAddress || typeof netAddress === "string") {
+			throw new Error("expected an inet TCP listener address");
+		}
+
+		try {
+			proc = createTestNodeRuntime({
+				permissions: { ...allowAllNetwork },
+			});
+			const result = await proc.run(
+				`
+				import http from "node:http";
+				import net from "node:net";
+
+				const httpResult = await new Promise((resolve) => {
+					const req = http.get(
+						{ host: "127.0.0.1", port: ${httpAddress.port}, path: "/" },
+						(res) => {
+							let body = "";
+							res.setEncoding("utf8");
+							res.on("data", (chunk) => {
+								body += chunk;
+							});
+							res.on("end", () => resolve({ ok: true, body }));
+						},
+					);
+					req.on("error", (error) => {
+						resolve({
+							ok: false,
+							code: error?.code,
+							message: error?.message ?? String(error),
+						});
+					});
+				});
+
+				const netResult = await new Promise((resolve) => {
+					const socket = net.connect({ host: "127.0.0.1", port: ${netAddress.port} });
+					socket.once("connect", () => {
+						socket.destroy();
+						resolve({ ok: true });
+					});
+					socket.once("error", (error) => {
+						resolve({
+							ok: false,
+							code: error?.code,
+							message: error?.message ?? String(error),
+						});
+					});
+				});
+
+				export default { httpResult, netResult };
+				`,
+				"/entry.mjs",
+			);
+			expect(result.code).toBe(0);
+			expect(result.exports).toEqual({
+				default: {
+					httpResult: {
+						ok: false,
+						code: undefined,
+						message: expect.stringContaining("ENOSYS"),
+					},
+					netResult: {
+						ok: false,
+						code: undefined,
+						message: expect.stringContaining("ECONNREFUSED"),
+					},
+				},
+			});
+		} finally {
+			await new Promise<void>((resolve, reject) => {
+				httpServer.close((error) => {
+					if (error) reject(error);
+					else resolve();
+				});
+			});
+			await new Promise<void>((resolve, reject) => {
+				netServer.close((error) => {
+					if (error) reject(error);
+					else resolve();
+				});
+			});
+		}
 	});
 });

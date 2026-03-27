@@ -62,6 +62,7 @@ async function writePackage(
 	options: {
 		main?: string;
 		dependencies?: Record<string, string>;
+		packageJsonFields?: Record<string, unknown>;
 		files: PackageFiles;
 	},
 ): Promise<string> {
@@ -75,6 +76,7 @@ async function writePackage(
 		name: packageName,
 		main: options.main ?? "index.js",
 		dependencies: options.dependencies,
+		...options.packageJsonFields,
 	};
 	await writeFile(
 		path.join(packageDir, "package.json"),
@@ -214,6 +216,186 @@ describe("moduleAccess overlay", () => {
 		expect(result.code).toBe(0);
 		expect(result).not.toHaveProperty("stdout");
 		expect(capture.stdout()).toBe("42:host-file\n");
+	});
+
+	it("allows sync fs access to host absolute paths within the projected module tree", async () => {
+		const projectDir = await createTempProject();
+		tempDirs.push(projectDir);
+		const entryPath = path.join(
+			projectDir,
+			"node_modules",
+			"asset-probe",
+			"dist",
+			"config.js",
+		);
+		const packageJsonPath = path.join(
+			projectDir,
+			"node_modules",
+			"asset-probe",
+			"package.json",
+		);
+
+		await writePackage(projectDir, "asset-probe", {
+			files: {
+				"dist/config.js": "module.exports = { ok: true };",
+			},
+		});
+
+		const driver = createModuleAccessDriver({
+			moduleAccess: {
+				cwd: projectDir,
+			},
+		});
+		const filesystem = driver.filesystem!;
+
+		expect(await filesystem.exists(entryPath)).toBe(true);
+		expect(await filesystem.realpath(entryPath)).toBe(entryPath);
+		expect(await filesystem.exists(packageJsonPath)).toBe(true);
+		expect(await filesystem.readTextFile(packageJsonPath)).toContain(
+			'"name": "asset-probe"',
+		);
+	});
+
+	it("allows host-absolute reads for pnpm virtual-store dependencies inside the projected closure", async () => {
+		const projectDir = await createTempProject();
+		tempDirs.push(projectDir);
+
+		const virtualStoreRoot = path.join(projectDir, "node_modules", ".pnpm");
+		const agentStoreRoot = path.join(
+			virtualStoreRoot,
+			"agent-pkg@1.0.0",
+			"node_modules",
+		);
+		const transitiveStoreRoot = path.join(
+			virtualStoreRoot,
+			"chalkish@1.0.0",
+			"node_modules",
+		);
+		const agentPackageDir = path.join(agentStoreRoot, "agent-pkg");
+		const transitivePackageDir = path.join(transitiveStoreRoot, "chalkish");
+
+		await mkdir(agentPackageDir, { recursive: true });
+		await mkdir(transitivePackageDir, { recursive: true });
+		await writeFile(
+			path.join(agentPackageDir, "package.json"),
+			JSON.stringify({ name: "agent-pkg", version: "1.0.0" }, null, 2),
+		);
+		await writeFile(
+			path.join(transitivePackageDir, "package.json"),
+			JSON.stringify({ name: "chalkish", version: "1.0.0" }, null, 2),
+		);
+
+		await symlink(
+			path.relative(path.join(projectDir, "node_modules"), agentPackageDir),
+			path.join(projectDir, "node_modules", "agent-pkg"),
+		);
+		await symlink(
+			path.relative(agentStoreRoot, transitivePackageDir),
+			path.join(agentStoreRoot, "chalkish"),
+		);
+
+		const driver = createModuleAccessDriver({
+			moduleAccess: {
+				cwd: projectDir,
+			},
+		});
+		const filesystem = driver.filesystem!;
+		const transitivePackageJsonPath = path.join(
+			transitivePackageDir,
+			"package.json",
+		);
+
+		expect(await filesystem.exists(transitivePackageJsonPath)).toBe(true);
+		expect(await filesystem.readTextFile(transitivePackageJsonPath)).toContain(
+			'"name": "chalkish"',
+		);
+	});
+
+	it("resolves nested import exports from projected host file referrers", async () => {
+		const projectDir = await createTempProject();
+		tempDirs.push(projectDir);
+
+		await writePackage(projectDir, "conditional-dep", {
+			packageJsonFields: {
+				type: "module",
+				exports: {
+					".": {
+						import: {
+							default: "./dist/esm/index.mjs",
+						},
+						require: {
+							default: "./dist/cjs/index.cjs",
+						},
+					},
+				},
+			},
+			files: {
+				"dist/esm/index.mjs": 'export { value } from "./compiler/index.mjs";',
+				"dist/esm/compiler/index.mjs": "export const value = 42;",
+				"dist/cjs/index.cjs": "module.exports = { value: 41 };",
+			},
+		});
+		const referrerPackageDir = await writePackage(projectDir, "host-referrer-probe", {
+			packageJsonFields: {
+				type: "module",
+			},
+			files: {
+				"dist/index.js": 'export { value } from "conditional-dep";',
+			},
+		});
+		const referrerPath = path.join(referrerPackageDir, "dist", "index.js");
+
+		const driver = createModuleAccessDriver({
+			moduleAccess: {
+				cwd: projectDir,
+			},
+		});
+		const capture = createConsoleCapture();
+		proc = createTestNodeRuntime({ driver, onStdio: capture.onStdio });
+
+		const result = await proc.exec(
+			`import { value } from ${JSON.stringify(referrerPath)}; console.log(value);`,
+			{ cwd: "/root", filePath: "/entry.mjs" },
+		);
+		expect(result.code).toBe(0);
+		expect(result).not.toHaveProperty("stdout");
+		expect(capture.stdout()).toBe("42\n");
+	});
+
+	it("imports named exports from projected CommonJS packages in ESM mode", async () => {
+		const projectDir = await createTempProject();
+		tempDirs.push(projectDir);
+
+		await writePackage(projectDir, "cjs-named", {
+			files: {
+				"index.js": "exports.parse = () => 42; exports.kind = 'cjs';",
+			},
+		});
+		const referrerPackageDir = await writePackage(projectDir, "esm-cjs-interop-probe", {
+			packageJsonFields: {
+				type: "module",
+			},
+			files: {
+				"dist/index.js": 'import { parse } from "cjs-named"; console.log(parse());',
+			},
+		});
+		const referrerPath = path.join(referrerPackageDir, "dist", "index.js");
+
+		const driver = createModuleAccessDriver({
+			moduleAccess: {
+				cwd: projectDir,
+			},
+		});
+		const capture = createConsoleCapture();
+		proc = createTestNodeRuntime({ driver, onStdio: capture.onStdio });
+
+		const result = await proc.exec(
+			`import ${JSON.stringify(referrerPath)};`,
+			{ cwd: "/root", filePath: "/entry.mjs" },
+		);
+		expect(result.code).toBe(0);
+		expect(result).not.toHaveProperty("stdout");
+		expect(capture.stdout()).toBe("42\n");
 	});
 
 	it("keeps projected node_modules read-only", async () => {

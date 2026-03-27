@@ -3,8 +3,14 @@
 
 import type * as nodeProcess from "process";
 
-// Re-export TextEncoder/TextDecoder from polyfills (polyfills.ts is imported first in index.ts)
-import { TextEncoder, TextDecoder } from "./polyfills.js";
+// Re-export WHATWG globals from polyfills (polyfills.ts is imported first in index.ts)
+import {
+	TextEncoder,
+	TextDecoder,
+	Event,
+	CustomEvent,
+	EventTarget,
+} from "./polyfills.js";
 
 import {
 	URL,
@@ -19,6 +25,7 @@ import type {
 	CryptoRandomUuidBridgeRef,
 	CryptoSubtleBridgeRef,
 	FsFacadeBridge,
+	KernelStdinReadBridgeRef,
 	ProcessErrorBridgeRef,
 	ProcessLogBridgeRef,
 	PtySetRawModeBridgeRef,
@@ -65,6 +72,13 @@ declare const _cryptoSubtle: CryptoSubtleBridgeRef | undefined;
 declare const _fs: FsFacadeBridge;
 // PTY setRawMode bridge ref (optional — only present when PTY is attached)
 declare const _ptySetRawMode: PtySetRawModeBridgeRef | undefined;
+declare const _kernelStdinRead: KernelStdinReadBridgeRef | undefined;
+declare const _registerHandle:
+  | ((id: string, description: string) => void)
+  | undefined;
+declare const _unregisterHandle:
+  | ((id: string) => void)
+  | undefined;
 
 // Get config with defaults
 const config = {
@@ -211,10 +225,12 @@ let _exited = false;
  */
 export class ProcessExitError extends Error {
   code: number;
+  _isProcessExit: true;
   constructor(code: number) {
     super("process.exit(" + code + ")");
     this.name = "ProcessExitError";
     this.code = code;
+    this._isProcessExit = true;
   }
 }
 
@@ -230,6 +246,10 @@ const _signalNumbers: Record<string, number> = {
   SIGXCPU: 24, SIGXFSZ: 25, SIGVTALRM: 26, SIGPROF: 27, SIGWINCH: 28,
   SIGIO: 29, SIGPWR: 30, SIGSYS: 31,
 };
+const _signalNamesByNumber: Record<number, string> = Object.fromEntries(
+  Object.entries(_signalNumbers).map(([name, num]) => [num, name])
+) as Record<number, string>;
+const _ignoredSelfSignals = new Set(["SIGWINCH", "SIGCHLD", "SIGCONT", "SIGURG"]);
 
 function _resolveSignal(signal?: string | number): number {
   if (signal === undefined || signal === null) return 15; // default SIGTERM
@@ -312,13 +332,55 @@ function _emit(event: string, ...args: unknown[]): boolean {
   return handled;
 }
 
+function isProcessExitError(error: unknown): error is { code?: unknown } {
+  return Boolean(
+    error &&
+      typeof error === "object" &&
+      (
+        (error as { _isProcessExit?: unknown })._isProcessExit === true ||
+        (error as { name?: unknown }).name === "ProcessExitError"
+      ),
+  );
+}
+
+function normalizeAsyncError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error));
+}
+
+function routeAsyncCallbackError(error: unknown): { handled: boolean; rethrow: unknown | null } {
+  if (isProcessExitError(error)) {
+    return { handled: false, rethrow: error };
+  }
+
+  const normalized = normalizeAsyncError(error);
+
+  try {
+    if (_emit("uncaughtException", normalized, "uncaughtException")) {
+      return { handled: true, rethrow: null };
+    }
+  } catch (emitError) {
+    return { handled: false, rethrow: emitError };
+  }
+
+  return { handled: false, rethrow: normalized };
+}
+
+function scheduleAsyncRethrow(error: unknown): void {
+  setTimeout(() => {
+    throw error;
+  }, 0);
+}
+
 // Stdio stream shape shared by stdout and stderr
 interface StdioWriteStream {
-  write(data: unknown): boolean;
+  write(data: unknown, encodingOrCallback?: unknown, callback?: unknown): boolean;
   end(): StdioWriteStream;
-  on(): StdioWriteStream;
-  once(): StdioWriteStream;
-  emit(): boolean;
+  on(event: string, listener: EventListener): StdioWriteStream;
+  once(event: string, listener: EventListener): StdioWriteStream;
+  off(event: string, listener: EventListener): StdioWriteStream;
+  removeListener(event: string, listener: EventListener): StdioWriteStream;
+  addListener(event: string, listener: EventListener): StdioWriteStream;
+  emit(event: string, ...args: unknown[]): boolean;
   writable: boolean;
   isTTY: boolean;
   columns: number;
@@ -338,63 +400,130 @@ function _getStderrIsTTY(): boolean {
   return (typeof __runtimeTtyConfig !== "undefined" && __runtimeTtyConfig.stderrIsTTY) || false;
 }
 
-// Stdout stream
-const _stdout: StdioWriteStream = {
-  write(data: unknown): boolean {
-    if (typeof _log !== "undefined") {
-      _log.applySync(undefined, [String(data).replace(/\n$/, "")]);
-    }
-    return true;
-  },
-  end(): StdioWriteStream {
-    return this;
-  },
-  on(): StdioWriteStream {
-    return this;
-  },
-  once(): StdioWriteStream {
-    return this;
-  },
-  emit(): boolean {
-    return false;
-  },
-  writable: true,
-  get isTTY(): boolean { return _getStdoutIsTTY(); },
-  columns: 80,
-  rows: 24,
-};
+function getWriteCallback(
+  encodingOrCallback?: unknown,
+  callback?: unknown,
+): ((error?: Error | null) => void) | undefined {
+  if (typeof encodingOrCallback === "function") {
+    return encodingOrCallback as (error?: Error | null) => void;
+  }
+  if (typeof callback === "function") {
+    return callback as (error?: Error | null) => void;
+  }
+  return undefined;
+}
 
-// Stderr stream
-const _stderr: StdioWriteStream = {
-  write(data: unknown): boolean {
-    if (typeof _error !== "undefined") {
-      _error.applySync(undefined, [String(data).replace(/\n$/, "")]);
+function emitListeners(
+  listeners: Record<string, EventListener[]>,
+  onceListeners: Record<string, EventListener[]>,
+  event: string,
+  args: unknown[],
+): boolean {
+  const persistent = listeners[event] ? listeners[event].slice() : [];
+  const once = onceListeners[event] ? onceListeners[event].slice() : [];
+  if (once.length > 0) {
+    onceListeners[event] = [];
+  }
+  for (const listener of persistent) {
+    listener(...args);
+  }
+  for (const listener of once) {
+    listener(...args);
+  }
+  return persistent.length + once.length > 0;
+}
+
+function createStdioWriteStream(options: {
+  write(data: string): void;
+  isTTY: () => boolean;
+}): StdioWriteStream {
+  const listeners: Record<string, EventListener[]> = {};
+  const onceListeners: Record<string, EventListener[]> = {};
+
+  const remove = (event: string, listener: EventListener): void => {
+    if (listeners[event]) {
+      const idx = listeners[event].indexOf(listener);
+      if (idx !== -1) listeners[event].splice(idx, 1);
     }
-    return true;
+    if (onceListeners[event]) {
+      const idx = onceListeners[event].indexOf(listener);
+      if (idx !== -1) onceListeners[event].splice(idx, 1);
+    }
+  };
+
+  const stream: StdioWriteStream = {
+    write(data: unknown, encodingOrCallback?: unknown, callback?: unknown): boolean {
+      options.write(String(data));
+      const done = getWriteCallback(encodingOrCallback, callback);
+      if (done) {
+        _queueMicrotask(() => done(null));
+      }
+      return true;
+    },
+    end(): StdioWriteStream {
+      return stream;
+    },
+    on(event: string, listener: EventListener): StdioWriteStream {
+      if (!listeners[event]) listeners[event] = [];
+      listeners[event].push(listener);
+      return stream;
+    },
+    once(event: string, listener: EventListener): StdioWriteStream {
+      if (!onceListeners[event]) onceListeners[event] = [];
+      onceListeners[event].push(listener);
+      return stream;
+    },
+    off(event: string, listener: EventListener): StdioWriteStream {
+      remove(event, listener);
+      return stream;
+    },
+    removeListener(event: string, listener: EventListener): StdioWriteStream {
+      remove(event, listener);
+      return stream;
+    },
+    addListener(event: string, listener: EventListener): StdioWriteStream {
+      return stream.on(event, listener);
+    },
+    emit(event: string, ...args: unknown[]): boolean {
+      return emitListeners(listeners, onceListeners, event, args);
+    },
+    writable: true,
+    get isTTY(): boolean { return options.isTTY(); },
+    columns: 80,
+    rows: 24,
+  };
+
+  return stream;
+}
+
+const _stdout = createStdioWriteStream({
+  write(data: string): void {
+    if (typeof _log !== "undefined") {
+      _log.applySync(undefined, [data]);
+    }
   },
-  end(): StdioWriteStream {
-    return this;
+  isTTY: _getStdoutIsTTY,
+});
+
+const _stderr = createStdioWriteStream({
+  write(data: string): void {
+    if (typeof _error !== "undefined") {
+      _error.applySync(undefined, [data]);
+    }
   },
-  on(): StdioWriteStream {
-    return this;
-  },
-  once(): StdioWriteStream {
-    return this;
-  },
-  emit(): boolean {
-    return false;
-  },
-  writable: true,
-  get isTTY(): boolean { return _getStderrIsTTY(); },
-  columns: 80,
-  rows: 24,
-};
+  isTTY: _getStderrIsTTY,
+});
 
 // Stdin stream with data support
 // These are exposed as globals so they can be set after bridge initialization
 type StdinListener = (data?: unknown) => void;
 const _stdinListeners: Record<string, StdinListener[]> = {};
 const _stdinOnceListeners: Record<string, StdinListener[]> = {};
+const _stdinLiveDecoder = new TextDecoder();
+const STDIN_HANDLE_ID = "process.stdin";
+let _stdinLiveBuffer = "";
+let _stdinLiveStarted = false;
+let _stdinLiveHandleRegistered = false;
 
 // Initialize stdin state as globals for external access
 exposeMutableRuntimeStateGlobal(
@@ -447,11 +576,96 @@ function _emitStdinData(): void {
   }
 }
 
+function emitStdinListeners(event: string, value?: unknown): void {
+  const listeners = [...(_stdinListeners[event] || []), ...(_stdinOnceListeners[event] || [])];
+  _stdinOnceListeners[event] = [];
+  for (const listener of listeners) {
+    listener(value);
+  }
+}
+
+function syncLiveStdinHandle(active: boolean): void {
+  if (active) {
+    if (!_stdinLiveHandleRegistered && typeof _registerHandle === "function") {
+      try {
+        _registerHandle(STDIN_HANDLE_ID, "process.stdin");
+        _stdinLiveHandleRegistered = true;
+      } catch {
+        // Process exit races turn registration into a no-op.
+      }
+    }
+    return;
+  }
+
+  if (_stdinLiveHandleRegistered && typeof _unregisterHandle === "function") {
+    try {
+      _unregisterHandle(STDIN_HANDLE_ID);
+    } catch {
+      // Process exit races turn unregistration into a no-op.
+    }
+    _stdinLiveHandleRegistered = false;
+  }
+}
+
+function flushLiveStdinBuffer(): void {
+  if (!getStdinFlowMode() || _stdinLiveBuffer.length === 0) return;
+  const chunk = _stdinLiveBuffer;
+  _stdinLiveBuffer = "";
+  emitStdinListeners("data", chunk);
+}
+
+function finishLiveStdin(): void {
+  if (getStdinEnded()) return;
+  setStdinEnded(true);
+  flushLiveStdinBuffer();
+  emitStdinListeners("end");
+  emitStdinListeners("close");
+  syncLiveStdinHandle(false);
+}
+
+function ensureLiveStdinStarted(): void {
+  if (_stdinLiveStarted || !_getStdinIsTTY()) return;
+  _stdinLiveStarted = true;
+  syncLiveStdinHandle(!(_stdin as StdinStream).paused);
+  void (async () => {
+    try {
+      while (!getStdinEnded()) {
+        if (typeof _kernelStdinRead === "undefined") {
+          break;
+        }
+        const next = await _kernelStdinRead.apply(undefined, [], {
+          result: { promise: true },
+        });
+        if (next?.done) {
+          break;
+        }
+
+        const dataBase64 = String(next?.dataBase64 ?? "");
+        if (!dataBase64) {
+          continue;
+        }
+
+        _stdinLiveBuffer += _stdinLiveDecoder.decode(
+          BufferPolyfill.from(dataBase64, "base64"),
+          { stream: true },
+        );
+        flushLiveStdinBuffer();
+      }
+    } catch {
+      // Treat bridge-side stdin failures as EOF for sandbox code.
+    }
+
+    _stdinLiveBuffer += _stdinLiveDecoder.decode();
+    finishLiveStdin();
+  })();
+}
+
 // Stdin stream shape
 interface StdinStream {
   readable: boolean;
   paused: boolean;
   encoding: string | null;
+  isRaw: boolean;
   read(size?: number): string | null;
   on(event: string, listener: StdinListener): StdinStream;
   once(event: string, listener: StdinListener): StdinStream;
@@ -470,8 +684,19 @@ const _stdin: StdinStream = {
   readable: true,
   paused: true,
   encoding: null as string | null,
+  isRaw: false,
 
   read(size?: number): string | null {
+    if (_stdinLiveBuffer.length > 0) {
+      if (!size || size >= _stdinLiveBuffer.length) {
+        const chunk = _stdinLiveBuffer;
+        _stdinLiveBuffer = "";
+        return chunk;
+      }
+      const chunk = _stdinLiveBuffer.slice(0, size);
+      _stdinLiveBuffer = _stdinLiveBuffer.slice(size);
+      return chunk;
+    }
     if (getStdinPosition() >= getStdinData().length) return null;
     const chunk = size ? getStdinData().slice(getStdinPosition(), getStdinPosition() + size) : getStdinData().slice(getStdinPosition());
     setStdinPosition(getStdinPosition() + chunk.length);
@@ -481,6 +706,13 @@ const _stdin: StdinStream = {
   on(event: string, listener: StdinListener): StdinStream {
     if (!_stdinListeners[event]) _stdinListeners[event] = [];
     _stdinListeners[event].push(listener);
+
+    if (_getStdinIsTTY() && (event === "data" || event === "end" || event === "close")) {
+      ensureLiveStdinStarted();
+    }
+    if (event === "data" && this.paused) {
+      this.resume();
+    }
 
     // When 'end' listener is added and we have data, emit everything synchronously
     // This works because typical patterns register 'data' then 'end' listeners
@@ -522,12 +754,18 @@ const _stdin: StdinStream = {
   pause(): StdinStream {
     this.paused = true;
     setStdinFlowMode(false);
+    syncLiveStdinHandle(false);
     return this;
   },
 
   resume(): StdinStream {
+    if (_getStdinIsTTY()) {
+      ensureLiveStdinStarted();
+      syncLiveStdinHandle(true);
+    }
     this.paused = false;
     setStdinFlowMode(true);
+    flushLiveStdinBuffer();
     _emitStdinData();
     return this;
   },
@@ -544,6 +782,7 @@ const _stdin: StdinStream = {
     if (typeof _ptySetRawMode !== "undefined") {
       _ptySetRawMode.applySync(undefined, [mode]);
     }
+    this.isRaw = mode;
     return this;
   },
 
@@ -721,11 +960,8 @@ const process: Record<string, unknown> & {
   },
 
   nextTick(callback: (...args: unknown[]) => void, ...args: unknown[]): void {
-    if (typeof queueMicrotask === "function") {
-      queueMicrotask(() => callback(...args));
-    } else {
-      Promise.resolve().then(() => callback(...args));
-    }
+    _nextTickQueue.push({ callback, args });
+    scheduleNextTickFlush();
   },
 
   hrtime: hrtime as typeof nodeProcess.hrtime,
@@ -821,7 +1057,19 @@ const process: Record<string, unknown> & {
     }
     // Resolve signal name to number (default SIGTERM)
     const sigNum = _resolveSignal(signal);
-    // Self-kill - exit with 128 + signal number (POSIX convention)
+    if (sigNum === 0) {
+      return true;
+    }
+
+    const sigName = _signalNamesByNumber[sigNum] ?? `SIG${sigNum}`;
+    if (_emit(sigName, sigName)) {
+      return true;
+    }
+    if (_ignoredSelfSignals.has(sigName)) {
+      return true;
+    }
+
+    // Unhandled fatal self-signals exit with 128 + signal number.
     return (process as unknown as { exit: (code: number) => never }).exit(128 + sigNum);
   },
 
@@ -1013,6 +1261,11 @@ type TimerEntry = {
   repeat: boolean;
 };
 
+type NextTickEntry = {
+  callback: (...args: unknown[]) => void;
+  args: unknown[];
+};
+
 // queueMicrotask fallback
 const _queueMicrotask =
   typeof queueMicrotask === "function"
@@ -1086,6 +1339,38 @@ class TimerHandle {
 }
 
 const _timerEntries = new Map<number, TimerEntry>();
+const _nextTickQueue: NextTickEntry[] = [];
+let _nextTickScheduled = false;
+
+function flushNextTickQueue(): void {
+  _nextTickScheduled = false;
+
+  while (_nextTickQueue.length > 0) {
+    const entry = _nextTickQueue.shift();
+    if (!entry) {
+      break;
+    }
+
+    try {
+      entry.callback(...entry.args);
+    } catch (error) {
+      const outcome = routeAsyncCallbackError(error);
+      if (!outcome.handled && outcome.rethrow !== null) {
+        _nextTickQueue.length = 0;
+        scheduleAsyncRethrow(outcome.rethrow);
+      }
+      return;
+    }
+  }
+}
+
+function scheduleNextTickFlush(): void {
+  if (_nextTickScheduled) {
+    return;
+  }
+  _nextTickScheduled = true;
+  _queueMicrotask(flushNextTickQueue);
+}
 
 function timerDispatch(_eventType: string, payload: unknown): void {
   const timerId =
@@ -1104,8 +1389,12 @@ function timerDispatch(_eventType: string, payload: unknown): void {
 
   try {
     entry.callback(...entry.args);
-  } catch (_e) {
-    // Ignore timer callback errors
+  } catch (error) {
+    const outcome = routeAsyncCallbackError(error);
+    if (!outcome.handled && outcome.rethrow !== null) {
+      throw outcome.rethrow;
+    }
+    return;
   }
 
   if (entry.repeat && _timerEntries.has(timerId)) {
@@ -1181,7 +1470,7 @@ export function clearImmediate(id: TimerHandle | number | undefined): void {
 
 // TextEncoder and TextDecoder - re-export from polyfills
 export { URL, URLSearchParams };
-export { TextEncoder, TextDecoder };
+export { TextEncoder, TextDecoder, Event, CustomEvent, EventTarget };
 
 // Buffer - use buffer package polyfill
 export const Buffer = BufferPolyfill;
@@ -1798,14 +2087,12 @@ export function setupGlobals(): void {
   // URL globals must override bootstrap fallbacks and stay non-enumerable.
   installWhatwgUrlGlobals(g as typeof globalThis);
 
-  // TextEncoder/TextDecoder
-  if (typeof g.TextEncoder === "undefined") {
-    g.TextEncoder = TextEncoder;
-  }
-
-  if (typeof g.TextDecoder === "undefined") {
-    g.TextDecoder = TextDecoder;
-  }
+  // WHATWG encoding and events
+  g.TextEncoder = TextEncoder;
+  g.TextDecoder = TextDecoder;
+  g.Event = Event;
+  g.CustomEvent = CustomEvent;
+  g.EventTarget = EventTarget;
 
   // Buffer
   if (typeof g.Buffer === "undefined") {

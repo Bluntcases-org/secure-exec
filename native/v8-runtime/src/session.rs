@@ -7,6 +7,7 @@ use std::thread;
 use crossbeam_channel::{Receiver, Sender};
 
 use crate::execution;
+use crate::ipc::ExecutionError;
 use crate::host_call::CallIdRouter;
 #[cfg(not(test))]
 use crate::host_call::{BridgeCallContext, ChannelFrameSender};
@@ -531,12 +532,16 @@ fn session_thread(
 
                         // Run event loop while bridge work or async ESM
                         // evaluation is still pending.
-                        let terminated =
-                            if pending.len() > 0 || execution::has_pending_module_evaluation() {
+                        let event_loop_status =
+                            if pending.len() > 0
+                                || execution::has_pending_module_evaluation()
+                                || execution::has_pending_script_evaluation()
+                                || !deferred_queue.lock().unwrap().is_empty()
+                            {
                                 let scope = &mut v8::HandleScope::new(iso);
                                 let ctx = v8::Local::new(scope, &exec_context);
                                 let scope = &mut v8::ContextScope::new(scope, ctx);
-                                !run_event_loop(
+                                run_event_loop(
                                     scope,
                                     &rx,
                                     &pending,
@@ -544,8 +549,14 @@ fn session_thread(
                                     Some(&deferred_queue),
                                 )
                             } else {
-                                false
+                                EventLoopStatus::Completed
                             };
+
+                        let terminated = matches!(event_loop_status, EventLoopStatus::Terminated);
+                        if let EventLoopStatus::Failed(next_code, next_error) = event_loop_status {
+                            code = next_code;
+                            error = Some(next_error);
+                        }
 
                         // Finalize any entry-module top-level await that was
                         // waiting on bridge-driven async work (timers/network).
@@ -558,6 +569,18 @@ fn session_thread(
                             {
                                 code = next_code;
                                 exports = next_exports;
+                                error = next_error;
+                            }
+                        }
+
+                        if !terminated && mode == 0 && error.is_none() {
+                            let scope = &mut v8::HandleScope::new(iso);
+                            let ctx = v8::Local::new(scope, &exec_context);
+                            let scope = &mut v8::ContextScope::new(scope, ctx);
+                            if let Some((next_code, next_error)) =
+                                execution::finalize_pending_script_evaluation(scope)
+                            {
+                                code = next_code;
                                 error = next_error;
                             }
                         }
@@ -611,6 +634,7 @@ fn session_thread(
                         };
 
                         execution::clear_pending_module_evaluation();
+                        execution::clear_pending_script_evaluation();
                         execution::clear_module_state();
 
                         send_message(&ipc_tx, &result_frame, &mut msg_frame_buf);
@@ -684,11 +708,12 @@ pub(crate) const SYNC_BRIDGE_FNS: [&str; 32] = [
     "_networkHttpServerRespondRaw",
 ];
 
-pub(crate) const ASYNC_BRIDGE_FNS: [&str; 10] = [
+pub(crate) const ASYNC_BRIDGE_FNS: [&str; 12] = [
     // Module loading (async)
     "_dynamicImport",
     // Timer
     "_scheduleTimer",
+    "_kernelStdinRead",
     // Network (async)
     "_networkFetchRaw",
     "_networkDnsLookupRaw",
@@ -698,6 +723,7 @@ pub(crate) const ASYNC_BRIDGE_FNS: [&str; 10] = [
     "_networkHttpServerWaitRaw",
     "_networkHttp2ServerWaitRaw",
     "_networkHttp2SessionWaitRaw",
+    "_netSocketWaitConnectRaw",
 ];
 
 /// Run the session event loop: dispatch incoming messages to V8.
@@ -721,17 +747,27 @@ pub(crate) fn run_event_loop(
     pending: &crate::bridge::PendingPromises,
     abort_rx: Option<&crossbeam_channel::Receiver<()>>,
     deferred: Option<&DeferredQueue>,
-) -> bool {
-    while pending.len() > 0 || execution::pending_module_evaluation_needs_wait(scope) {
+) -> EventLoopStatus {
+    while pending.len() > 0
+        || execution::pending_module_evaluation_needs_wait(scope)
+        || execution::pending_script_evaluation_needs_wait(scope)
+        || deferred
+            .map(|dq| !dq.lock().unwrap().is_empty())
+            .unwrap_or(false)
+    {
         // Drain deferred messages queued by sync bridge calls before blocking
         if let Some(dq) = deferred {
             let frames: Vec<BinaryFrame> = dq.lock().unwrap().drain(..).collect();
             for frame in frames {
-                if !dispatch_event_loop_frame(scope, frame, pending) {
-                    return false;
+                let status = dispatch_event_loop_frame(scope, frame, pending);
+                if !matches!(status, EventLoopStatus::Completed) {
+                    return status;
                 }
             }
-            if pending.len() == 0 && !execution::pending_module_evaluation_needs_wait(scope) {
+            if pending.len() == 0
+                && !execution::pending_module_evaluation_needs_wait(scope)
+                && !execution::pending_script_evaluation_needs_wait(scope)
+            {
                 break;
             }
         }
@@ -741,40 +777,47 @@ pub(crate) fn run_event_loop(
             crossbeam_channel::select! {
                 recv(rx) -> result => match result {
                     Ok(cmd) => cmd,
-                    Err(_) => return false,
+                    Err(_) => return EventLoopStatus::Terminated,
                 },
                 recv(abort) -> _ => {
                     // Timeout fired — abort channel closed
                     scope.terminate_execution();
-                    return false;
+                    return EventLoopStatus::Terminated;
                 },
             }
         } else {
             match rx.recv() {
                 Ok(cmd) => cmd,
-                Err(_) => return false,
+                Err(_) => return EventLoopStatus::Terminated,
             }
         };
 
         match cmd {
             SessionCommand::Message(frame) => {
-                if !dispatch_event_loop_frame(scope, frame, pending) {
-                    return false;
+                let status = dispatch_event_loop_frame(scope, frame, pending);
+                if !matches!(status, EventLoopStatus::Completed) {
+                    return status;
                 }
             }
-            SessionCommand::Shutdown => return false,
+            SessionCommand::Shutdown => return EventLoopStatus::Terminated,
         }
     }
-    true
+    EventLoopStatus::Completed
 }
 
 /// Dispatch a single BinaryFrame within the event loop.
-/// Returns true to continue the loop, false to terminate execution.
+/// Returns the event-loop status after handling the frame.
+pub(crate) enum EventLoopStatus {
+    Completed,
+    Terminated,
+    Failed(i32, ExecutionError),
+}
+
 fn dispatch_event_loop_frame(
     scope: &mut v8::HandleScope,
     frame: BinaryFrame,
     pending: &crate::bridge::PendingPromises,
-) -> bool {
+) -> EventLoopStatus {
     match frame {
         BinaryFrame::BridgeResponse {
             call_id,
@@ -792,24 +835,32 @@ fn dispatch_event_loop_frame(
             };
             let _ = crate::bridge::resolve_pending_promise(scope, pending, call_id, result, error);
             // Microtasks already flushed in resolve_pending_promise
-            true
+            EventLoopStatus::Completed
         }
         BinaryFrame::StreamEvent {
             event_type,
             payload,
             ..
         } => {
-            crate::stream::dispatch_stream_event(scope, &event_type, &payload);
-            scope.perform_microtask_checkpoint();
-            true
+            let tc = &mut v8::TryCatch::new(scope);
+            crate::stream::dispatch_stream_event(tc, &event_type, &payload);
+            tc.perform_microtask_checkpoint();
+            if let Some(exception) = tc.exception() {
+                let (code, err) = execution::exception_to_result(tc, exception);
+                return EventLoopStatus::Failed(code, err);
+            }
+            if let Some(err) = execution::take_unhandled_promise_rejection(tc) {
+                return EventLoopStatus::Failed(1, err);
+            }
+            EventLoopStatus::Completed
         }
         BinaryFrame::TerminateExecution { .. } => {
             scope.terminate_execution();
-            false
+            EventLoopStatus::Terminated
         }
         _ => {
             // Ignore other messages during event loop
-            true
+            EventLoopStatus::Completed
         }
     }
 }

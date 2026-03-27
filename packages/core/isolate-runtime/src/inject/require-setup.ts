@@ -1,5 +1,6 @@
 // @ts-nocheck
 // This file is executed inside the isolate runtime.
+      const REQUIRE_TRANSFORM_MARKER = '/*__secure_exec_require_esm__*/';
       const __requireExposeCustomGlobal =
         typeof globalThis.__runtimeExposeCustomGlobal === "function"
           ? globalThis.__runtimeExposeCustomGlobal
@@ -11,6 +12,60 @@
                 enumerable: true,
               });
             };
+
+      if (typeof globalThis.global === 'undefined') {
+        globalThis.global = globalThis;
+      }
+
+      if (typeof globalThis.RegExp === 'function' && !globalThis.RegExp.__secureExecRgiEmojiCompat) {
+        const NativeRegExp = globalThis.RegExp;
+        const RGI_EMOJI_PATTERN = '^\\p{RGI_Emoji}$';
+        const RGI_EMOJI_BASE_CLASS = '[\\u{00A9}\\u{00AE}\\u{203C}\\u{2049}\\u{2122}\\u{2139}\\u{2194}-\\u{21AA}\\u{231A}-\\u{23FF}\\u{24C2}\\u{25AA}-\\u{27BF}\\u{2934}-\\u{2935}\\u{2B05}-\\u{2B55}\\u{3030}\\u{303D}\\u{3297}\\u{3299}\\u{1F000}-\\u{1FAFF}]';
+        const RGI_EMOJI_KEYCAP = '[#*0-9]\\uFE0F?\\u20E3';
+        const RGI_EMOJI_FALLBACK_SOURCE =
+          '^(?:' +
+          RGI_EMOJI_KEYCAP +
+          '|\\p{Regional_Indicator}{2}|' +
+          RGI_EMOJI_BASE_CLASS +
+          '(?:\\uFE0F|\\u200D(?:' +
+          RGI_EMOJI_KEYCAP +
+          '|' +
+          RGI_EMOJI_BASE_CLASS +
+          ')|[\\u{1F3FB}-\\u{1F3FF}])*)$';
+        try {
+          new NativeRegExp(RGI_EMOJI_PATTERN, 'v');
+        } catch (error) {
+          if (String(error && error.message || error).includes('RGI_Emoji')) {
+            function CompatRegExp(pattern, flags) {
+              const normalizedPattern =
+                pattern instanceof NativeRegExp && flags === undefined
+                  ? pattern.source
+                  : String(pattern);
+              const normalizedFlags =
+                flags === undefined
+                  ? (pattern instanceof NativeRegExp ? pattern.flags : '')
+                  : String(flags);
+              try {
+                return new NativeRegExp(pattern, flags);
+              } catch (innerError) {
+                if (normalizedPattern === RGI_EMOJI_PATTERN && normalizedFlags === 'v') {
+                  return new NativeRegExp(RGI_EMOJI_FALLBACK_SOURCE, 'u');
+                }
+                throw innerError;
+              }
+            }
+            Object.setPrototypeOf(CompatRegExp, NativeRegExp);
+            CompatRegExp.prototype = NativeRegExp.prototype;
+            Object.defineProperty(CompatRegExp.prototype, 'constructor', {
+              value: CompatRegExp,
+              writable: true,
+              configurable: true,
+            });
+            CompatRegExp.__secureExecRgiEmojiCompat = true;
+            globalThis.RegExp = CompatRegExp;
+          }
+        }
+      }
 
       if (
         typeof globalThis.AbortController === 'undefined' ||
@@ -115,6 +170,83 @@
         };
       }
 
+      if (
+        typeof globalThis.AbortSignal === 'function' &&
+        typeof globalThis.AbortController === 'function' &&
+        typeof globalThis.AbortSignal.timeout !== 'function'
+      ) {
+        globalThis.AbortSignal.timeout = function timeout(milliseconds) {
+          var delay = Number(milliseconds);
+          if (!Number.isFinite(delay) || delay < 0) {
+            throw new RangeError('The value of "milliseconds" is out of range. It must be a finite, non-negative number.');
+          }
+
+          var controller = new globalThis.AbortController();
+          var timer = setTimeout(function() {
+            controller.abort(
+              new globalThis.DOMException(
+                'The operation was aborted due to timeout',
+                'TimeoutError',
+              ),
+            );
+          }, delay);
+          if (timer && typeof timer.unref === 'function') {
+            timer.unref();
+          }
+          return controller.signal;
+        };
+      }
+
+      if (
+        typeof globalThis.AbortSignal === 'function' &&
+        typeof globalThis.AbortController === 'function' &&
+        typeof globalThis.AbortSignal.any !== 'function'
+      ) {
+        globalThis.AbortSignal.any = function any(signals) {
+          if (
+            signals === null ||
+            signals === undefined ||
+            typeof signals[Symbol.iterator] !== 'function'
+          ) {
+            throw new TypeError('The "signals" argument must be an iterable.');
+          }
+
+          var controller = new globalThis.AbortController();
+          var cleanup = [];
+          var abortFromSignal = function abortFromSignal(signal) {
+            for (var index = 0; index < cleanup.length; index += 1) {
+              cleanup[index]();
+            }
+            cleanup.length = 0;
+            controller.abort(signal.reason);
+          };
+
+          for (const signal of signals) {
+            if (
+              !signal ||
+              typeof signal.aborted !== 'boolean' ||
+              typeof signal.addEventListener !== 'function' ||
+              typeof signal.removeEventListener !== 'function'
+            ) {
+              throw new TypeError('The "signals" argument must contain only AbortSignal instances.');
+            }
+            if (signal.aborted) {
+              abortFromSignal(signal);
+              break;
+            }
+            var listener = function() {
+              abortFromSignal(signal);
+            };
+            signal.addEventListener('abort', listener, { once: true });
+            cleanup.push(function() {
+              signal.removeEventListener('abort', listener);
+            });
+          }
+
+          return controller.signal;
+        };
+      }
+
       if (typeof globalThis.structuredClone !== 'function') {
         function structuredClonePolyfill(value) {
           if (value === null || typeof value !== 'object') {
@@ -160,30 +292,915 @@
         return p.slice(0, lastSlash);
       }
 
-      // Widen TextDecoder to accept common encodings beyond utf-8.
-      // The text-encoding-utf-8 polyfill only supports utf-8 and throws for
-      // anything else. Packages like ssh2 import modules that create TextDecoder
-      // with 'ascii' or 'latin1' at module scope. We wrap the constructor to
-      // normalize known labels to utf-8 (which is a safe superset for ASCII-range
-      // data) and only throw for truly unsupported encodings.
-      if (typeof globalThis.TextDecoder === 'function') {
-        var _OrigTextDecoder = globalThis.TextDecoder;
-        var _utf8Aliases = {
-          'utf-8': true, 'utf8': true, 'unicode-1-1-utf-8': true,
-          'ascii': true, 'us-ascii': true, 'iso-8859-1': true,
-          'latin1': true, 'binary': true, 'windows-1252': true,
-          'utf-16le': true, 'utf-16': true, 'ucs-2': true, 'ucs2': true,
-        };
-        globalThis.TextDecoder = function TextDecoder(encoding, options) {
-          var label = encoding !== undefined ? String(encoding).toLowerCase().replace(/\s/g, '') : 'utf-8';
-          if (_utf8Aliases[label]) {
-            return new _OrigTextDecoder('utf-8', options);
+      (function installWhatwgEncodingAndEvents() {
+        function _withCode(error, code) {
+          error.code = code;
+          return error;
+        }
+
+        function _trimAsciiWhitespace(value) {
+          return value.replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/g, '');
+        }
+
+        function _normalizeEncodingLabel(label) {
+          var normalized = _trimAsciiWhitespace(
+            label === undefined ? 'utf-8' : String(label),
+          ).toLowerCase();
+          switch (normalized) {
+            case 'utf-8':
+            case 'utf8':
+            case 'unicode-1-1-utf-8':
+            case 'unicode11utf8':
+            case 'unicode20utf8':
+            case 'x-unicode20utf8':
+              return 'utf-8';
+            case 'utf-16':
+            case 'utf-16le':
+            case 'ucs-2':
+            case 'ucs2':
+            case 'csunicode':
+            case 'iso-10646-ucs-2':
+            case 'unicode':
+            case 'unicodefeff':
+              return 'utf-16le';
+            case 'utf-16be':
+            case 'unicodefffe':
+              return 'utf-16be';
+            default:
+              throw _withCode(
+                new RangeError('The "' + normalized + '" encoding is not supported'),
+                'ERR_ENCODING_NOT_SUPPORTED',
+              );
           }
-          // Fall through to original for unknown encodings (will throw).
-          return new _OrigTextDecoder(encoding, options);
+        }
+
+        function _toUint8Array(input) {
+          if (input === undefined) {
+            return new Uint8Array(0);
+          }
+          if (ArrayBuffer.isView(input)) {
+            return new Uint8Array(input.buffer, input.byteOffset, input.byteLength);
+          }
+          if (input instanceof ArrayBuffer) {
+            return new Uint8Array(input);
+          }
+          if (typeof SharedArrayBuffer !== 'undefined' && input instanceof SharedArrayBuffer) {
+            return new Uint8Array(input);
+          }
+          throw _withCode(
+            new TypeError(
+              'The "input" argument must be an instance of ArrayBuffer, SharedArrayBuffer, or ArrayBufferView.',
+            ),
+            'ERR_INVALID_ARG_TYPE',
+          );
+        }
+
+        function _encodeUtf8ScalarValue(codePoint, bytes) {
+          if (codePoint <= 0x7f) {
+            bytes.push(codePoint);
+            return;
+          }
+          if (codePoint <= 0x7ff) {
+            bytes.push(0xc0 | (codePoint >> 6), 0x80 | (codePoint & 0x3f));
+            return;
+          }
+          if (codePoint <= 0xffff) {
+            bytes.push(
+              0xe0 | (codePoint >> 12),
+              0x80 | ((codePoint >> 6) & 0x3f),
+              0x80 | (codePoint & 0x3f),
+            );
+            return;
+          }
+          bytes.push(
+            0xf0 | (codePoint >> 18),
+            0x80 | ((codePoint >> 12) & 0x3f),
+            0x80 | ((codePoint >> 6) & 0x3f),
+            0x80 | (codePoint & 0x3f),
+          );
+        }
+
+        function _encodeUtf8(input) {
+          var value = String(input === undefined ? '' : input);
+          var bytes = [];
+          for (var index = 0; index < value.length; index += 1) {
+            var codeUnit = value.charCodeAt(index);
+            if (codeUnit >= 0xd800 && codeUnit <= 0xdbff) {
+              var nextIndex = index + 1;
+              if (nextIndex < value.length) {
+                var nextCodeUnit = value.charCodeAt(nextIndex);
+                if (nextCodeUnit >= 0xdc00 && nextCodeUnit <= 0xdfff) {
+                  _encodeUtf8ScalarValue(
+                    0x10000 + ((codeUnit - 0xd800) << 10) + (nextCodeUnit - 0xdc00),
+                    bytes,
+                  );
+                  index = nextIndex;
+                  continue;
+                }
+              }
+              _encodeUtf8ScalarValue(0xfffd, bytes);
+              continue;
+            }
+            if (codeUnit >= 0xdc00 && codeUnit <= 0xdfff) {
+              _encodeUtf8ScalarValue(0xfffd, bytes);
+              continue;
+            }
+            _encodeUtf8ScalarValue(codeUnit, bytes);
+          }
+          return new Uint8Array(bytes);
+        }
+
+        function _appendCodePoint(output, codePoint) {
+          if (codePoint <= 0xffff) {
+            output.push(String.fromCharCode(codePoint));
+            return;
+          }
+          var adjusted = codePoint - 0x10000;
+          output.push(
+            String.fromCharCode(0xd800 + (adjusted >> 10)),
+            String.fromCharCode(0xdc00 + (adjusted & 0x3ff)),
+          );
+        }
+
+        function _isContinuationByte(value) {
+          return value >= 0x80 && value <= 0xbf;
+        }
+
+        function _createInvalidDataError(encoding) {
+          return _withCode(
+            new TypeError('The encoded data was not valid for encoding ' + encoding),
+            'ERR_ENCODING_INVALID_ENCODED_DATA',
+          );
+        }
+
+        function _decodeUtf8(bytes, fatal, stream, encoding) {
+          var output = [];
+          for (var index = 0; index < bytes.length;) {
+            var first = bytes[index];
+            if (first <= 0x7f) {
+              output.push(String.fromCharCode(first));
+              index += 1;
+              continue;
+            }
+
+            var needed = 0;
+            var codePoint = 0;
+            if (first >= 0xc2 && first <= 0xdf) {
+              needed = 1;
+              codePoint = first & 0x1f;
+            } else if (first >= 0xe0 && first <= 0xef) {
+              needed = 2;
+              codePoint = first & 0x0f;
+            } else if (first >= 0xf0 && first <= 0xf4) {
+              needed = 3;
+              codePoint = first & 0x07;
+            } else {
+              if (fatal) throw _createInvalidDataError(encoding);
+              output.push('\ufffd');
+              index += 1;
+              continue;
+            }
+
+            if (index + needed >= bytes.length) {
+              if (stream) {
+                return { text: output.join(''), pending: Array.from(bytes.slice(index)) };
+              }
+              if (fatal) throw _createInvalidDataError(encoding);
+              output.push('\ufffd');
+              break;
+            }
+
+            var second = bytes[index + 1];
+            if (!_isContinuationByte(second)) {
+              if (fatal) throw _createInvalidDataError(encoding);
+              output.push('\ufffd');
+              index += 1;
+              continue;
+            }
+
+            if (
+              (first === 0xe0 && second < 0xa0) ||
+              (first === 0xed && second > 0x9f) ||
+              (first === 0xf0 && second < 0x90) ||
+              (first === 0xf4 && second > 0x8f)
+            ) {
+              if (fatal) throw _createInvalidDataError(encoding);
+              output.push('\ufffd');
+              index += 1;
+              continue;
+            }
+
+            codePoint = (codePoint << 6) | (second & 0x3f);
+
+            if (needed >= 2) {
+              var third = bytes[index + 2];
+              if (!_isContinuationByte(third)) {
+                if (fatal) throw _createInvalidDataError(encoding);
+                output.push('\ufffd');
+                index += 1;
+                continue;
+              }
+              codePoint = (codePoint << 6) | (third & 0x3f);
+            }
+
+            if (needed === 3) {
+              var fourth = bytes[index + 3];
+              if (!_isContinuationByte(fourth)) {
+                if (fatal) throw _createInvalidDataError(encoding);
+                output.push('\ufffd');
+                index += 1;
+                continue;
+              }
+              codePoint = (codePoint << 6) | (fourth & 0x3f);
+            }
+
+            if (codePoint >= 0xd800 && codePoint <= 0xdfff) {
+              if (fatal) throw _createInvalidDataError(encoding);
+              output.push('\ufffd');
+              index += needed + 1;
+              continue;
+            }
+
+            _appendCodePoint(output, codePoint);
+            index += needed + 1;
+          }
+
+          return { text: output.join(''), pending: [] };
+        }
+
+        function _decodeUtf16(bytes, encoding, fatal, stream, bomSeen) {
+          var output = [];
+          var endian = encoding === 'utf-16be' ? 'be' : 'le';
+
+          if (!bomSeen && encoding === 'utf-16le' && bytes.length >= 2) {
+            if (bytes[0] === 0xfe && bytes[1] === 0xff) {
+              endian = 'be';
+            }
+          }
+
+          for (var index = 0; index < bytes.length;) {
+            if (index + 1 >= bytes.length) {
+              if (stream) {
+                return { text: output.join(''), pending: Array.from(bytes.slice(index)) };
+              }
+              if (fatal) throw _createInvalidDataError(encoding);
+              output.push('\ufffd');
+              break;
+            }
+
+            var first = bytes[index];
+            var second = bytes[index + 1];
+            var codeUnit = endian === 'le' ? first | (second << 8) : (first << 8) | second;
+            index += 2;
+
+            if (codeUnit >= 0xd800 && codeUnit <= 0xdbff) {
+              if (index + 1 >= bytes.length) {
+                if (stream) {
+                  return { text: output.join(''), pending: Array.from(bytes.slice(index - 2)) };
+                }
+                if (fatal) throw _createInvalidDataError(encoding);
+                output.push('\ufffd');
+                continue;
+              }
+
+              var nextFirst = bytes[index];
+              var nextSecond = bytes[index + 1];
+              var nextCodeUnit =
+                endian === 'le'
+                  ? nextFirst | (nextSecond << 8)
+                  : (nextFirst << 8) | nextSecond;
+
+              if (nextCodeUnit >= 0xdc00 && nextCodeUnit <= 0xdfff) {
+                _appendCodePoint(
+                  output,
+                  0x10000 + ((codeUnit - 0xd800) << 10) + (nextCodeUnit - 0xdc00),
+                );
+                index += 2;
+                continue;
+              }
+
+              if (fatal) throw _createInvalidDataError(encoding);
+              output.push('\ufffd');
+              continue;
+            }
+
+            if (codeUnit >= 0xdc00 && codeUnit <= 0xdfff) {
+              if (fatal) throw _createInvalidDataError(encoding);
+              output.push('\ufffd');
+              continue;
+            }
+
+            output.push(String.fromCharCode(codeUnit));
+          }
+
+          return { text: output.join(''), pending: [] };
+        }
+
+        function TextEncoder() {}
+        TextEncoder.prototype.encode = function encode(input) {
+          return _encodeUtf8(input === undefined ? '' : input);
         };
-        globalThis.TextDecoder.prototype = _OrigTextDecoder.prototype;
-      }
+        TextEncoder.prototype.encodeInto = function encodeInto(input, destination) {
+          var value = String(input);
+          var read = 0;
+          var written = 0;
+          for (var index = 0; index < value.length; index += 1) {
+            var codeUnit = value.charCodeAt(index);
+            var chunk = value[index] || '';
+            if (
+              codeUnit >= 0xd800 &&
+              codeUnit <= 0xdbff &&
+              index + 1 < value.length
+            ) {
+              var nextCodeUnit = value.charCodeAt(index + 1);
+              if (nextCodeUnit >= 0xdc00 && nextCodeUnit <= 0xdfff) {
+                chunk = value.slice(index, index + 2);
+              }
+            }
+            var encoded = _encodeUtf8(chunk);
+            if (written + encoded.length > destination.length) break;
+            destination.set(encoded, written);
+            written += encoded.length;
+            read += chunk.length;
+            if (chunk.length === 2) index += 1;
+          }
+          return { read: read, written: written };
+        };
+        Object.defineProperty(TextEncoder.prototype, 'encoding', {
+          get: function() { return 'utf-8'; },
+        });
+
+        function TextDecoder(label, options) {
+          var normalizedOptions = options == null ? {} : Object(options);
+          this._encoding = _normalizeEncodingLabel(label);
+          this._fatal = Boolean(normalizedOptions.fatal);
+          this._ignoreBOM = Boolean(normalizedOptions.ignoreBOM);
+          this._pendingBytes = [];
+          this._bomSeen = false;
+        }
+        Object.defineProperty(TextDecoder.prototype, 'encoding', {
+          get: function() { return this._encoding; },
+        });
+        Object.defineProperty(TextDecoder.prototype, 'fatal', {
+          get: function() { return this._fatal; },
+        });
+        Object.defineProperty(TextDecoder.prototype, 'ignoreBOM', {
+          get: function() { return this._ignoreBOM; },
+        });
+        TextDecoder.prototype.decode = function decode(input, options) {
+          var normalizedOptions = options == null ? {} : Object(options);
+          var stream = Boolean(normalizedOptions.stream);
+          var incoming = _toUint8Array(input);
+          var merged = new Uint8Array(this._pendingBytes.length + incoming.length);
+          merged.set(this._pendingBytes, 0);
+          merged.set(incoming, this._pendingBytes.length);
+
+          var decoded =
+            this._encoding === 'utf-8'
+              ? _decodeUtf8(merged, this._fatal, stream, this._encoding)
+              : _decodeUtf16(merged, this._encoding, this._fatal, stream, this._bomSeen);
+
+          this._pendingBytes = decoded.pending;
+          var text = decoded.text;
+
+          if (!this._bomSeen && text.length > 0) {
+            if (!this._ignoreBOM && text.charCodeAt(0) === 0xfeff) {
+              text = text.slice(1);
+            }
+            this._bomSeen = true;
+          }
+
+          if (!stream && this._pendingBytes.length > 0) {
+            var pendingLength = this._pendingBytes.length;
+            this._pendingBytes = [];
+            if (this._fatal) throw _createInvalidDataError(this._encoding);
+            return text + '\ufffd'.repeat(Math.ceil(pendingLength / 2));
+          }
+
+          return text;
+        };
+
+        function _normalizeAddEventListenerOptions(options) {
+          if (typeof options === 'boolean') {
+            return { capture: options, once: false, passive: false };
+          }
+          if (options == null) {
+            return { capture: false, once: false, passive: false };
+          }
+          var normalized = Object(options);
+          return {
+            capture: Boolean(normalized.capture),
+            once: Boolean(normalized.once),
+            passive: Boolean(normalized.passive),
+            signal: normalized.signal,
+          };
+        }
+
+        function _normalizeRemoveEventListenerOptions(options) {
+          if (typeof options === 'boolean') return options;
+          if (options == null) return false;
+          return Boolean(Object(options).capture);
+        }
+
+        function _isAbortSignalLike(value) {
+          return (
+            typeof value === 'object' &&
+            value !== null &&
+            'aborted' in value &&
+            typeof value.addEventListener === 'function' &&
+            typeof value.removeEventListener === 'function'
+          );
+        }
+
+        function Event(type, init) {
+          if (arguments.length === 0) {
+            throw new TypeError('The event type must be provided');
+          }
+          var normalizedInit = init == null ? {} : Object(init);
+          this.type = String(type);
+          this.bubbles = Boolean(normalizedInit.bubbles);
+          this.cancelable = Boolean(normalizedInit.cancelable);
+          this.composed = Boolean(normalizedInit.composed);
+          this.detail = null;
+          this.defaultPrevented = false;
+          this.target = null;
+          this.currentTarget = null;
+          this.eventPhase = 0;
+          this.returnValue = true;
+          this.cancelBubble = false;
+          this.timeStamp = Date.now();
+          this.isTrusted = false;
+          this.srcElement = null;
+          this._inPassiveListener = false;
+          this._propagationStopped = false;
+          this._immediatePropagationStopped = false;
+        }
+        Event.NONE = 0;
+        Event.CAPTURING_PHASE = 1;
+        Event.AT_TARGET = 2;
+        Event.BUBBLING_PHASE = 3;
+        Event.prototype.preventDefault = function preventDefault() {
+          if (this.cancelable && !this._inPassiveListener) {
+            this.defaultPrevented = true;
+            this.returnValue = false;
+          }
+        };
+        Event.prototype.stopPropagation = function stopPropagation() {
+          this._propagationStopped = true;
+          this.cancelBubble = true;
+        };
+        Event.prototype.stopImmediatePropagation = function stopImmediatePropagation() {
+          this._propagationStopped = true;
+          this._immediatePropagationStopped = true;
+          this.cancelBubble = true;
+        };
+        Event.prototype.composedPath = function composedPath() {
+          return this.target ? [this.target] : [];
+        };
+
+        function CustomEvent(type, init) {
+          Event.call(this, type, init);
+          var normalizedInit = init == null ? null : Object(init);
+          this.detail =
+            normalizedInit && 'detail' in normalizedInit ? normalizedInit.detail : null;
+        }
+        CustomEvent.prototype = Object.create(Event.prototype);
+        CustomEvent.prototype.constructor = CustomEvent;
+
+        function EventTarget() {
+          this._listeners = new Map();
+        }
+        EventTarget.prototype.addEventListener = function addEventListener(type, listener, options) {
+          var normalized = _normalizeAddEventListenerOptions(options);
+
+          if (normalized.signal !== undefined && !_isAbortSignalLike(normalized.signal)) {
+            throw new TypeError('The "signal" option must be an instance of AbortSignal.');
+          }
+
+          if (listener == null) return undefined;
+          if (typeof listener !== 'function' && (typeof listener !== 'object' || listener === null)) {
+            return undefined;
+          }
+          if (normalized.signal && normalized.signal.aborted) return undefined;
+
+          var records = this._listeners.get(type) || [];
+          for (var i = 0; i < records.length; i += 1) {
+            if (records[i].listener === listener && records[i].capture === normalized.capture) {
+              return undefined;
+            }
+          }
+
+          var record = {
+            listener: listener,
+            capture: normalized.capture,
+            once: normalized.once,
+            passive: normalized.passive,
+            kind: typeof listener === 'function' ? 'function' : 'object',
+            signal: normalized.signal,
+            abortListener: undefined,
+          };
+
+          if (normalized.signal) {
+            var self = this;
+            record.abortListener = function() {
+              self.removeEventListener(type, listener, normalized.capture);
+            };
+            normalized.signal.addEventListener('abort', record.abortListener, { once: true });
+          }
+
+          records.push(record);
+          this._listeners.set(type, records);
+          return undefined;
+        };
+        EventTarget.prototype.removeEventListener = function removeEventListener(type, listener, options) {
+          if (listener == null) return;
+
+          var capture = _normalizeRemoveEventListenerOptions(options);
+          var records = this._listeners.get(type);
+          if (!records) return;
+
+          var nextRecords = [];
+          for (var i = 0; i < records.length; i += 1) {
+            var record = records[i];
+            var match = record.listener === listener && record.capture === capture;
+            if (match) {
+              if (record.signal && record.abortListener) {
+                record.signal.removeEventListener('abort', record.abortListener);
+              }
+            } else {
+              nextRecords.push(record);
+            }
+          }
+
+          if (nextRecords.length === 0) {
+            this._listeners.delete(type);
+          } else {
+            this._listeners.set(type, nextRecords);
+          }
+        };
+        EventTarget.prototype.dispatchEvent = function dispatchEvent(event) {
+          if (!event || typeof event !== 'object' || typeof event.type !== 'string') {
+            throw new TypeError('Argument 1 must be an Event');
+          }
+
+          var records = (this._listeners.get(event.type) || []).slice();
+          event.target = this;
+          event.currentTarget = this;
+          event.eventPhase = 2;
+
+          for (var i = 0; i < records.length; i += 1) {
+            var record = records[i];
+            var active = this._listeners.get(event.type);
+            if (!active || active.indexOf(record) === -1) continue;
+
+            if (record.once) {
+              this.removeEventListener(event.type, record.listener, record.capture);
+            }
+
+            event._inPassiveListener = record.passive;
+            if (record.kind === 'function') {
+              record.listener.call(this, event);
+            } else {
+              var handleEvent = record.listener.handleEvent;
+              if (typeof handleEvent === 'function') {
+                handleEvent.call(record.listener, event);
+              }
+            }
+            event._inPassiveListener = false;
+
+            if (event._immediatePropagationStopped || event._propagationStopped) {
+              break;
+            }
+          }
+
+          event.currentTarget = null;
+          event.eventPhase = 0;
+          return !event.defaultPrevented;
+        };
+
+        globalThis.TextEncoder = TextEncoder;
+        globalThis.TextDecoder = TextDecoder;
+        globalThis.Event = Event;
+        globalThis.CustomEvent = CustomEvent;
+        globalThis.EventTarget = EventTarget;
+
+        if (typeof globalThis.DOMException === 'undefined') {
+          var DOM_EXCEPTION_LEGACY_CODES = {
+            IndexSizeError: 1,
+            DOMStringSizeError: 2,
+            HierarchyRequestError: 3,
+            WrongDocumentError: 4,
+            InvalidCharacterError: 5,
+            NoDataAllowedError: 6,
+            NoModificationAllowedError: 7,
+            NotFoundError: 8,
+            NotSupportedError: 9,
+            InUseAttributeError: 10,
+            InvalidStateError: 11,
+            SyntaxError: 12,
+            InvalidModificationError: 13,
+            NamespaceError: 14,
+            InvalidAccessError: 15,
+            ValidationError: 16,
+            TypeMismatchError: 17,
+            SecurityError: 18,
+            NetworkError: 19,
+            AbortError: 20,
+            URLMismatchError: 21,
+            QuotaExceededError: 22,
+            TimeoutError: 23,
+            InvalidNodeTypeError: 24,
+            DataCloneError: 25,
+          };
+
+          function DOMException(message, name) {
+            if (!(this instanceof DOMException)) {
+              throw new TypeError("Class constructor DOMException cannot be invoked without 'new'");
+            }
+
+            Error.call(this, message);
+            this.message = message === undefined ? '' : String(message);
+            this.name = name === undefined ? 'Error' : String(name);
+            this.code = DOM_EXCEPTION_LEGACY_CODES[this.name] || 0;
+
+            if (typeof Error.captureStackTrace === 'function') {
+              Error.captureStackTrace(this, DOMException);
+            }
+          }
+
+          DOMException.prototype = Object.create(Error.prototype);
+          Object.defineProperty(DOMException.prototype, 'constructor', {
+            value: DOMException,
+            writable: true,
+            configurable: true,
+          });
+          Object.defineProperty(DOMException.prototype, Symbol.toStringTag, {
+            value: 'DOMException',
+            writable: false,
+            enumerable: false,
+            configurable: true,
+          });
+
+          for (var codeName in DOM_EXCEPTION_LEGACY_CODES) {
+            if (!Object.prototype.hasOwnProperty.call(DOM_EXCEPTION_LEGACY_CODES, codeName)) {
+              continue;
+            }
+            var codeValue = DOM_EXCEPTION_LEGACY_CODES[codeName];
+            var constantName = codeName
+              .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+              .toUpperCase();
+            Object.defineProperty(DOMException, constantName, {
+              value: codeValue,
+              writable: false,
+              enumerable: true,
+              configurable: false,
+            });
+            Object.defineProperty(DOMException.prototype, constantName, {
+              value: codeValue,
+              writable: false,
+              enumerable: true,
+              configurable: false,
+            });
+          }
+
+          __requireExposeCustomGlobal('DOMException', DOMException);
+        }
+
+        if (typeof globalThis.Blob === 'undefined') {
+          function Blob(parts, options) {
+            if (!(this instanceof Blob)) {
+              throw new TypeError("Class constructor Blob cannot be invoked without 'new'");
+            }
+            this._parts = Array.isArray(parts) ? parts.slice() : [];
+            this.type = options && options.type ? String(options.type).toLowerCase() : '';
+            var size = 0;
+            for (var index = 0; index < this._parts.length; index += 1) {
+              var part = this._parts[index];
+              if (typeof part === 'string') {
+                size += part.length;
+              } else if (part && typeof part.byteLength === 'number') {
+                size += part.byteLength;
+              }
+            }
+            this.size = size;
+          }
+
+          Blob.prototype.arrayBuffer = function arrayBuffer() {
+            return Promise.resolve(new ArrayBuffer(0));
+          };
+          Blob.prototype.text = function text() {
+            return Promise.resolve('');
+          };
+          Blob.prototype.slice = function slice() {
+            return new Blob();
+          };
+          Blob.prototype.stream = function stream() {
+            throw new Error('Blob.stream is not supported in sandbox');
+          };
+          Object.defineProperty(Blob.prototype, Symbol.toStringTag, {
+            value: 'Blob',
+            writable: false,
+            enumerable: false,
+            configurable: true,
+          });
+
+          __requireExposeCustomGlobal('Blob', Blob);
+        }
+
+        if (typeof globalThis.File === 'undefined') {
+          function File(parts, name, options) {
+            if (!(this instanceof File)) {
+              throw new TypeError("Class constructor File cannot be invoked without 'new'");
+            }
+            globalThis.Blob.call(this, parts, options);
+            this.name = String(name);
+            this.lastModified =
+              options && typeof options.lastModified === 'number'
+                ? options.lastModified
+                : Date.now();
+            this.webkitRelativePath = '';
+          }
+
+          File.prototype = Object.create(globalThis.Blob.prototype);
+          Object.defineProperty(File.prototype, 'constructor', {
+            value: File,
+            writable: true,
+            configurable: true,
+          });
+          Object.defineProperty(File.prototype, Symbol.toStringTag, {
+            value: 'File',
+            writable: false,
+            enumerable: false,
+            configurable: true,
+          });
+
+          __requireExposeCustomGlobal('File', File);
+        }
+
+        if (typeof globalThis.FormData === 'undefined') {
+          function FormData() {
+            if (!(this instanceof FormData)) {
+              throw new TypeError("Class constructor FormData cannot be invoked without 'new'");
+            }
+            this._entries = [];
+          }
+
+          FormData.prototype.append = function append(name, value) {
+            this._entries.push([String(name), value]);
+          };
+          FormData.prototype.get = function get(name) {
+            var key = String(name);
+            for (var index = 0; index < this._entries.length; index += 1) {
+              if (this._entries[index][0] === key) {
+                return this._entries[index][1];
+              }
+            }
+            return null;
+          };
+          FormData.prototype.getAll = function getAll(name) {
+            var key = String(name);
+            var values = [];
+            for (var index = 0; index < this._entries.length; index += 1) {
+              if (this._entries[index][0] === key) {
+                values.push(this._entries[index][1]);
+              }
+            }
+            return values;
+          };
+          FormData.prototype.has = function has(name) {
+            return this.get(name) !== null;
+          };
+          FormData.prototype.delete = function del(name) {
+            var key = String(name);
+            this._entries = this._entries.filter(function(entry) {
+              return entry[0] !== key;
+            });
+          };
+          FormData.prototype.entries = function entries() {
+            return this._entries[Symbol.iterator]();
+          };
+          FormData.prototype[Symbol.iterator] = function iterator() {
+            return this.entries();
+          };
+          Object.defineProperty(FormData.prototype, Symbol.toStringTag, {
+            value: 'FormData',
+            writable: false,
+            enumerable: false,
+            configurable: true,
+          });
+
+          __requireExposeCustomGlobal('FormData', FormData);
+        }
+
+        if (typeof globalThis.MessageEvent === 'undefined') {
+          function MessageEvent(type, options) {
+            if (!(this instanceof MessageEvent)) {
+              throw new TypeError("Class constructor MessageEvent cannot be invoked without 'new'");
+            }
+            globalThis.Event.call(this, type, options);
+            this.data = options && 'data' in options ? options.data : undefined;
+          }
+
+          MessageEvent.prototype = Object.create(globalThis.Event.prototype);
+          Object.defineProperty(MessageEvent.prototype, 'constructor', {
+            value: MessageEvent,
+            writable: true,
+            configurable: true,
+          });
+
+          globalThis.MessageEvent = MessageEvent;
+        }
+
+        if (typeof globalThis.MessagePort === 'undefined') {
+          function MessagePort() {
+            if (!(this instanceof MessagePort)) {
+              throw new TypeError("Class constructor MessagePort cannot be invoked without 'new'");
+            }
+            globalThis.EventTarget.call(this);
+            this.onmessage = null;
+            this._pairedPort = null;
+          }
+
+          MessagePort.prototype = Object.create(globalThis.EventTarget.prototype);
+          Object.defineProperty(MessagePort.prototype, 'constructor', {
+            value: MessagePort,
+            writable: true,
+            configurable: true,
+          });
+          MessagePort.prototype.postMessage = function postMessage(data) {
+            var target = this._pairedPort;
+            if (!target) {
+              return;
+            }
+            var event = new globalThis.MessageEvent('message', { data: data });
+            target.dispatchEvent(event);
+            if (typeof target.onmessage === 'function') {
+              target.onmessage.call(target, event);
+            }
+          };
+          MessagePort.prototype.start = function start() {};
+          MessagePort.prototype.close = function close() {
+            this._pairedPort = null;
+          };
+
+          globalThis.MessagePort = MessagePort;
+        }
+
+        if (typeof globalThis.MessageChannel === 'undefined') {
+          function MessageChannel() {
+            if (!(this instanceof MessageChannel)) {
+              throw new TypeError("Class constructor MessageChannel cannot be invoked without 'new'");
+            }
+            this.port1 = new globalThis.MessagePort();
+            this.port2 = new globalThis.MessagePort();
+            this.port1._pairedPort = this.port2;
+            this.port2._pairedPort = this.port1;
+          }
+
+          globalThis.MessageChannel = MessageChannel;
+        }
+      })();
+
+      (function installWebStreamsGlobals() {
+        if (typeof globalThis.ReadableStream !== 'undefined') {
+          return;
+        }
+        if (typeof _loadPolyfill === 'undefined') {
+          return;
+        }
+
+        const polyfillCode = _loadPolyfill.applySyncPromise(undefined, ['stream/web']);
+        if (polyfillCode === null) {
+          return;
+        }
+
+        const webStreams = Function('"use strict"; return (' + polyfillCode + ');')();
+        const names = [
+          'ReadableStream',
+          'ReadableStreamDefaultReader',
+          'ReadableStreamBYOBReader',
+          'ReadableStreamBYOBRequest',
+          'ReadableByteStreamController',
+          'ReadableStreamDefaultController',
+          'TransformStream',
+          'TransformStreamDefaultController',
+          'WritableStream',
+          'WritableStreamDefaultWriter',
+          'WritableStreamDefaultController',
+          'ByteLengthQueuingStrategy',
+          'CountQueuingStrategy',
+          'TextEncoderStream',
+          'TextDecoderStream',
+          'CompressionStream',
+          'DecompressionStream',
+        ];
+
+        for (const name of names) {
+          if (typeof webStreams?.[name] !== 'undefined') {
+            globalThis[name] = webStreams[name];
+          }
+        }
+      })();
 
       // Patch known polyfill gaps in one place after evaluation.
       function _patchPolyfill(name, result) {
@@ -217,11 +1234,23 @@
             result.kStringMaxLength = maxStringLength;
           }
 
-          const BufferCtor = result.Buffer;
+          var BufferCtor = result.Buffer;
+          if (
+            typeof globalThis.Buffer === 'function' &&
+            globalThis.Buffer !== BufferCtor
+          ) {
+            BufferCtor = globalThis.Buffer;
+            result.Buffer = BufferCtor;
+          } else if (typeof globalThis.Buffer !== 'function' && typeof BufferCtor === 'function') {
+            globalThis.Buffer = BufferCtor;
+          }
           if (
             (typeof BufferCtor === 'function' || typeof BufferCtor === 'object') &&
             BufferCtor !== null
           ) {
+            if (typeof result.SlowBuffer !== 'function') {
+              result.SlowBuffer = BufferCtor;
+            }
             if (typeof BufferCtor.kMaxLength !== 'number') {
               BufferCtor.kMaxLength = maxLength;
             }
@@ -293,6 +1322,29 @@
         }
 
         if (name === 'util') {
+          if (typeof result.types === 'undefined' && typeof _requireFrom === 'function') {
+            try {
+              result.types = _requireFrom('util/types', '/');
+            } catch {
+              // Keep the util polyfill usable even if the util/types helper fails to load.
+            }
+          }
+          if (
+            (typeof result.MIMEType === 'undefined' || typeof result.MIMEParams === 'undefined') &&
+            typeof _requireFrom === 'function'
+          ) {
+            try {
+              const mimeModule = _requireFrom('internal/mime', '/');
+              if (typeof result.MIMEType === 'undefined') {
+                result.MIMEType = mimeModule.MIMEType;
+              }
+              if (typeof result.MIMEParams === 'undefined') {
+                result.MIMEParams = mimeModule.MIMEParams;
+              }
+            } catch {
+              // Keep the util polyfill usable even if the MIME helper fails to load.
+            }
+          }
           if (
             typeof result.inspect === 'function' &&
             typeof result.inspect.custom === 'undefined'
@@ -378,6 +1430,9 @@
                 typeof options === 'object' && options !== null ? options : {};
               const depth =
                 typeof inspectOptions.depth === 'number' ? inspectOptions.depth : 2;
+              if (typeof value === 'symbol') {
+                return value.toString();
+              }
               if (!containsCustomInspectable(value, depth, new Set())) {
                 return originalInspect.call(this, value, options);
               }
@@ -414,8 +1469,31 @@
           return result;
         }
 
-        if (name === 'stream') {
+        if (name === 'stream' || name === 'node:stream') {
+          const getWebStreamsState = function() {
+            return globalThis.__secureExecWebStreams || null;
+          };
+          const webStreamsState = getWebStreamsState();
+          if (typeof result.isReadable !== 'function') {
+            result.isReadable = function(stream) {
+              const stateKey = getWebStreamsState() && getWebStreamsState().kState;
+              return Boolean(stateKey && stream && stream[stateKey] && stream[stateKey].state === 'readable');
+            };
+          }
+          if (typeof result.isErrored !== 'function') {
+            result.isErrored = function(stream) {
+              const stateKey = getWebStreamsState() && getWebStreamsState().kState;
+              return Boolean(stateKey && stream && stream[stateKey] && stream[stateKey].state === 'errored');
+            };
+          }
+          if (typeof result.isDisturbed !== 'function') {
+            result.isDisturbed = function(stream) {
+              const stateKey = getWebStreamsState() && getWebStreamsState().kState;
+              return Boolean(stateKey && stream && stream[stateKey] && stream[stateKey].disturbed === true);
+            };
+          }
           const ReadableCtor = result.Readable;
+          const WritableCtor = result.Writable;
           const readableFrom =
             typeof ReadableCtor === 'function' ? ReadableCtor.from : undefined;
           const readableFromSource =
@@ -463,6 +1541,93 @@
               });
               return readable;
             };
+          }
+          if (
+            webStreamsState &&
+            typeof ReadableCtor === 'function'
+          ) {
+            if (
+              typeof ReadableCtor.fromWeb !== 'function' &&
+              typeof webStreamsState.newStreamReadableFromReadableStream === 'function'
+            ) {
+              ReadableCtor.fromWeb = function fromWeb(readableStream, options) {
+                return webStreamsState.newStreamReadableFromReadableStream(readableStream, options);
+              };
+            }
+            if (
+              typeof ReadableCtor.toWeb !== 'function' &&
+              typeof webStreamsState.newReadableStreamFromStreamReadable === 'function'
+            ) {
+              ReadableCtor.toWeb = function toWeb(readable) {
+                return webStreamsState.newReadableStreamFromStreamReadable(readable);
+              };
+            }
+          }
+          if (
+            webStreamsState &&
+            typeof WritableCtor === 'function'
+          ) {
+            if (
+              typeof WritableCtor.fromWeb !== 'function' &&
+              typeof webStreamsState.newStreamWritableFromWritableStream === 'function'
+            ) {
+              WritableCtor.fromWeb = function fromWeb(writableStream, options) {
+                return webStreamsState.newStreamWritableFromWritableStream(writableStream, options);
+              };
+            }
+            if (
+              typeof WritableCtor.toWeb !== 'function' &&
+              typeof webStreamsState.newWritableStreamFromStreamWritable === 'function'
+            ) {
+              WritableCtor.toWeb = function toWeb(writable) {
+                return webStreamsState.newWritableStreamFromStreamWritable(writable);
+              };
+            }
+          }
+          if (
+            webStreamsState &&
+            typeof result.Duplex === 'function'
+          ) {
+            if (
+              typeof result.Duplex.fromWeb !== 'function' &&
+              typeof webStreamsState.newStreamDuplexFromReadableWritablePair === 'function'
+            ) {
+              result.Duplex.fromWeb = function fromWeb(pair, options) {
+                return webStreamsState.newStreamDuplexFromReadableWritablePair(pair, options);
+              };
+            }
+            if (
+              typeof result.Duplex.toWeb !== 'function' &&
+              typeof webStreamsState.newReadableWritablePairFromDuplex === 'function'
+            ) {
+              result.Duplex.toWeb = function toWeb(duplex) {
+                return webStreamsState.newReadableWritablePairFromDuplex(duplex);
+              };
+            }
+          }
+          if (
+            typeof ReadableCtor === 'function' &&
+            !Object.getOwnPropertyDescriptor(ReadableCtor.prototype, 'readableObjectMode')
+          ) {
+            Object.defineProperty(ReadableCtor.prototype, 'readableObjectMode', {
+              configurable: true,
+              enumerable: false,
+              get() {
+                return Boolean(this?._readableState?.objectMode);
+              },
+            });
+          }
+          if (
+            typeof WritableCtor === 'function' &&
+            !Object.getOwnPropertyDescriptor(WritableCtor.prototype, 'writableObjectMode')
+          ) {
+            Object.defineProperty(WritableCtor.prototype, 'writableObjectMode', {
+              configurable: true,
+              enumerable: false,
+              get() {
+                return Boolean(this?._writableState?.objectMode);
+              },
+            });
           }
           return result;
         }
@@ -906,6 +2071,31 @@
                 return;
               }
               return result2;
+            };
+          }
+
+          if (typeof _cryptoRandomUUID !== 'undefined' && typeof result.randomUUID !== 'function') {
+            result.randomUUID = function randomUUID(options) {
+              if (options !== undefined) {
+                if (options === null || typeof options !== 'object') {
+                  throw createInvalidArgTypeError('options', 'of type object', options);
+                }
+                if (
+                  Object.prototype.hasOwnProperty.call(options, 'disableEntropyCache') &&
+                  typeof options.disableEntropyCache !== 'boolean'
+                ) {
+                  throw createInvalidArgTypeError(
+                    'options.disableEntropyCache',
+                    'of type boolean',
+                    options.disableEntropyCache,
+                  );
+                }
+              }
+              var uuid = _cryptoRandomUUID.applySync(undefined, []);
+              if (typeof uuid !== 'string') {
+                throw new Error('invalid host uuid');
+              }
+              return uuid;
             };
           }
 
@@ -2574,6 +3764,28 @@
         // directly instead of Stream. Insert Stream.prototype into the chain so
         // `passThrough instanceof Stream` works (node-fetch, undici, etc. depend on this).
         if (name === 'stream') {
+          var getWebStreamsState = function() {
+            return globalThis.__secureExecWebStreams || null;
+          };
+          var webStreamsState = getWebStreamsState();
+          if (typeof result.isReadable !== 'function') {
+            result.isReadable = function(stream) {
+              var stateKey = getWebStreamsState() && getWebStreamsState().kState;
+              return Boolean(stateKey && stream && stream[stateKey] && stream[stateKey].state === 'readable');
+            };
+          }
+          if (typeof result.isErrored !== 'function') {
+            result.isErrored = function(stream) {
+              var stateKey = getWebStreamsState() && getWebStreamsState().kState;
+              return Boolean(stateKey && stream && stream[stateKey] && stream[stateKey].state === 'errored');
+            };
+          }
+          if (typeof result.isDisturbed !== 'function') {
+            result.isDisturbed = function(stream) {
+              var stateKey = getWebStreamsState() && getWebStreamsState().kState;
+              return Boolean(stateKey && stream && stream[stateKey] && stream[stateKey].disturbed === true);
+            };
+          }
           if (
             typeof result === 'function' &&
             result.prototype &&
@@ -2591,6 +3803,93 @@
               var currentParent = Object.getPrototypeOf(readableProto);
               Object.setPrototypeOf(streamProto, currentParent);
               Object.setPrototypeOf(readableProto, streamProto);
+            }
+          }
+          if (
+            typeof result.Readable === 'function' &&
+            !Object.getOwnPropertyDescriptor(result.Readable.prototype, 'readableObjectMode')
+          ) {
+            Object.defineProperty(result.Readable.prototype, 'readableObjectMode', {
+              configurable: true,
+              enumerable: false,
+              get: function() {
+                return Boolean(this && this._readableState && this._readableState.objectMode);
+              },
+            });
+          }
+          if (
+            typeof result.Writable === 'function' &&
+            !Object.getOwnPropertyDescriptor(result.Writable.prototype, 'writableObjectMode')
+          ) {
+            Object.defineProperty(result.Writable.prototype, 'writableObjectMode', {
+              configurable: true,
+              enumerable: false,
+              get: function() {
+                return Boolean(this && this._writableState && this._writableState.objectMode);
+              },
+            });
+          }
+          if (
+            webStreamsState &&
+            typeof result.Readable === 'function'
+          ) {
+            if (
+              typeof result.Readable.fromWeb !== 'function' &&
+              typeof webStreamsState.newStreamReadableFromReadableStream === 'function'
+            ) {
+              result.Readable.fromWeb = function fromWeb(readableStream, options) {
+                return webStreamsState.newStreamReadableFromReadableStream(readableStream, options);
+              };
+            }
+            if (
+              typeof result.Readable.toWeb !== 'function' &&
+              typeof webStreamsState.newReadableStreamFromStreamReadable === 'function'
+            ) {
+              result.Readable.toWeb = function toWeb(readable) {
+                return webStreamsState.newReadableStreamFromStreamReadable(readable);
+              };
+            }
+          }
+          if (
+            webStreamsState &&
+            typeof result.Writable === 'function'
+          ) {
+            if (
+              typeof result.Writable.fromWeb !== 'function' &&
+              typeof webStreamsState.newStreamWritableFromWritableStream === 'function'
+            ) {
+              result.Writable.fromWeb = function fromWeb(writableStream, options) {
+                return webStreamsState.newStreamWritableFromWritableStream(writableStream, options);
+              };
+            }
+            if (
+              typeof result.Writable.toWeb !== 'function' &&
+              typeof webStreamsState.newWritableStreamFromStreamWritable === 'function'
+            ) {
+              result.Writable.toWeb = function toWeb(writable) {
+                return webStreamsState.newWritableStreamFromStreamWritable(writable);
+              };
+            }
+          }
+          if (
+            webStreamsState &&
+            typeof result.Duplex === 'function'
+          ) {
+            if (
+              typeof result.Duplex.fromWeb !== 'function' &&
+              typeof webStreamsState.newStreamDuplexFromReadableWritablePair === 'function'
+            ) {
+              result.Duplex.fromWeb = function fromWeb(pair, options) {
+                return webStreamsState.newStreamDuplexFromReadableWritablePair(pair, options);
+              };
+            }
+            if (
+              typeof result.Duplex.toWeb !== 'function' &&
+              typeof webStreamsState.newReadableWritablePairFromDuplex === 'function'
+            ) {
+              result.Duplex.toWeb = function toWeb(duplex) {
+                return webStreamsState.newReadableWritablePairFromDuplex(duplex);
+              };
             }
           }
           return result;
@@ -2679,6 +3978,24 @@
       // Create deferred module stubs that throw on API calls
       function _createDeferredModuleStub(moduleName) {
         const methodCache = {};
+        const workerThreadsCompat = {
+          markAsUncloneable: function markAsUncloneable(value) {
+            return value;
+          },
+          markAsUntransferable: function markAsUntransferable(value) {
+            return value;
+          },
+          isMarkedAsUntransferable: function isMarkedAsUntransferable() {
+            return false;
+          },
+          MessagePort: globalThis.MessagePort,
+          MessageChannel: globalThis.MessageChannel,
+          MessageEvent: globalThis.MessageEvent,
+        };
+        const moduleCompat = {
+          worker_threads: workerThreadsCompat,
+          'node:worker_threads': workerThreadsCompat,
+        };
         let stub = null;
         stub = new Proxy({}, {
           get(_target, prop) {
@@ -2687,6 +4004,12 @@
             if (prop === Symbol.toStringTag) return 'Module';
             if (prop === 'then') return undefined;
             if (typeof prop !== 'string') return undefined;
+            if (
+              moduleCompat[moduleName] &&
+              Object.prototype.hasOwnProperty.call(moduleCompat[moduleName], prop)
+            ) {
+              return moduleCompat[moduleName][prop];
+            }
             if (!methodCache[prop]) {
               methodCache[prop] = function deferredApiStub() {
                 throw _unsupportedApiError(moduleName, prop);
@@ -2975,13 +4298,16 @@
 
         if (name === 'internal/http2/util') {
           if (__internalModuleCache[name]) return __internalModuleCache[name];
-          class NghttpError extends Error {
-            constructor(message) {
-              super(message);
-              this.name = 'Error';
-              this.code = 'ERR_HTTP2_ERROR';
-            }
-          }
+          const sharedNghttpError = _http2Module?.NghttpError;
+          const NghttpError = typeof sharedNghttpError === 'function'
+            ? sharedNghttpError
+            : class NghttpError extends Error {
+                constructor(message) {
+                  super(message);
+                  this.name = 'Error';
+                  this.code = 'ERR_HTTP2_ERROR';
+                }
+              };
           const utilModule = {
             kSocket: Symbol.for('secure-exec.http2.kSocket'),
             NghttpError,
@@ -3028,6 +4354,16 @@
         if (name === 'process') {
           _debugRequire('loaded', name, 'process-special');
           return globalThis.process;
+        }
+
+        // Special handling for v8. Some CommonJS dependencies require it
+        // before the mutable module cache has been copied into the local cache.
+        if (name === 'v8') {
+          if (__internalModuleCache['v8']) return __internalModuleCache['v8'];
+          const v8Module = globalThis._moduleCache?.v8 || {};
+          __internalModuleCache['v8'] = v8Module;
+          _debugRequire('loaded', name, 'v8-special');
+          return v8Module;
         }
 
         // Special handling for async_hooks.
@@ -3179,7 +4515,7 @@
           const moduleObj = { exports: {} };
           _pendingModules[name] = moduleObj;
 
-          let result = eval(polyfillCode);
+          let result = Function('"use strict"; return (' + polyfillCode + ');')();
           result = _patchPolyfill(name, result);
           if (typeof result === 'object' && result !== null) {
             Object.assign(moduleObj.exports, result);
@@ -3232,17 +4568,6 @@
 	          return parsed;
 	        }
 
-	        // Some CJS artifacts include import.meta.url probes that are valid in
-	        // ESM but a syntax error in Function()-compiled CJS wrappers.
-	        const normalizedSource =
-	          typeof source === 'string'
-	            ? source
-	                .replace(/import\.meta\.url/g, '__filename')
-	                .replace(/fileURLToPath\(__filename\)/g, '__filename')
-	                .replace(/url\.fileURLToPath\(__filename\)/g, '__filename')
-	                .replace(/fileURLToPath\.call\(void 0, __filename\)/g, '__filename')
-	            : source;
-
         // Create module object
         const module = {
           exports: {},
@@ -3260,15 +4585,22 @@
         try {
           // Wrap and execute the code
           let wrapper;
+          const isRequireTransformedEsm =
+            typeof source === 'string' &&
+            source.startsWith(REQUIRE_TRANSFORM_MARKER);
+          const wrapperPrologue = isRequireTransformedEsm
+            ? ''
+            : "var __filename = __secureExecFilename;\n" +
+              "var __dirname = __secureExecDirname;\n";
           try {
 	            wrapper = new Function(
 	              'exports',
 	              'require',
 	              'module',
-	              '__filename',
-	              '__dirname',
+	              '__secureExecFilename',
+	              '__secureExecDirname',
 	              '__dynamicImport',
-	              normalizedSource + '\n//# sourceURL=' + resolved
+	              wrapperPrologue + source + '\n//# sourceURL=' + resolved
 	            );
           } catch (error) {
             const details =

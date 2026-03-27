@@ -698,7 +698,7 @@
         "Typecheck passes"
       ],
       "priority": 31.6,
-      "passes": false,
+      "passes": true,
       "notes": "Current exact red vendored files for this bucket include test-whatwg-encoding-custom-api-basics.js, test-whatwg-encoding-custom-fatal-streaming.js, test-whatwg-encoding-custom-textdecoder-api-invalid-label.js, test-whatwg-encoding-custom-textdecoder-fatal.js, test-whatwg-encoding-custom-textdecoder-ignorebom.js, test-whatwg-encoding-custom-textdecoder-invalid-arg.js, test-whatwg-encoding-custom-textdecoder-streaming.js, test-whatwg-encoding-custom-textdecoder-utf16-surrogates.js, test-whatwg-events-add-event-listener-options-passive.js, test-whatwg-events-add-event-listener-options-signal.js, test-whatwg-events-customevent.js, test-whatwg-events-eventtarget-this-of-listener.js, and test-whatwg-events-event-constructors.js."
     },
     {
@@ -715,7 +715,7 @@
         "Typecheck passes"
       ],
       "priority": 31.7,
-      "passes": false,
+      "passes": true,
       "notes": "Current exact red vendored files for this bucket include test-whatwg-readablebytestream.js, test-whatwg-readablebytestream-bad-buffers-and-views.js, test-whatwg-readablestream.js, test-whatwg-transformstream.js, test-whatwg-writablestream.js, test-whatwg-webstreams-adapters-streambase.js, test-whatwg-webstreams-adapters-to-readablestream.js, test-whatwg-webstreams-adapters-to-readablewritablepair.js, test-whatwg-webstreams-adapters-to-streamduplex.js, test-whatwg-webstreams-adapters-to-streamreadable.js, test-whatwg-webstreams-adapters-to-streamwritable.js, test-whatwg-webstreams-adapters-to-writablestream.js, test-whatwg-webstreams-coverage.js, test-whatwg-webstreams-transfer.js, test-whatwg-readablebytestreambyob.js, test-whatwg-webstreams-compression.js, test-whatwg-webstreams-encoding.js, and test-mime-whatwg.js."
     },
     {
@@ -732,7 +732,7 @@
         "Typecheck passes"
       ],
       "priority": 31.8,
-      "passes": false,
+      "passes": true,
       "notes": "Current exact red vendored files for this bucket include test-http2-respond-file.js, test-http2-respond-file-fd.js, test-http2-respond-file-fd-invalid.js, test-http2-respond-file-fd-range.js, test-http2-respond-file-range.js, test-http2-respond-file-errors.js, test-http2-respond-with-fd-errors.js, test-http2-respond-file-filehandle.js, test-http2-respond-file-with-pipe.js, test-http2-respond-file-push.js, and test-http2-respond-with-file-connection-abort.js."
     },
     {
@@ -749,7 +749,7 @@
         "Typecheck passes"
       ],
       "priority": 32,
-      "passes": false,
+      "passes": true,
       "notes": "US-036 from the previous PRD was marked done, but the signature cross-runtime proof test is currently red."
     },
     {
@@ -766,7 +766,7 @@
         "Typecheck passes"
       ],
       "priority": 33,
-      "passes": false,
+      "passes": true,
       "notes": "Current code documents deny-by-default in SocketTable but only enforces when networkCheck exists, and KernelImpl does not provide one."
     },
     {
@@ -783,7 +783,7 @@
         "Typecheck passes"
       ],
       "priority": 34,
-      "passes": false,
+      "passes": true,
       "notes": "Current loopback HTTP client requests short-circuit in bridge/network.ts, and external fetch/httpRequest still go straight through the adapter."
     },
     {
@@ -799,7 +799,7 @@
         "Typecheck passes"
       ],
       "priority": 35,
-      "passes": false,
+      "passes": true,
       "notes": "NodeExecutionDriver currently provisions createNodeHostNetworkAdapter() when no socket table is injected."
     },
     {
@@ -815,7 +815,7 @@
         "Typecheck passes"
       ],
       "priority": 36,
-      "passes": false,
+      "passes": true,
       "notes": "US-056 improved targeted parity, but the implementation still depends on regex-based source transforms in active loader paths."
     },
     {
@@ -832,7 +832,7 @@
         "Typecheck passes"
       ],
       "priority": 37,
-      "passes": false,
+      "passes": true,
       "notes": "Current WasmVM signal support is cooperative and minimal; it does not faithfully carry sigaction masks/flags through the stack."
     },
     {
@@ -848,7 +848,7 @@
         "Typecheck passes"
       ],
       "priority": 38,
-      "passes": false,
+      "passes": true,
       "notes": "Current integration tests intentionally create sockets for nonexistent PID 99999, which undermines the ownership semantics claimed in the prior PRD."
     },
     {
@@ -864,7 +864,7 @@
         "Typecheck passes"
       ],
       "priority": 39,
-      "passes": false,
+      "passes": true,
       "notes": "Current runner logic only special-cases category=vacuous-skip, but several pass entries already admit they only pass via self-skip."
     },
     {
@@ -879,7 +879,7 @@
         "Typecheck passes"
       ],
       "priority": 40,
-      "passes": false,
+      "passes": true,
       "notes": "Standalone command binaries already have a CI guard, but the C-built story artifacts still disappear behind skip guards when missing."
     },
     {
@@ -896,7 +896,7 @@
         "Typecheck passes"
       ],
       "priority": 41,
-      "passes": false,
+      "passes": true,
       "notes": "Current lower-level tests are heavily mock-based, and a same-repo loopback HTTP bridge test passing did not prevent the end-to-end cross-runtime failure."
     },
     {
@@ -912,7 +912,7 @@
         "Typecheck passes"
       ],
       "priority": 42,
-      "passes": false,
+      "passes": true,
       "notes": "Several existing Node suites still validate the standalone default-network path, which inflated confidence in the kernel migration stories."
     },
     {
@@ -931,7 +931,7 @@
         "Typecheck passes"
       ],
       "priority": 43,
-      "passes": false,
+      "passes": true,
       "notes": "Reference: docs-internal/posix-gaps-audit.md. Primary files: packages/core/src/kernel/kernel.ts and packages/core/src/shared/in-memory-fs.ts."
     },
     {
@@ -949,7 +949,7 @@
         "Typecheck passes"
       ],
       "priority": 44,
-      "passes": false,
+      "passes": true,
       "notes": "Reference: docs-internal/posix-gaps-audit.md. Primary files: packages/core/src/kernel/pipe-manager.ts, packages/core/src/kernel/file-lock.ts, and packages/core/src/drivers/."
     },
     {
@@ -966,7 +966,7 @@
         "Typecheck passes"
       ],
       "priority": 45,
-      "passes": false,
+      "passes": true,
       "notes": "This depends on inode allocation/refcount work from the VFS correctness story."
     },
     {
@@ -984,7 +984,7 @@
         "Typecheck passes"
       ],
       "priority": 46,
-      "passes": false,
+      "passes": true,
       "notes": "Build on existing kernel signal delivery in packages/core/src/kernel/kernel.ts and process-table logic."
     },
     {
@@ -1002,7 +1002,7 @@
         "Typecheck passes"
       ],
       "priority": 47,
-      "passes": false,
+      "passes": true,
       "notes": "Reference: docs-internal/posix-gaps-audit.md. This is the main server-socket foundation for POSIX networking."
     },
     {
@@ -1021,7 +1021,7 @@
         "Typecheck passes"
       ],
       "priority": 48,
-      "passes": false,
+      "passes": true,
       "notes": "AF_UNIX is entirely in-kernel and should not depend on host networking."
     },
     {
@@ -1037,7 +1037,7 @@
         "Typecheck passes"
       ],
       "priority": 49,
-      "passes": false,
+      "passes": true,
       "notes": "Reference: docs-internal/posix-gaps-audit.md. Keep the kernel transport semantics separate from later wasi-ext/C wiring."
     },
     {
@@ -1055,7 +1055,7 @@
         "Typecheck passes"
       ],
       "priority": 50,
-      "passes": false,
+      "passes": true,
       "notes": "This story enhances the socket types built by the TCP, AF_UNIX, and UDP stories."
     },
     {
@@ -1073,7 +1073,7 @@
         "Typecheck passes"
       ],
       "priority": 51,
-      "passes": false,
+      "passes": true,
       "notes": "Lower urgency than the core POSIX data path work, but required for many userland tools."
     },
     {
@@ -1091,8 +1091,315 @@
         "Typecheck passes"
       ],
       "priority": 52,
-      "passes": false,
+      "passes": true,
       "notes": "This story is the planning/cleanup boundary after the current pending implementation work. 'implementable' means achievable within the SecureExec sandbox model and current product direction; 'will not implement' means intentionally out of product scope or rejected by policy/contract; 'cannot implement' means blocked by fundamental sandbox/runtime constraints unless the architecture itself changes."
+    },
+    {
+      "id": "US-061",
+      "title": "Investigate Pi programmatic SDK path with real-provider tokens",
+      "description": "As a developer, I need Pi's highest-level programmatic integration surface to run end-to-end through SecureExec using real provider credentials so we know whether a true SDK path is viable before investing further in CLI-only coverage.",
+      "acceptanceCriteria": [
+        "Identify Pi's actual supported programmatic surface in this repo version (for example package import entrypoints such as createAgentSession) and document the exact API exercised",
+        "Add an opt-in end-to-end test or harness that runs Pi through the secure-exec sandbox using provider tokens loaded at runtime from ~/misc/env.txt or equivalent exported env vars, without committing secrets",
+        "The coverage uses real provider traffic rather than the mock LLM server, fetch-intercept.cjs, or a fake base URL redirect",
+        "Verify one prompt completes end-to-end and produces non-empty assistant output through the chosen Pi programmatic surface",
+        "Verify at least one real file/tool action works through the sandbox if the programmatic surface supports tools; otherwise document the exact limitation",
+        "If Pi does not expose a stable SDK/programmatic surface or sandbox execution fails because of an upstream/runtime/library issue, append a new blocked follow-up story to prd.json with exact package, version, repro, and proposed unblock path before marking this story complete",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 53,
+      "passes": true,
+      "notes": "Validated Pi v0.60.0's documented SDK surface (`createAgentSession()` + `SessionManager.inMemory()` + `createCodingTools()`) with runtime-loaded Anthropic credentials and an opt-in SecureExec harness. Host Node completes the prompt and `read` tool path successfully. The sandbox harness reproduces a real blocker instead of a mock-path success: importing Pi through NodeRuntime fails while compiling `dist/config.js` with `SyntaxError: Identifier '__filename' has already been declared`, so a blocked follow-up story is required before headless/PTY real-token proof can pass."
+    },
+    {
+      "id": "US-067",
+      "title": "Fix Pi SDK import in NodeRuntime when Pi modules declare __filename",
+      "description": "As a developer, I need Pi's SDK modules to import inside SecureExec's NodeRuntime without colliding with the runtime's CommonJS wrapper globals, so the real-provider SDK path can progress beyond bootstrap.",
+      "acceptanceCriteria": [
+        "Reproduce the current blocker with `SECURE_EXEC_PI_REAL_PROVIDER_E2E=1 pnpm vitest run packages/secure-exec/tests/cli-tools/pi-sdk-real-provider.test.ts`",
+        "SecureExec can import `@mariozechner/pi-coding-agent@0.60.0` through NodeRuntime without `SyntaxError: Identifier '__filename' has already been declared` while compiling `dist/config.js`",
+        "The fix applies at the runtime/module-loader layer rather than by patching Pi locally",
+        "The Pi SDK real-provider harness advances past bootstrap and either completes successfully or exposes the next concrete blocker",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 53.1,
+      "passes": true,
+      "notes": "Fixed in the SecureExec runtime/module-loader layer. `transformSourceForRequire*()` now injects an internal file-URL helper for `import.meta.url` and marks require-transformed ESM, while the isolate CommonJS loader keeps wrapper filename/dirname on private parameter names and only synthesizes local `__filename`/`__dirname` bindings for plain CommonJS sources. Result: importing `@mariozechner/pi-coding-agent@0.60.0` through NodeRuntime no longer fails with `SyntaxError: Identifier '__filename' has already been declared`; the Pi import chain now advances to the next concrete blocker (`ENOENT` for `dist/package.json`)."
+    },
+    {
+      "id": "US-068",
+      "title": "Fix Pi package asset discovery after SDK import bootstrap",
+      "description": "As a developer, I need Pi's package metadata and bundled assets to resolve correctly inside SecureExec after the import bootstrap succeeds, so the SDK can continue booting beyond `dist/config.js`.",
+      "acceptanceCriteria": [
+        "Reproduce the new blocker after US-067 by importing `@mariozechner/pi-coding-agent@0.60.0` through NodeRuntime and observing the `ENOENT` for `dist/package.json`",
+        "SecureExec resolves Pi's package metadata/assets from the actual package root instead of trying to open `dist/package.json`",
+        "The fix applies in SecureExec's runtime/module/filesystem layer rather than by patching Pi locally",
+        "The Pi SDK real-provider harness advances beyond package-dir/bootstrap asset discovery and either completes successfully or exposes the next concrete blocker",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 53.2,
+      "passes": true,
+      "notes": "Next blocker exposed by US-067. Exact repro as of 2026-03-26: after the `__filename` collision fix, importing `@mariozechner/pi-coding-agent@0.60.0` through NodeRuntime reaches `dist/config.js` and then fails with `ENOENT: no such file or directory, open '<repo>/node_modules/.pnpm/.../@mariozechner/pi-coding-agent/dist/package.json'`. Proposed unblock path: inspect how the sandboxed FS / path resolution is handling Pi's package-root detection and why `getPackageDir()` stops at `dist/` instead of the package root."
+    },
+    {
+      "id": "US-062",
+      "title": "Make Pi headless mode pass end-to-end with real-provider tokens",
+      "description": "As a developer, I need Pi's non-interactive/headless path to run through the sandbox with real credentials so the CLI/tooling path is verified without mocks.",
+      "acceptanceCriteria": [
+        "Run Pi headless mode through the secure-exec sandbox path, not a host-only spawn workaround",
+        "Load provider credentials at runtime from ~/misc/env.txt or exported env vars, without committing secrets",
+        "Do not use the mock LLM server or fetch-intercept.cjs for the success path; the test must exercise real outbound provider requests",
+        "Verify Pi can boot, answer a prompt, and exit cleanly in headless/print mode",
+        "Verify at least one filesystem action and one command/tool action work end-to-end through the sandboxed headless flow",
+        "Any existing host-spawn or mock-only Pi headless test that was previously treated as proof of end-to-end support is replaced, narrowed, or clearly relabeled so it is no longer mistaken for real-token sandbox coverage",
+        "If a Pi library/runtime/provider issue blocks completion, append a new blocked follow-up story to prd.json with exact repro details before marking this story complete",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 54,
+      "passes": true,
+      "notes": "Current Pi headless coverage in packages/secure-exec/tests/cli-tools/pi-headless.test.ts uses a mock Anthropic server plus NODE_OPTIONS preload interception. This story is specifically to prove the real-token path."
+    },
+    {
+      "id": "US-069",
+      "title": "Complete modern Web API bootstrap for Pi PTY's undici dependency chain",
+      "description": "As a developer, I need kernel-mounted NodeRuntime PTY sessions to expose the modern Web API and helper surface that Pi's CLI pulls in through undici before the interactive UI can boot.",
+      "acceptanceCriteria": [
+        "Running Pi's real-provider PTY harness through kernel.openShell() no longer exits during undici module bootstrap",
+        "A kernel PTY probe of `node -e \"require('undici'); console.log('ok')\"` succeeds without missing-global or deferred-stub errors",
+        "The sandbox bootstrap provides the undici-required pre-network globals/helpers at module scope, including File/Blob/FormData, MessagePort/MessageChannel/MessageEvent, DOMException, and worker_threads helper compatibility where Node exposes it",
+        "The fix lands in the runtime/bootstrap layer, not as a Pi-specific redirect or mock",
+        "Add regression coverage for the kernel/openShell undici bootstrap path",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 55.1,
+      "passes": true,
+      "notes": "Blocked follow-up from US-063. Exact repro as of 2026-03-26: with `createKernel({ filesystem: overlayVfs, permissions: allowAll, hostNetworkAdapter: createNodeHostNetworkAdapter() })`, `await kernel.mount(createNodeRuntime({ permissions: allowAll }))`, and `kernel.openShell({ command: 'node', args: [PI_CLI, '--verbose', '--no-session', '--no-extensions', '--no-skills', '--no-prompt-templates', '--no-themes', '--provider', 'anthropic', '--model', 'claude-sonnet-4-20250514'] })`, Pi exits with code 1 before rendering. Raw blockers advanced from `File is not defined` to `MessagePort is not defined` to `worker_threads.markAsUncloneable is not supported in sandbox`, and the latest raw failure is `ReferenceError: DOMException is not defined` from `undici/lib/web/websocket/stream/websocketerror.js`. This proves the next unblock is a broader runtime bootstrap gap, not a Pi-specific PTY/rendering bug."
+    },
+    {
+      "id": "US-070",
+      "title": "Make Pi PTY helper-tool bootstrap compatible with sandbox command routing",
+      "description": "As a developer, I need Pi's interactive PTY path to survive helper-binary discovery and extraction inside the sandbox so the TUI can stay alive long enough for real interaction and prompt submission.",
+      "acceptanceCriteria": [
+        "Running Pi's real-provider PTY harness through kernel.openShell() no longer fails on missing or incompatible helper tools such as `tar`, `fd`, or `rg`",
+        "If the sandbox exposes helper commands itself, the exposed `fd` / `rg` surfaces satisfy Pi's version probes; otherwise the supported path is documented and tested as extractor-only sandbox support plus Pi-downloaded upstream helper binaries",
+        "A real kernel/openShell PTY probe pins the helper-tool bootstrap path without mock servers or fake provider redirects",
+        "The chosen command-runtime composition is reflected in regression coverage so future PTY runs do not fall back to `ENOENT: command not found: tar`, `fd 0.1.0 (secure-exec)`, or `rg --version` incompatibilities",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 55.2,
+      "passes": true,
+      "notes": "Blocked follow-up from US-063 after the undici/runtime bootstrap fixes. Exact repro as of 2026-03-26: with `createKernel({ filesystem: overlayVfs, permissions: allowAll, hostNetworkAdapter: createNodeHostNetworkAdapter() })` and `await kernel.mount(createNodeRuntime({ permissions: allowAll }))`, Pi now gets past `AbortSignal.timeout` / `Readable.fromWeb` and fails during helper install with `ENOENT: command not found: tar`. Mounting the full WasmVM commands dir changes the failure to Pi rejecting sandbox helper binaries (`fd 0.1.0 (secure-exec)` and `rg: unrecognized option '--version'`). Mounting a tar-only WasmVM runtime lets Pi download and install upstream `fd` / `rg` into `~/.pi/agent/bin`, flips the PTY into bracketed-paste mode (`\\u001b[?2004h`), and then exits with code 1 plus final raw output `IPC connection closed`. This isolates the next unblock to helper-tool/runtime composition and the post-boot PTY exit path, not the earlier undici bootstrap gap."
+    },
+    {
+      "id": "US-063",
+      "title": "Make Pi PTY mode pass end-to-end with real-provider tokens",
+      "description": "As a developer, I need Pi's interactive terminal UI to work through SecureExec's PTY stack using real credentials so the full TUI path is validated.",
+      "acceptanceCriteria": [
+        "Run Pi interactive mode through kernel.openShell() and @xterm/headless, not host PTY wrappers like script -qefc",
+        "Load provider credentials at runtime from ~/misc/env.txt or exported env vars, without committing secrets",
+        "Do not use the mock LLM server or a fake base URL redirect for the primary success path",
+        "Verify Pi reaches a visible boot-ready screen state in the sandbox PTY",
+        "Verify prompt submission from the PTY yields a real provider response visible in the terminal transcript",
+        "Verify at least one interactive control path works correctly end-to-end, such as interrupt, clear, resize, or clean exit",
+        "If Pi cannot load or render in the sandbox PTY because of a runtime/library issue (for example module syntax/regex support, TTY semantics, stdin streaming, or signal handling), append a new blocked follow-up story to prd.json with exact repro details before marking this story complete",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 55,
+      "passes": true,
+      "notes": "Current Pi PTY coverage already probes kernel.openShell(), but it still relies on a mock server and archived work notes prior import/runtime blockers. This story is the real-token interactive proof point."
+    },
+    {
+      "id": "US-064",
+      "title": "Investigate OpenCode SDK/server path with real-provider tokens",
+      "description": "As a developer, I need OpenCode's SDK/server integration layer to work end-to-end through SecureExec using real provider credentials so we know whether the supported automation surface is viable beyond the CLI.",
+      "acceptanceCriteria": [
+        "Exercise @opencode-ai/sdk against an OpenCode server/process launched through the supported SecureExec path",
+        "Load provider credentials at runtime from ~/misc/env.txt or exported env vars, without committing secrets",
+        "The coverage uses real provider traffic rather than the mock LLM server",
+        "Verify the SDK can connect, create or access a working session/run context, submit a prompt, and receive non-empty assistant output",
+        "Verify at least one filesystem/tool action succeeds through the SDK/server path if the surface supports tools; otherwise document the exact limitation",
+        "If OpenCode's SDK/server flow requires an unsupported bridge capability or fails because of an upstream/runtime/library issue, append a new blocked follow-up story to prd.json with exact package, version, repro, and proposed unblock path before marking this story complete",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 56,
+      "passes": true,
+      "notes": "Added an opt-in real-provider SDK/server harness at `packages/secure-exec/tests/cli-tools/opencode-sdk-real-provider.test.ts`. The investigation result is split cleanly: direct host `opencode serve` with real Anthropic credentials works, and direct `kernel.spawn('opencode', ['--version'])` through the mounted host-binary driver works, but the supported sandbox path still blocks earlier. A sandboxed Node process that calls `require('child_process').spawn('opencode', ['--version'])` through the kernel-mounted child_process bridge hangs with no stdout/stderr and times out, so the test now pins that exact blocker and only proceeds to the full SDK/server flow once the bridge path is fixed. Follow-up story `US-071` tracks the bridge/runtime fix."
+    },
+    {
+      "id": "US-071",
+      "title": "Fix sandbox child_process bridge for mounted host-binary commands",
+      "description": "As a developer, I need sandboxed Node `child_process.spawn()` calls to mounted host-binary commands like OpenCode to deliver stdout/stderr and exit normally, so the OpenCode SDK/server automation path can progress beyond the current bridge hang.",
+      "acceptanceCriteria": [
+        "Reproduce the current blocker with `SECURE_EXEC_OPENCODE_REAL_PROVIDER_E2E=1 pnpm vitest run packages/secure-exec/tests/cli-tools/opencode-sdk-real-provider.test.ts` and confirm the sandbox `spawn('opencode', ['--version'])` bridge probe times out with empty stdout/stderr while direct `kernel.spawn('opencode', ['--version'])` succeeds",
+        "A kernel-mounted sandboxed Node process can call `require('child_process').spawn('opencode', ['--version'])` and receive the version on stdout plus `EXIT:0` within the test timeout",
+        "The fix lands in SecureExec's Node child_process bridge / kernel command-routing path rather than by bypassing the sandbox or spawning OpenCode directly from the host test",
+        "After the bridge fix, the OpenCode real-provider SDK/server harness advances beyond the minimal `--version` probe and either completes the full `opencode serve` + `@opencode-ai/sdk` flow or exposes the next concrete blocker",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 56.1,
+      "passes": true,
+      "notes": "Exact repro as of 2026-03-26: direct host `opencode serve --hostname=127.0.0.1 --port=0` with the same real Anthropic credentials, XDG dir, and `OPENCODE_CONFIG_CONTENT` prints `opencode server listening on http://127.0.0.1:<port>` quickly, and direct `kernel.spawn('opencode', ['--version'])` returns `1.3.3`. But a kernel-mounted sandboxed Node process running `const { spawn } = require('child_process'); spawn('opencode', ['--version'], { env: process.env })` via the bridge produces no stdout/stderr and times out after 10s. That pins the blocker to the Node child_process bridge path for mounted host-binary commands, not to OpenCode config/provider setup."
+    },
+    {
+      "id": "US-065",
+      "title": "Make OpenCode headless mode pass end-to-end with real-provider tokens",
+      "description": "As a developer, I need OpenCode's non-interactive/headless mode to run through SecureExec with real credentials so the CLI automation path is verified end-to-end.",
+      "acceptanceCriteria": [
+        "Run OpenCode headless mode through the secure-exec sandbox path, not a host-only direct spawn used as a substitute for sandbox execution",
+        "Load provider credentials at runtime from ~/misc/env.txt or exported env vars, without committing secrets",
+        "Do not use the mock LLM server for the primary success path",
+        "Verify OpenCode can boot, answer a prompt, and exit cleanly in headless mode",
+        "Verify at least one filesystem action and one command/tool action work end-to-end through the sandboxed headless flow",
+        "Verify whichever output format is treated as canonical for automation (default or json/NDJSON) is parsed and asserted with real-token traffic",
+        "If a Bun/OpenCode/runtime/library issue blocks completion, append a new blocked follow-up story to prd.json with exact repro details before marking this story complete",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 57,
+      "passes": true,
+      "notes": "Current OpenCode headless coverage is explicitly binary-spawn based and mock-server driven. This story must distinguish true sandbox E2E from host-side substitution."
+    },
+    {
+      "id": "US-066",
+      "title": "Make OpenCode PTY mode pass end-to-end with real-provider tokens",
+      "description": "As a developer, I need OpenCode's interactive terminal UI to work through SecureExec's PTY stack using real credentials so the full TUI path is validated.",
+      "acceptanceCriteria": [
+        "Run OpenCode interactive mode through kernel.openShell() and @xterm/headless, not host PTY wrappers like script -qefc",
+        "Load provider credentials at runtime from ~/misc/env.txt or exported env vars, without committing secrets",
+        "Do not use the mock LLM server for the primary success path",
+        "Verify OpenCode reaches a visible boot-ready screen state in the sandbox PTY",
+        "Verify prompt submission from the PTY yields a real provider response visible in the terminal transcript",
+        "Verify at least one interactive control path works correctly end-to-end, such as kitty-keyboard submit, interrupt, resize, or clean exit",
+        "If OpenCode PTY support is blocked by Bun/runtime/bridge issues such as streaming stdin, child_process spawning, terminal protocol handling, or signal delivery, append a new blocked follow-up story to prd.json with exact repro details before marking this story complete",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 58,
+      "passes": false,
+      "notes": "Current OpenCode PTY coverage uses a custom host-binary driver plus script wrapper. This story is specifically to prove the policy-compliant sandbox PTY path with real credentials."
+    },
+    {
+      "id": "US-072",
+      "title": "Make localhost RPC exemptions a supported createNodeDriver SSRF configuration path",
+      "description": "As a developer embedding SecureExec tool loops, I need a supported way to allow sandbox fetches to specific loopback RPC ports without disabling SSRF protection or constructing private adapters by guesswork.",
+      "acceptanceCriteria": [
+        "Add a regression that reproduces the current failure mode: sandbox code calling `fetch('http://127.0.0.1:<rpcPort>')` against a host-side RPC server fails under the default SSRF guard with a private-host rejection",
+        "Define and implement the supported configuration path for exempting specific localhost or loopback ports when using `createNodeDriver`, rather than requiring embedders to import `createDefaultNetworkAdapter` directly unless that direct-construction path is explicitly documented as the intended public API",
+        "The final API keeps SSRF protection enabled by default and only exempts explicitly configured ports",
+        "Add coverage proving that an allowed loopback RPC port succeeds while a different unlisted loopback port still fails the SSRF guard",
+        "Update the relevant public docs for `createNodeDriver` / Node system-driver configuration so embedders know how to wire localhost RPC safely",
+        "If the recommended answer is to construct and pass a custom `networkAdapter`, document that as the supported pattern and make the option surface explicit and tested",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 59,
+      "passes": false,
+      "notes": "External embedder report: sandbox code needs to call host-side tool RPC over `fetch('http://127.0.0.1:<port>')`, but the default adapter's `assertNotPrivateHost` blocks loopback. The adapter already supports `initialExemptPorts`, yet the intended way to thread that through `createNodeDriver` is unclear, so the current workaround is to import `createDefaultNetworkAdapter` manually and pass it via `createNodeDriver({ networkAdapter })`."
+    },
+    {
+      "id": "US-073",
+      "title": "Validate and document NodeRuntime reuse across multi-step exec loops",
+      "description": "As a developer running AI SDK tool loops, I need clear supported lifecycle guidance for `NodeRuntime` across repeated executions so sequential `.exec()` calls do not fail with disposed-isolate errors.",
+      "acceptanceCriteria": [
+        "Add a focused reproduction for the reported lifecycle confusion in a multi-step tool loop shape where code executes multiple times in sequence against the same logical session",
+        "Determine whether reusing one `NodeRuntime` across many `.exec()` calls is the supported pattern, and encode that answer in regression coverage and public docs",
+        "If there is a real runtime bug around disposal, recreation, or stale execution-driver state, fix it in the runtime/driver layer and cover the exact repro",
+        "If the existing behavior is correct and the issue is lifecycle misuse, document the required ownership model clearly, including when a runtime may be disposed and when it must be kept alive",
+        "Include at least one regression proving that the supported repeated-execution pattern works across multiple `.exec()` calls in sequence without `Isolate is disposed` errors",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 60,
+      "passes": false,
+      "notes": "External embedder report: in an AI SDK tool loop, `execute()` is invoked once per model step. Disposing and recreating the `NodeRuntime` between calls led to `Isolate is disposed` failures, while keeping one runtime alive and reusing it across sequential `.exec()` calls worked. This story should turn that anecdote into a supported contract or a runtime fix."
+    },
+    {
+      "id": "US-074",
+      "title": "Clarify NodeRuntime exec() versus run() for automation and export-based flows",
+      "description": "As a developer embedding SecureExec, I need the `NodeRuntime` API docs and examples to make it obvious when to use `run()` versus `exec()` so stdout-driven automation and export-driven evaluation are not confused.",
+      "acceptanceCriteria": [
+        "Audit the current NodeRuntime docs, examples, and test-facing guidance for places that imply `run()` is the default answer when an embedder actually needs `exec()` and `onStdio`",
+        "Update the relevant public docs and examples to explain the intended split: `run()` for returned exports/results and `exec()` for process-style execution with stdout/stderr observation",
+        "Include at least one concise example of each API in the docs, using the same domain/problem where practical so the difference is obvious",
+        "If any existing example or guide currently nudges code-mode or CLI-style integrations toward the wrong API, correct it",
+        "Typecheck passes"
+      ],
+      "priority": 61,
+      "passes": false,
+      "notes": "External embedder report: code originally followed a `runtime.run()` example that returns exports, but the real integration needed `runtime.exec()` plus `onStdio` to capture stdout/stderr in code mode. This is not a correctness bug, but it is a documentation/usability gap that keeps surfacing during tool integration work."
+    },
+    {
+      "id": "US-075",
+      "title": "Fix WasmVM path-based command dispatch for /bin stubs and child-process shell launches",
+      "description": "As a developer using the shell or sandboxed CLI tools, I need path-based command execution like `/bin/ls` and `/bin/bash` to resolve to the correct Wasm binary instead of failing with an empty-path compile error.",
+      "acceptanceCriteria": [
+        "Add a focused regression proving that `kernel.spawn('/bin/printf', ...)` and similar path-based dispatch resolves through the WasmVM command registry to the real command binary",
+        "Add a shell-facing regression proving that brush-shell PATH resolution through `/bin/<cmd>` works for standard commands such as `ls` and `printf`",
+        "Add a Pi-facing regression proving that the Pi SDK's bash tool path no longer surfaces `wasmvm: failed to compile module for '/bin/bash' at : ENOENT: no such file or directory, open ''` during sandbox execution",
+        "The fix normalizes path-style commands before WasmVM binary lookup instead of relying on bare command names only",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 62,
+      "passes": false,
+      "notes": "Discovered during dev-shell and Pi SDK testing. `CommandRegistry.resolve('/bin/ls')` correctly returned the WasmVM driver, but the driver was looking up the literal `/bin/ls` key instead of the basename `ls`, so `_resolveBinaryPath()` fell back to an empty path and failed compilation. The same failure shape appeared in Pi tool execution as `/bin/bash`."
+    },
+    {
+      "id": "US-076",
+      "title": "Fix interactive Wasm shell cwd propagation to spawned child commands",
+      "description": "As a developer using the interactive sandbox shell, I need the shell's current working directory to be honored consistently by spawned commands, not just by shell builtins.",
+      "acceptanceCriteria": [
+        "Add an interactive PTY regression proving that opening the shell with a non-root cwd and then running `pwd` reports that cwd",
+        "Add a regression proving that after `cd /some/path`, both shell builtins and spawned commands like `pwd`, `ls`, and `/bin/pwd` execute in `/some/path` rather than `/`",
+        "Verify the same cwd behavior through the `just dev-shell` wrapper with `--work-dir <path>`",
+        "Document whether the bug is in brush-shell's proc_spawn cwd forwarding, the WASI spawn bridge, or kernel cwd bookkeeping, and fix the responsible layer rather than papering over it in the wrapper",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 63,
+      "passes": false,
+      "notes": "Discovered while validating `just dev-shell -- sh` end to end. The shell banner and wrapper reported the requested work dir, but commands run from the interactive Wasm shell still executed in `/`. For example, `pwd` inside the shell returned `/`, and `ls` listed root unless given an absolute target path."
+    },
+    {
+      "id": "US-077",
+      "title": "Fix PTY resize handling for interactive Wasm shell sessions",
+      "description": "As a developer using the interactive sandbox shell or TUI apps, I need terminal resize handling to work without killing the foreground shell session.",
+      "acceptanceCriteria": [
+        "Add a regression that reproduces the current failure mode where the initial PTY resize path causes an interactive Wasm shell session to exit before the first prompt",
+        "Re-enable resize forwarding in `connectTerminal()` only after the PTY and signal-delivery path is fixed end to end",
+        "Verify that interactive shells and PTY apps stay alive across initial attach and subsequent resize events",
+        "Verify that foreground-process `SIGWINCH` delivery still occurs after the fix",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 64,
+      "passes": false,
+      "notes": "Discovered during real `just dev-shell` PTY verification. `openShell()` alone stayed alive, but the `connectTerminal()` path exited with code 28 when it forwarded the initial resize event. Current behavior was mitigated by disabling resize forwarding; this story is to restore the intended POSIX behavior properly."
+    },
+    {
+      "id": "US-078",
+      "title": "Clarify or fix Pi SDK tool_execution_end error semantics in sandbox tool loops",
+      "description": "As a developer integrating the Pi SDK programmatically, I need `tool_execution_end` events in sandbox runs to distinguish real tool failures from successful executions that still produce expected output.",
+      "acceptanceCriteria": [
+        "Add a focused Pi SDK sandbox regression that records `tool_execution_start` and `tool_execution_end` for a simple successful tool call such as `bash: pwd`",
+        "Determine whether `tool_execution_end.isError === true` for that successful path is expected Pi semantics or a sandbox integration bug",
+        "If it is a sandbox or bridge bug, fix it and assert `isError === false` for successful tool execution",
+        "If it is expected upstream Pi behavior, document that clearly in the test and PRD notes so downstream consumers do not treat the current flag as a trustworthy success signal without inspecting the result payload",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 65,
+      "passes": false,
+      "notes": "Discovered while adding a sandboxed Pi SDK regression for the `/bin/bash` failure path. After the bash-command dispatch bug was fixed, Pi still emitted `tool_execution_end` with `isError: true` even though the mock-provider run completed, returned the expected `pwd` output, and no `/bin/bash` compile failure occurred. This may be a separate Pi SDK event-contract issue rather than a shell-dispatch bug."
     }
   ]
 }

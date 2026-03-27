@@ -60,6 +60,10 @@ The kernel VFS SHALL provide a POSIX-like filesystem interface with consistent e
 - **WHEN** two directory entries refer to the same file through `link(oldPath, newPath)`
 - **THEN** `stat(oldPath).ino` and `stat(newPath).ino` MUST be identical until the inode is deleted
 
+#### Scenario: directory nlink reflects self, parent, and child directories
+- **WHEN** the InMemoryFileSystem creates or removes directories
+- **THEN** each directory MUST report POSIX-style `nlink` metadata: `2` for an empty directory, `2 + childDirectoryCount` for non-root directories, and root `nlink` MUST increase for each immediate child directory
+
 #### Scenario: readDirWithTypes returns entries with type information
 - **WHEN** a caller invokes `readDirWithTypes(path)` on a directory containing files and subdirectories
 - **THEN** the VFS MUST return `VirtualDirEntry[]` where each entry has `name`, `isDirectory`, and `isSymbolicLink` fields
@@ -110,6 +114,10 @@ The kernel FD table SHALL manage per-process file descriptor allocation with ref
 #### Scenario: Dup creates a new FD sharing the same FileDescription
 - **WHEN** a process duplicates an FD via `fdDup(pid, fd)`
 - **THEN** a new FD MUST be allocated pointing to the same FileDescription, and the FileDescription's `refCount` MUST be incremented
+
+#### Scenario: Duplicated FDs keep deferred-unlink inode data until the last shared close
+- **WHEN** a file's pathname is unlinked after `dup`, `dup2`, or fork creates additional FDs that share the same FileDescription
+- **THEN** the inode-backed data MUST remain accessible through the remaining shared FD references and MUST be released only when that shared FileDescription's final reference closes
 
 #### Scenario: Dup2 redirects target FD to source FileDescription
 - **WHEN** a process invokes `fdDup2(pid, oldFd, newFd)` and `newFd` is already open
@@ -177,13 +185,28 @@ The kernel process table SHALL manage process lifecycle with atomic PID allocati
 - **WHEN** a caller invokes `waitpid(pid)` on a process that has already exited
 - **THEN** the Promise MUST resolve immediately with the recorded exit status
 
-#### Scenario: kill sends signal to running process via driver
-- **WHEN** a caller invokes `kill(pid, signal)` on a running process
+#### Scenario: kill routes default-action signals to the driver
+- **WHEN** a caller invokes `kill(pid, signal)` on a running process and the delivered disposition resolves to `SIG_DFL`
 - **THEN** the kernel MUST route the signal through `driverProcess.kill(signal)` on the process's DriverProcess handle
 
 #### Scenario: kill on exited process is a no-op or throws
 - **WHEN** a caller invokes `kill(pid, signal)` on a process with `status: "exited"`
 - **THEN** the kernel MUST NOT attempt to deliver the signal to the driver
+
+### Requirement: Process Signal Handlers And Pending Delivery
+The kernel process table SHALL preserve per-process signal dispositions, blocked masks, and pending caught-signal delivery state.
+
+#### Scenario: caught signal handler runs instead of the default driver action
+- **WHEN** a running process has a registered caught disposition for a delivered signal
+- **THEN** the kernel MUST invoke that handler and MUST NOT route the signal through `driverProcess.kill(signal)` unless a later delivery falls back to `SIG_DFL`
+
+#### Scenario: blocked caught signals remain pending until unmasked
+- **WHEN** `sigprocmask()` blocks a delivered signal for a running process
+- **THEN** the kernel MUST queue that signal in the process's pending set instead of dispatching it immediately
+
+#### Scenario: unmasking delivers queued pending signals
+- **WHEN** `sigprocmask()` later unblocks one or more queued pending signals
+- **THEN** the kernel MUST dispatch those pending signals immediately in ascending signal-number order, skipping any that remain blocked
 
 #### Scenario: Zombie processes are cleaned up after TTL
 - **WHEN** a process exits and transitions to zombie state
@@ -345,8 +368,19 @@ The kernel pipe manager SHALL provide buffered unidirectional pipes with blockin
 - **WHEN** `createPipeFDs(fdTable)` is invoked
 - **THEN** the pipe manager MUST create a pipe and install both read and write FileDescriptions as FDs in the specified FD table, returning `{ readFd, writeFd }`
 
+### Requirement: FD Poll Waits Support Indefinite Blocking
+The kernel SHALL expose `fdPollWait` readiness waits that can either time out or remain pending until an FD state change occurs.
+
+#### Scenario: poll timeout -1 waits until FD readiness changes
+- **WHEN** a runtime calls `fdPollWait(pid, fd, -1)` for a pipe or other waitable FD that is not yet ready
+- **THEN** the wait MUST remain pending until that FD becomes readable, writable, or hung up, rather than timing out because of an internal guard interval
+
 ### Requirement: Socket Blocking Waits Respect Signal Handlers
 The kernel socket table SHALL allow blocking accept/recv waits to observe delivered signals so POSIX-style syscall interruption semantics can be enforced.
+
+#### Scenario: sigaction registration preserves mask and flags
+- **WHEN** a runtime registers a caught signal disposition with a signal mask and `SA_*` flags
+- **THEN** the kernel MUST retain the handler, blocked-signal mask, and raw flag bits so later delivery and wait-restart behavior observes the same metadata
 
 #### Scenario: SA_RESETHAND resets a caught handler after first delivery
 - **WHEN** a process delivers a caught signal whose registered handler includes `SA_RESETHAND`
@@ -389,6 +423,74 @@ The kernel socket table SHALL reserve listener ports deterministically for loopb
 #### Scenario: loopback connect refuses when listener backlog is full
 - **WHEN** a loopback `connect()` targets a listening socket whose pending backlog already reached the configured `listen(backlog)` capacity
 - **THEN** the connection MUST fail with `ECONNREFUSED` instead of growing the backlog without bound
+
+#### Scenario: listening socket becomes readable while accept backlog is non-empty
+- **WHEN** one or more pending connections are queued for a listening socket
+- **THEN** `socketTable.poll()` for that listener MUST report `readable: true` until `accept()` drains the backlog
+
+#### Scenario: closing a listener tears down queued unaccepted connections
+- **WHEN** a listening socket is closed while its accept backlog still contains pending server-side sockets
+- **THEN** the kernel MUST close those queued sockets as part of listener teardown so detached connections do not remain reachable without a listener owner
+
+### Requirement: Socket Options And Per-call Flags Preserve Kernel And Host Semantics
+The kernel socket table SHALL track socket options per socket, apply kernel-enforced options during bind/send paths, and preserve per-call read flag semantics across supported socket types.
+
+#### Scenario: getsockopt returns values previously stored by setsockopt
+- **WHEN** a caller sets `SO_REUSEADDR`, `SO_KEEPALIVE`, `SO_RCVBUF`, `SO_SNDBUF`, or `TCP_NODELAY` on a kernel socket
+- **THEN** `getsockopt` MUST return the last value written for that `(level, optname)` pair on that socket
+
+#### Scenario: SO_REUSEADDR changes bind conflict behavior
+- **WHEN** a caller binds an internet-domain socket to an already-used local port after setting `SO_REUSEADDR` on the binding socket
+- **THEN** the kernel MUST allow that bind instead of rejecting it with `EADDRINUSE`
+
+#### Scenario: host-backed TCP sockets replay stored options after connect
+- **WHEN** a socket with previously stored `TCP_NODELAY` or `SO_KEEPALIVE` becomes backed by a host TCP connection
+- **THEN** the kernel MUST replay those options onto the host socket
+- **AND** later `setsockopt` updates on that connected host-backed socket MUST be forwarded immediately
+
+#### Scenario: MSG_PEEK returns data without consuming it
+- **WHEN** `recv()` or `recvFrom()` is called with `MSG_PEEK` and data is queued
+- **THEN** the kernel MUST return the readable bytes without removing them from the socket buffer or datagram queue
+
+#### Scenario: MSG_DONTWAIT returns EAGAIN only for empty non-EOF reads
+- **WHEN** `recv()` or `recvFrom()` is called with `MSG_DONTWAIT` and no readable data is available yet
+- **THEN** the kernel MUST fail immediately with `EAGAIN`
+- **AND** if EOF is already known for that read path it MUST still return `null` instead of `EAGAIN`
+
+### Requirement: UDP Datagram Transport Preserves Message Boundaries And Source Addresses
+The kernel socket table SHALL model UDP as connectionless datagram delivery, preserving one-send-to-one-recv boundaries and reporting the sender address for each datagram.
+
+#### Scenario: sendTo delivers one datagram to recvFrom with source address metadata
+- **WHEN** a bound UDP socket calls `sendTo()` to another kernel-bound UDP socket
+- **THEN** the destination socket MUST queue exactly one datagram for `recvFrom()`
+- **AND** `recvFrom()` MUST return the sender's address in `srcAddr`
+
+#### Scenario: recvFrom truncates oversized datagrams without leaking the remainder
+- **WHEN** a queued UDP datagram exceeds the caller's `maxBytes`
+- **THEN** `recvFrom()` MUST return only the leading `maxBytes`
+- **AND** the excess bytes MUST be discarded instead of surfacing as a second datagram
+
+#### Scenario: unbound UDP destinations drop silently
+- **WHEN** `sendTo()` targets an address with no kernel-bound UDP socket and no host-backed UDP route
+- **THEN** the kernel MUST report the datagram length as written
+- **AND** the datagram MUST be dropped silently instead of raising `ECONNREFUSED`
+
+#### Scenario: host-backed UDP sockets route through the host adapter
+- **WHEN** a bound UDP socket is attached to an external host-backed transport and sends or receives external datagrams
+- **THEN** the kernel MUST delegate outbound sends through the configured host adapter
+- **AND** inbound host datagrams MUST be surfaced via `recvFrom()` with the host sender address preserved
+
+### Requirement: Kernel Socket Ownership Matches the Process Table
+The kernel socket table SHALL only allocate process-owned sockets for PIDs that are currently registered in the kernel process table when the table is kernel-mediated.
+
+#### Scenario: create rejects unknown owner PID in kernel mode
+- **WHEN** `createKernel()` provisions the shared `SocketTable` and a caller attempts `socketTable.create(..., pid)` for a PID that is not present in the process table
+- **THEN** socket creation MUST fail with `ESRCH`
+
+#### Scenario: process exit cleanup closes only that PID's sockets
+- **WHEN** a registered process exits and the kernel runs process-exit cleanup
+- **THEN** the socket table MUST close all sockets owned by that PID
+- **AND** sockets owned by other still-registered PIDs MUST remain available
 
 ### Requirement: Command Registry Resolution and /bin Population
 The kernel command registry SHALL map command names to runtime drivers and populate `/bin` stubs for shell PATH-based resolution.
@@ -439,6 +541,17 @@ The kernel permission system SHALL wrap VFS and environment access with deny-by-
 #### Scenario: Network and child-process permissions follow deny-by-default
 - **WHEN** network or child-process permission checks are configured
 - **THEN** operations without explicit allowance MUST be denied, consistent with the fs permission model
+
+#### Scenario: Kernel-created socket tables inherit deny-by-default network enforcement
+- **WHEN** `createKernel({ permissions })` constructs the shared `SocketTable`
+- **THEN** the socket table MUST enforce `permissions.network` for host-visible `listen`, external `connect`, external `send`, host-backed UDP `sendTo`, and host-backed listen/bind operations
+- **AND** when `permissions.network` is missing those external socket operations MUST fail with `EACCES`
+- **AND** loopback routing to kernel-owned listeners MUST remain allowed without a host-network allow rule
+
+#### Scenario: AF_UNIX sockets bypass host-network permission checks
+- **WHEN** a caller binds, listens on, connects to, or sends through an `AF_UNIX` socket path
+- **THEN** the kernel MUST keep that traffic entirely in-kernel without consulting `permissions.network`
+- **AND** missing Unix listeners MUST fail with `ECONNREFUSED` instead of `EACCES`
 
 #### Scenario: Preset allowAll grants all operations
 - **WHEN** `allowAll` permission preset is used

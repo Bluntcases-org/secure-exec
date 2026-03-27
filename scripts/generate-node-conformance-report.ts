@@ -18,7 +18,15 @@ import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
-import { minimatch } from "minimatch";
+import {
+	classifyImplementationIntent,
+	isVacuousPassExpectation,
+	resolveExpectation,
+	type ExpectationEntry,
+	type ExpectationsFile,
+	type ImplementationIntent,
+	validateExpectations,
+} from "../packages/secure-exec/tests/node-conformance/expectation-utils.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, "..");
@@ -62,21 +70,6 @@ const docsOutputPath = resolve(values["docs-output"]!);
 
 // ── Types ───────────────────────────────────────────────────────────────
 
-interface ExpectationEntry {
-	expected: "skip" | "fail" | "pass";
-	reason: string;
-	category: string;
-	glob?: boolean;
-	issue?: string;
-}
-
-interface ExpectationsFile {
-	nodeVersion: string;
-	sourceCommit: string;
-	lastUpdated: string;
-	expectations: Record<string, ExpectationEntry>;
-}
-
 interface ModuleStats {
 	total: number;
 	pass: number;
@@ -102,6 +95,15 @@ interface ConformanceReport {
 	};
 	modules: Record<string, ModuleStats>;
 	categories: Record<string, number>;
+	implementationIntents: Record<
+		ImplementationIntent,
+		{
+			total: number;
+			fail: number;
+			skip: number;
+			categories: Record<string, number>;
+		}
+	>;
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────
@@ -111,19 +113,48 @@ function extractModuleName(filename: string): string {
 	return base.split("-")[0] ?? "other";
 }
 
-function resolveExpectation(
-	filename: string,
-	expectations: Record<string, ExpectationEntry>,
-): (ExpectationEntry & { matchedKey: string }) | null {
-	if (expectations[filename]) {
-		return { ...expectations[filename], matchedKey: filename };
+function createIntentStats(): {
+	total: number;
+	fail: number;
+	skip: number;
+	categories: Map<string, number>;
+} {
+	return {
+		total: 0,
+		fail: 0,
+		skip: 0,
+		categories: new Map<string, number>(),
+	};
+}
+
+function formatIntent(intent: ImplementationIntent): string {
+	switch (intent) {
+		case "implementable":
+			return "Implementable";
+		case "will-not-implement":
+			return "Will Not Implement";
+		case "cannot-implement":
+			return "Cannot Implement";
 	}
-	for (const [key, entry] of Object.entries(expectations)) {
-		if (entry.glob && minimatch(filename, key)) {
-			return { ...entry, matchedKey: key };
-		}
+}
+
+function describeIntent(intent: ImplementationIntent): string {
+	switch (intent) {
+		case "implementable":
+			return "Achievable within the current sandbox architecture and product direction.";
+		case "will-not-implement":
+			return "Intentionally out of scope or rejected by product/security policy.";
+		case "cannot-implement":
+			return "Blocked by fundamental sandbox/runtime architecture unless that architecture changes.";
 	}
-	return null;
+}
+
+function formatExpectationIntent(
+	key: string,
+	entry: ExpectationEntry,
+): string {
+	const intent = classifyImplementationIntent(key, entry);
+	return intent === null ? "Already Passing" : formatIntent(intent);
 }
 
 // ── Load data ───────────────────────────────────────────────────────────
@@ -131,6 +162,7 @@ function resolveExpectation(
 const expectationsData: ExpectationsFile = JSON.parse(
 	readFileSync(expectationsPath, "utf-8"),
 );
+validateExpectations(expectationsData.expectations);
 
 let testFiles: string[];
 try {
@@ -146,6 +178,11 @@ try {
 
 const modules = new Map<string, ModuleStats>();
 const categories = new Map<string, number>();
+const implementationIntents = new Map<ImplementationIntent, ReturnType<typeof createIntentStats>>([
+	["implementable", createIntentStats()],
+	["will-not-implement", createIntentStats()],
+	["cannot-implement", createIntentStats()],
+]);
 let totalPass = 0;
 let genuinePass = 0;
 let vacuousPass = 0;
@@ -169,6 +206,14 @@ for (const file of testFiles) {
 			exp.category,
 			(categories.get(exp.category) ?? 0) + 1,
 		);
+		const intent = classifyImplementationIntent(file, exp);
+		const intentStats = implementationIntents.get(intent)!;
+		intentStats.total++;
+		intentStats.skip++;
+		intentStats.categories.set(
+			exp.category,
+			(intentStats.categories.get(exp.category) ?? 0) + 1,
+		);
 	} else if (exp?.expected === "fail") {
 		stats.fail++;
 		totalFail++;
@@ -176,10 +221,15 @@ for (const file of testFiles) {
 			exp.category,
 			(categories.get(exp.category) ?? 0) + 1,
 		);
-	} else if (
-		exp?.expected === "pass" &&
-		exp.category === "vacuous-skip"
-	) {
+		const intent = classifyImplementationIntent(file, exp);
+		const intentStats = implementationIntents.get(intent)!;
+		intentStats.total++;
+		intentStats.fail++;
+		intentStats.categories.set(
+			exp.category,
+			(intentStats.categories.get(exp.category) ?? 0) + 1,
+		);
+	} else if (isVacuousPassExpectation(exp)) {
 		stats.pass++;
 		stats.vacuousPass++;
 		totalPass++;
@@ -223,6 +273,19 @@ const report: ConformanceReport = {
 	categories: Object.fromEntries(
 		[...categories.entries()].sort(([a], [b]) => a.localeCompare(b)),
 	),
+	implementationIntents: Object.fromEntries(
+		[...implementationIntents.entries()].map(([intent, stats]) => [
+			intent,
+			{
+				total: stats.total,
+				fail: stats.fail,
+				skip: stats.skip,
+				categories: Object.fromEntries(
+					[...stats.categories.entries()].sort(([a], [b]) => a.localeCompare(b)),
+				),
+			},
+		]),
+	) as ConformanceReport["implementationIntents"],
 };
 
 writeFileSync(jsonOutputPath, JSON.stringify(report, null, 2) + "\n", "utf-8");
@@ -262,6 +325,26 @@ line(`| Passing (total) | ${totalPass} (${passRate}) |`);
 line(`| Expected fail | ${totalFail} |`);
 line(`| Skip | ${totalSkip} |`);
 line(`| Last updated | ${today} |`);
+line();
+
+line("## Conformance Target");
+line();
+line(
+	"secure-exec tracks Node.js conformance completion as **100% of the implementable bucket**, not 100% of the upstream suite.",
+);
+line();
+line("| Intent | Remaining Tests | Fail | Skip | Meaning |");
+line("| --- | --- | --- | --- | --- |");
+for (const intent of [
+	"implementable",
+	"will-not-implement",
+	"cannot-implement",
+] satisfies ImplementationIntent[]) {
+	const stats = report.implementationIntents[intent];
+	line(
+		`| ${formatIntent(intent)} | ${stats.total} | ${stats.fail} | ${stats.skip} | ${describeIntent(intent)} |`,
+	);
+}
 line();
 
 // Category breakdown
@@ -348,7 +431,9 @@ for (const cat of categoryOrder) {
 		line("**Glob patterns:**");
 		line();
 		for (const { key, entry } of globs) {
-			line(`- \`${key}\` — ${entry.reason}`);
+			line(
+				`- \`${key}\` — ${formatExpectationIntent(key, entry)} — ${entry.reason}`,
+			);
 		}
 		line();
 	}
@@ -358,10 +443,12 @@ for (const cat of categoryOrder) {
 			`<details><summary>${individual.length} individual test${individual.length === 1 ? "" : "s"}</summary>`,
 		);
 		line();
-		line("| Test | Reason |");
-		line("| --- | --- |");
+		line("| Test | Intent | Reason |");
+		line("| --- | --- | --- |");
 		for (const { key, entry } of individual) {
-			line(`| \`${key}\` | ${entry.reason} |`);
+			line(
+				`| \`${key}\` | ${formatExpectationIntent(key, entry)} | ${entry.reason} |`,
+			);
 		}
 		line();
 		line("</details>");

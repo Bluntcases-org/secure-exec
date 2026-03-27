@@ -18,8 +18,19 @@
 - NEVER mock external services in tests — use real implementations (Docker containers for databases/services, real HTTP servers for network tests, real binaries for CLI tool tests)
 - tests that validate sandbox behavior MUST run code through the secure-exec sandbox (NodeRuntime/proc.exec()), never directly on the host
 - CLI tool tests (Pi, Claude Code, OpenCode) must execute inside the sandbox: Pi runs as JS in the VM, Claude Code and OpenCode spawn their binaries via the sandbox's child_process.spawn bridge
+- for host-binary CLI/SDK regressions (Claude Code, OpenCode), pair the sandbox `child_process.spawn()` probe with a direct `kernel.spawn()` control for the same binary command; if direct kernel command routing works but sandboxed spawn hangs, the blocker is in the Node child_process bridge path rather than the tool binary, provider config, or HostBinaryDriver mount
+- sandbox `child_process.spawn()` does not yet honor `stdio` option semantics for host-binary commands, so headless CLI tests that need EOF on stdin should explicitly call `child.stdin.end()` instead of assuming `stdio: ['ignore', ...]` will close it
+- real-provider CLI/SDK tool-integration tests must stay opt-in via an explicit env flag and load credentials at runtime from exported env vars or `~/misc/env.txt`; never commit secrets or replace the live provider path with a mock redirect when the story requires real traffic
+- real-provider NodeRuntime CLI/tool tests that need a mutable temp worktree must pair `moduleAccess` with a real host-backed base filesystem such as `new NodeFileSystem()`; `moduleAccess` alone makes projected packages readable but leaves sandbox tools unable to touch `/tmp` working files
 - e2e-docker fixtures connect to real Docker containers (Postgres, MySQL, Redis, SSH/SFTP) — skip gracefully via `skipUnlessDocker()` when Docker is unavailable
 - interactive/PTY tests must use `kernel.openShell()` with `@xterm/headless`, not host PTY via `script -qefc`
+- kernel blocking-I/O regressions should be proven through `packages/core/test/kernel/kernel-integration.test.ts` using real process-owned FDs via `KernelInterface` (`fdWrite`, `flock`, `fdPollWait`) rather than only manager-level unit tests
+- inode-lifetime/deferred-unlink kernel integration tests must use `InMemoryFileSystem` (or another inode-aware VFS) and await the kernel's POSIX-dir bootstrap; the default `createTestKernel()` `TestFileSystem` does not exercise inode-backed FD lifetime semantics
+- kernel signal-handler regressions should use a real spawned PID plus `KernelInterface.processTable` / `KernelInterface.socketTable`; unit `ProcessTable` coverage alone does not prove pending delivery or `SA_RESTART` behavior through the live kernel
+- socket-table unit tests that call `listen()` or other host-visible network operations must provide an explicit `networkCheck` fixture; bare `new SocketTable()` now models deny-by-default networking and will reject listener setup with `EACCES`
+- kernel UDP transport stories should include a real `packages/secure-exec/tests/kernel/` case that builds a `createKernel()` instance with `createNodeHostNetworkAdapter()` and real `node:dgram` peers; socket-table unit tests alone do not prove host-backed datagram routing
+- socket option/flag stories should pair `packages/core/test/kernel/` coverage with a real `packages/secure-exec/tests/kernel/` case across TCP, AF_UNIX, and UDP; when proving host-backed option replay, wrap `createNodeHostNetworkAdapter()` and record `HostSocket.setOption()` calls instead of relying on public `@secure-exec/core` exports for `SOL_SOCKET`/`TCP_NODELAY`/`MSG_*` constants
+- `/proc/self` coverage must run through a process-scoped runtime such as `kernel.spawn('node', ...)` or `createProcessScopedFileSystem`; raw kernel `vfs` calls have no caller PID context and cannot prove live `/proc/self` behavior
 
 ### POSIX Conformance Test Integrity
 
@@ -38,11 +49,15 @@
   - **wire-level snapshot tests**: capture raw protocol bytes and compare against known-good captures from real Node.js
   - **project-matrix cross-validation**: add a project-matrix fixture (`tests/projects/`) using a real npm package that exercises the feature — the matrix compares sandbox output to host Node.js
   - **real-server control tests**: for network features, maintain tests that hit real external endpoints (not loopback) to validate the client independently of the server
+  - **mismatch-preserving verification**: if the control path currently fails, keep the host-vs-sandbox check and assert the concrete mismatch (`stderr`, exit code, missing bytes) instead of deleting the test or replacing it with another same-code-path loopback check
   - **known-test-vector validation**: for crypto, validate against NIST/RFC test vectors — not just round-trip verification
   - **error object snapshot testing**: for ERR_* codes, snapshot-test full error objects (code, message, constructor) against Node.js — not just check `.code` exists
   - **host-side assertion verification**: periodically run assert-heavy conformance tests through host Node.js to verify the assert polyfill isn't masking failures
+- for kernel-consolidation stories, tests that instantiate `createDefaultNetworkAdapter()` or `useDefaultNetwork` are legacy compatibility coverage only; completion claims must be backed by `createNodeRuntime()` mounted into a real `Kernel`
 - never inflate conformance numbers — if a test self-skips (exits 0 without testing anything), mark it `vacuous-skip` in expectations.json, not as a real pass
+- reserve `category: "vacuous-skip"` for `expected: "pass"` self-skips only; if a vendored file stays `expected: "skip"` because behavior is still broken, keep a real failure category like `implementation-gap` so report category totals stay honest
 - every entry in `expectations.json` must have a specific, verifiable reason — no vague "fails in sandbox" reasons
+- every non-pass conformance expectation must also resolve to exactly one implementation-intent bucket (`implementable`, `will-not-implement`, or `cannot-implement`) via the shared classifier in `packages/secure-exec/tests/node-conformance/expectation-utils.ts`; keep the generated report aligned with that breakdown
 - when rerunning a single expected-fail conformance file through `runner.test.ts`, a green Vitest result only means the expectation still matches; only the explicit `now passes! Remove its expectation` failure proves the vendored test itself now passes and the entry is stale
 - before deleting explicit `pass` overrides behind a negated glob, rerun the exact promoted vendored files through a direct `createTestNodeRuntime()` harness or another no-expectation path; broad module cleanup can still hide stale passes
 - after changing expectations.json or adding/removing test files, regenerate both the JSON report and docs page: `pnpm tsx scripts/generate-node-conformance-report.ts`
@@ -63,6 +78,14 @@
 - treat host memory buildup and CPU amplification as critical risks; avoid unbounded buffering/work (for example, default in-memory log buffering)
 - check GitHub Actions test/typecheck status per commit to identify when a failure first appeared
 - do not use `contract` in test filenames; use names like `suite`, `behavior`, `parity`, `integration`, or `policy` instead
+
+## Dev Shell
+
+- `packages/dev-shell/` is the canonical interactive sandbox for manual validation of the runtime surface
+- VERY IMPORTANT: the dev shell must never use host-backed command overrides or host-binary fallbacks for manual validation; if a tool is present there, it must run through the sandbox-native runtime path
+- if a tested tool does not yet have a real sandbox-native path, leave it unavailable in the dev shell and track the gap instead of silently routing to the host
+- when adding a new tested CLI tool or runtime surface, update `packages/dev-shell/` in the same change so developers can reproduce and inspect it interactively inside the sandbox
+- keep the dev shell honest with focused end-to-end coverage, including at least one interactive PTY/TUI path that runs entirely inside the sandbox
 
 ## GitHub Issues
 
@@ -95,6 +118,7 @@
 - build them locally: `cd native/wasmvm && make wasm` (requires Rust nightly + wasm32-wasip1 target + rust-src component + wasm-opt/binaryen)
 - the Rust toolchain is pinned in `native/wasmvm/rust-toolchain.toml` — rustup will auto-install it
 - CI builds the binaries before tests; a CI-only guard test in `packages/wasmvm/test/driver.test.ts` fails if they're missing
+- story-critical C-built Wasm fixtures also have CI-only availability guards in `packages/wasmvm/test/ci-artifact-availability.test.ts` and `packages/secure-exec/tests/kernel/ci-wasm-artifact-availability.test.ts`; if they fail, rebuild with `make -C native/wasmvm/c sysroot && make -C native/wasmvm/c programs`
 - tests gated behind `skipIf(!hasWasmBinaries)` or `skipUnlessWasmBuilt()` will skip locally if binaries aren't built
 - see `native/wasmvm/CLAUDE.md` for full build details and architecture
 
@@ -117,26 +141,41 @@
 - read `docs-internal/arch/overview.md` for the component map (NodeRuntime, RuntimeDriver, NodeDriver, NodeExecutionDriver, ModuleAccessFileSystem, Permissions)
 - keep it up to date when adding, removing, or significantly changing components
 - keep host bootstrap polyfills in `packages/nodejs/src/execution-driver.ts` aligned with isolate bootstrap polyfills in `packages/core/isolate-runtime/src/inject/require-setup.ts`; drift in shared globals like `AbortController` causes sandbox-only behavior gaps that source-level tests can miss
+- WHATWG globals that sandbox code touches before any bridge module loads (`TextDecoder`, `TextEncoder`, `Event`, `CustomEvent`, `EventTarget`) must be fixed in both bootstrap layers and `packages/nodejs/src/bridge/polyfills.ts`; bridge-only fixes do not change the globals seen by direct `runtime.run()` / `runtime.exec()` code
+- bridged `fetch()` request serialization must normalize `Headers` instances before crossing the JSON bridge; passing the host a raw `Headers` object silently drops auth and SDK-specific headers because it stringifies to `{}`
+- sandbox stdout/stderr write bridges must preserve Node's callback semantics even for empty writes like `process.stdout.write('', cb)`; headless CLI tools use that zero-byte callback as a flush barrier before clean exit
+- exec-mode scripts that depend on bridge-delivered child-process/stdio callbacks must keep the same `Execute` alive on `_waitForActiveHandles()`; once the native V8 session returns from `Execute`, later `StreamEvent` messages sent to that idle session thread are ignored
+- When a builtin or `internal/*` module needs sandbox-specific behavior but still has to work through CommonJS `require()`, add it under `packages/nodejs/src/polyfills/` and register it in `packages/nodejs/src/polyfills.ts` `CUSTOM_POLYFILL_ENTRY_POINTS`; that keeps esbuild bundling it to CJS instead of letting the isolate loader choke on raw ESM `export` syntax
 - vendored fs abort tests deep-freeze option bags via `common.mustNotMutateObjectDeep()`, so sandbox `AbortSignal` state must live outside writable instance properties; freezing `{ signal }` must not break later `controller.abort()`
 - vendored `common.mustNotMutateObjectDeep()` helpers must skip populated typed-array/DataView instances; `Object.freeze(new Uint8Array([1]))` throws before the runtime under test executes, which turns option-bag immutability coverage into a harness failure
 - when adding bridge globals that the sandbox calls with `.apply(..., { result: { promise: true } })`, register them in the native V8 async bridge list in `native/v8-runtime/src/session.rs`; otherwise the `_loadPolyfill` shim can turn a supposed async wait into a synchronous deadlock
 - bridged `net.Server.listen()` must make `server.address()` readable immediately after `listen()` returns, even before the `'listening'` callback, because vendored Node tests read ephemeral ports synchronously
 - bridged Unix path sockets (`server.listen(path)`, `net.connect(path)`) must route through kernel `AF_UNIX`, not TCP validation, and `readableAll` / `writableAll` listener options must update the VFS socket-file mode bits that `fs.statSync()` observes
 - bridged `net.Socket.setTimeout()` must match Node validation codes (`ERR_INVALID_ARG_TYPE`, `ERR_OUT_OF_RANGE`) and any timeout timer created for an unrefed socket must also be unrefed so it cannot keep the runtime alive by itself
+- standalone `NodeExecutionDriver` should always provision an internal `SocketTable` for loopback routing, but it must only attach `createNodeHostNetworkAdapter()` when `SystemDriver.network` is explicitly configured; omitted network capability must not silently re-enable host TCP access
 - bridged `dgram.Socket` loopback semantics depend on both layers: the isolate bridge must implicitly bind unbound sender sockets before `send()`, and the kernel UDP path must rewrite wildcard local addresses (`0.0.0.0` / `::`) to concrete loopback source addresses so `rinfo.address` matches Node on self-send/echo tests
 - bridged `dgram.Socket` buffer-size options must be cached until `bind()` completes; Node expects unbound `get*BufferSize()` / `set*BufferSize()` calls to throw `ERR_SOCKET_BUFFER_SIZE` with `EBADF`, so eager pre-bind application hides the real error path
+- `packages/wasmvm/src/driver.ts` prefers `packages/wasmvm/dist/kernel-worker.js` when no sibling `src/kernel-worker.js` exists, so edits to `packages/wasmvm/src/kernel-worker.ts` are not authoritative until `pnpm --filter @secure-exec/wasmvm build` refreshes the worker bundle
 - bridged `http2` server streams must start paused on the host and only resume when sandbox code opts into flow (`req.on('data')`, `req.resume()`, or `stream.resume()`); otherwise the host consumes DATA frames too early, sends WINDOW_UPDATE unexpectedly, and hides paused flow-control / pipeline regressions
+- vendored `http2` nghttp2 error-path tests patch `internal/test/binding` `Http2Stream.prototype.respond`; keep that shim wired to the same bridge-facing `Http2Stream` / `internal/http2/util`.`NghttpError` constructors the runtime uses, or the tests stop exercising the real wrapper logic
 - bridge exports that userland constructs with `new` must be assigned as constructable function properties, not object-literal method shorthands; shorthand methods like `createReadStream() {}` are not constructable and vendored fs coverage calls `new fs.createReadStream(...)`
 - `/proc/sys/kernel/hostname` conformance hits both kernel-backed and standalone NodeRuntime paths; a procfs fix that only lands in the kernel layer still leaves `createTestNodeRuntime()` fs/FileHandle coverage red
+- require-transformed ESM must not rely on the CommonJS wrapper's `__filename` / `__dirname` parameter names; keep wrapper internals on private names, synthesize local CJS bindings only for plain CommonJS sources, and compute transformed `import.meta.url` from `pathToFileURL(__secureExecFilename).href`
+- `ModuleAccessFileSystem` must treat host-absolute package asset paths derived from `import.meta.url`, `__filename`, or `realpath()` as part of the same read-only projected `node_modules` closure when they canonicalize inside the configured overlay; Pi and similar SDKs walk to sibling `package.json`/README/theme assets that way
+- `ModuleAccessFileSystem` also has to include pnpm virtual-store dependency symlink targets reachable from projected packages; package-internal `imports` like Chalk's `#ansi-styles` resolve into those sibling `.pnpm/*/node_modules/*` targets rather than staying under the top-level package root
 
 ## Virtual Kernel Architecture
 
 - **all sandbox I/O routes through the virtual kernel** — user code never touches the host OS directly
 - the kernel provides: VFS (virtual file system), process table (spawn/signals/exit), network stack (TCP/HTTP/DNS/UDP), and a deny-by-default permissions engine
 - **network calls are kernel-mediated**: `http.createServer()` registers a virtual listener in the kernel's network stack; `http.request()` to localhost routes through the kernel without real TCP — the kernel connects virtual server to virtual client directly; external requests go through the host adapter after permission checks
+- kernel network deny-by-default is enforced in `packages/core/src/kernel/socket-table.ts`, so `KernelImpl` must pass `options.permissions?.network` into `SocketTable` and external socket paths must call `checkNetworkPermission()` unconditionally; loopback exemptions belong in the routing branch, not in global permission bypasses
+- `AF_UNIX` sockets are local IPC, not host networking: `SocketTable` bind/listen/connect for path sockets must stay fully in-kernel, bypass `permissions.network`, and only use the VFS/listener registry for reachability and socket-file state
+- kernel-owned `SocketTable` instances must validate owner PIDs against the shared process table at allocation time; only standalone/internal socket tables should omit that validator
 - when kernel `bind()` assigns an internal ephemeral port for `port: 0`, preserve that original ephemeral intent on the socket so external host-backed listeners can still call the host adapter with `port: 0` and then rewrite `localAddr` to the real host-assigned port
 - **the VFS is not the host file system** — files written by sandbox code live in the VFS (in-memory by default); host filesystem is accessible only through explicit read-only overlays (e.g., `node_modules`) configured by the embedder
 - when the kernel uses `InMemoryFileSystem`, rebind it to the shared `kernel.inodeTable` before wrapping it with devices/permissions; deferred-unlink FD I/O must use inode-based helpers on the raw in-memory FS, not pathname lookups
+- `InMemoryFileSystem` directory metadata must stay POSIX-shaped: directory `nlink` is `2 + immediate child directory count`, `readDir*()` must synthesize `.`/`..`, and symlink `lstat()` / typed readdir entries should expose the symlink's own stable inode instead of `ino: 0`
 - deferred unlink must stay inode-backed: once a pathname is removed, new path lookups must fail immediately, but existing FDs must keep working through `FileDescription.inode` until the last reference closes
 - `KernelInterface.fdOpen()` is synchronous, so open-time file semantics (`O_CREAT`, `O_EXCL`, `O_TRUNC`) must go through sync-capable VFS hooks threaded through the device and permission wrappers — do not move those checks into async read/write paths
 - **embedders provide host adapters** that implement actual I/O — a Node.js embedder provides real `fs` and `net`; a browser embedder provides `fetch`-based networking and no file system; sandbox code doesn't know which adapter backs the kernel
@@ -150,7 +189,7 @@
 - instead, use proper tooling: `es-module-lexer` / `cjs-module-lexer` (the same WASM-based lexers Node.js uses), or run the transformation inside the V8 isolate where the JS engine handles parsing correctly
 - if a source transformation is needed at the bridge/host level, prefer a battle-tested library over hand-rolled regex
 - the V8 runtime already has dual-mode execution (`execute_script` for CJS, `execute_module` for ESM) — lean on V8's native module system rather than pre-transforming source on the host side
-- existing regex-based transforms (e.g., `convertEsmToCjs`, `transformDynamicImport`, `isESM`) are known technical debt and should be replaced
+- existing regex-based transforms (e.g., `convertEsmToCjs`, `transformDynamicImport`, `isESM`) are known technical debt and should be replaced; when `require()` compatibility needs `import.meta.url`, inject an internal file-URL helper instead of rewriting to the wrapper `__filename`
 
 
 ## Contracts (CRITICAL)

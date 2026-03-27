@@ -29,6 +29,32 @@ Changes affecting bridged or polyfilled Node APIs MUST keep `docs/nodejs-compati
 - **WHEN** `docs/nodejs-compatibility.mdx` is updated
 - **THEN** the page MUST retain an explicit target Node version statement at the top
 
+### Requirement: Node Conformance Vacuous Self-Skips Must Not Inflate Genuine Pass Counts
+Node conformance expectation and reporting flows SHALL reserve `category: "vacuous-skip"` for expected-pass vendored tests that exit `0` only because the test self-skipped without exercising functionality.
+
+#### Scenario: Self-skipping vendored file is treated as vacuous pass
+- **WHEN** an expectation is marked `expected: "pass"` only because the vendored test self-skips
+- **THEN** it MUST use `category: "vacuous-skip"` and reporting MUST exclude it from the genuine-pass count
+
+#### Scenario: Intentionally skipped file is still a skip
+- **WHEN** secure-exec keeps a vendored file under `expected: "skip"` because functionality remains broken or intentionally unsupported
+- **THEN** that entry MUST stay under its real failure category rather than `vacuous-skip`
+
+### Requirement: Node Conformance Non-Pass Expectations Must Be Classified By Implementation Intent
+Node conformance expectation and reporting flows SHALL classify every non-passing vendored test into exactly one implementation-intent bucket: `implementable`, `will-not-implement`, or `cannot-implement`.
+
+#### Scenario: Remaining non-pass inventory is reported
+- **WHEN** expectations or the generated conformance report are updated
+- **THEN** the maintained conformance artifacts MUST expose the remaining non-pass counts grouped by implementation intent alongside the existing failure-category breakdown
+
+#### Scenario: Non-pass expectation is categorized
+- **WHEN** an expectation remains `expected: "fail"` or `expected: "skip"`
+- **THEN** it MUST resolve to exactly one implementation-intent bucket using a specific, verifiable reason that distinguishes policy/out-of-scope exclusions from fundamental architectural blockers
+
+#### Scenario: Conformance target is communicated
+- **WHEN** the generated Node conformance report is regenerated
+- **THEN** it MUST state that the tracked completion target is 100% of the `implementable` bucket rather than 100% of the upstream vendored suite
+
 ### Requirement: Node Compatibility Target Version Tracks Test Type Baseline
 The runtime compatibility target MUST align with the `@types/node` package major version used to validate secure-exec tests and type checks. Compatibility documentation and spec references MUST describe the same target major Node line.
 
@@ -105,6 +131,17 @@ Fixture dependency installation SHALL be cached across repeated test invocations
 #### Scenario: Changed fixture invalidates cache
 - **WHEN** fixture files or cache key factors change
 - **THEN** the matrix MUST prepare a new cache entry and reinstall dependencies before execution
+
+### Requirement: Kernel-Consolidation Proof Must Use Kernel-Mounted Verification
+Stories or docs that claim kernel-consolidation networking behavior is complete SHALL distinguish kernel-mounted proof from compatibility coverage for the retained legacy adapter path.
+
+#### Scenario: Verification targets a retained legacy adapter path
+- **WHEN** a test instantiates `createDefaultNetworkAdapter()` or `useDefaultNetwork`
+- **THEN** that test MUST be treated as compatibility coverage for the standalone legacy path rather than as proof that kernel-consolidation work is complete
+
+#### Scenario: Verification is used as evidence for kernel-consolidation networking
+- **WHEN** a test or document is cited as proof that kernel-backed Node networking works
+- **THEN** it MUST execute through `createNodeRuntime()` mounted into a real `Kernel` or an equivalent kernel-mediated path that exercises the shared socket table and host-adapter delegation
 
 ### Requirement: Parity Mismatches Remain Failing Until Resolved
 Compatibility project-matrix policy SHALL NOT include a "known mismatch" or equivalent pass-through state for parity failures.
