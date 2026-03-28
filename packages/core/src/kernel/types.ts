@@ -534,9 +534,11 @@ export type KernelErrorCode =
 	| "ENOTDIR"
 	| "EPERM"
 	| "EPIPE"
+	| "EROFS"
 	| "ESPIPE"
 	| "ESRCH"
-	| "ETIMEDOUT";
+	| "ETIMEDOUT"
+	| "EXDEV";
 
 /**
  * Structured error for kernel operations.
