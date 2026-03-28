@@ -44,6 +44,7 @@ export { FDTableManager, ProcessFDTable } from "./kernel/fd-table.js";
 export { ProcessTable } from "./kernel/process-table.js";
 export { TimerTable } from "./kernel/timer-table.js";
 export type { KernelTimer, TimerTableOptions } from "./kernel/timer-table.js";
+export { createDeviceBackend } from "./kernel/device-backend.js";
 export { createDeviceLayer } from "./kernel/device-layer.js";
 export { MountTable } from "./kernel/mount-table.js";
 export type { MountEntry, MountOptions } from "./kernel/mount-table.js";
