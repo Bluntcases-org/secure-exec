@@ -169,9 +169,11 @@ impl SessionManager {
             ));
         }
 
-        // Send shutdown and join
+        // Send shutdown, drop the sender so the session thread's rx.recv()
+        // returns Err if Shutdown was consumed by an inner loop, then join.
         let _ = entry.tx.send(SessionCommand::Shutdown);
         let mut entry = self.sessions.remove(session_id).unwrap();
+        drop(entry.tx);
         if let Some(handle) = entry.join_handle.take() {
             let _ = handle.join();
         }
