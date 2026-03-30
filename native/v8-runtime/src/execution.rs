@@ -930,9 +930,10 @@ pub fn execute_module(
         prefetch_module_imports(tc, bridge_ctx, module, resource_name_str);
 
         // Instantiate (calls resolve callback for each import — mostly cache hits now)
-        if module
-            .instantiate_module(tc, module_resolve_callback)
-            .is_none()
+        eprintln!("[v8-runtime] instantiating module...");
+        let inst_result = module.instantiate_module(tc, module_resolve_callback);
+        eprintln!("[v8-runtime] instantiate result: {:?}", inst_result.is_some());
+        if inst_result.is_none()
         {
             clear_module_state();
             return match tc.exception() {
@@ -945,7 +946,9 @@ pub fn execute_module(
         }
 
         // Evaluate
+        eprintln!("[v8-runtime] evaluating module...");
         let eval_result = module.evaluate(tc);
+        eprintln!("[v8-runtime] evaluate done: result={}", eval_result.is_some());
         if eval_result.is_none() {
             clear_module_state();
             return match tc.exception() {
@@ -1287,6 +1290,7 @@ fn resolve_or_compile_module<'s>(
     };
     let mut compiled = v8::script_compiler::Source::new(v8_source, Some(&origin));
     let module = v8::script_compiler::compile_module(scope, &mut compiled)?;
+    eprintln!("[v8-runtime] compiled OK: {}", &resolved_path);
 
     MODULE_RESOLVE_STATE.with(|cell| {
         if let Some(state) = cell.borrow_mut().as_mut() {

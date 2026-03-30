@@ -3609,10 +3609,13 @@ export function buildKernelStdinDispatchHandlers(
 
 	handlers[K.kernelStdinRead] = async () => {
 			checkBridgeBudget(deps);
+			console.error(`[kernelStdinRead] hasLiveSource=${!!deps.liveStdinSource} reading...`);
 			if (!deps.liveStdinSource) {
+				console.error(`[kernelStdinRead] no source, returning done`);
 				return { done: true };
 			}
 			const chunk = await deps.liveStdinSource.read();
+			console.error(`[kernelStdinRead] got chunk: ${chunk ? chunk.length + ' bytes' : 'null'}`);
 			if (chunk === null || chunk.length === 0) {
 				return { done: true };
 			}

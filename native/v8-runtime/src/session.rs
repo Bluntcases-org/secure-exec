@@ -856,6 +856,21 @@ pub(crate) fn run_event_loop(
             }
         }
 
+        // Flush microtasks before blocking. This ensures that Promise
+        // continuations (e.g., main() returning from async module evaluation)
+        // run even when no bridge commands are pending.
+        scope.perform_microtask_checkpoint();
+
+        // Re-check exit conditions after microtask flush — the microtask may
+        // have resolved all pending promises or registered new handles.
+        if pending.len() == 0
+            && !execution::pending_module_evaluation_needs_wait(scope)
+            && !execution::pending_script_evaluation_needs_wait(scope)
+            && deferred.map(|dq| dq.lock().unwrap().is_empty()).unwrap_or(true)
+        {
+            break;
+        }
+
         // Receive next command, with optional abort monitoring
         let cmd = if let Some(abort) = abort_rx {
             crossbeam_channel::select! {

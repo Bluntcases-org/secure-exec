@@ -1515,6 +1515,7 @@ function buildPostRestoreScript(
 	}
 
 	// Enable streaming stdin for non-TTY processes that need live stdin delivery
+	console.error(`[postRestore] streamStdin=${bridgeConfig.streamStdin} mode=${mode}`);
 	if (bridgeConfig.streamStdin) {
 		parts.push(`globalThis.__runtimeStreamStdin = true;`);
 	}

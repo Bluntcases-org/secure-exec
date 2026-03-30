@@ -506,6 +506,7 @@ class NodeRuntimeDriver implements RuntimeDriver {
     let batchStdinResolve: ((data: string | undefined) => void) | null = null;
     let batchStdinPromise: Promise<string | undefined> | undefined;
 
+    console.error(`[kernel-runtime] pid=${ctx.pid} streamStdin=${ctx.streamStdin} command=${command}`);
     if (ctx.streamStdin) {
       // Streaming mode: writeStdin delivers data to the running process immediately
       const stdinQueue: Uint8Array[] = [];
