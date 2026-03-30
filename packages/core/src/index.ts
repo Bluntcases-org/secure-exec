@@ -302,6 +302,13 @@ export { InMemoryBlockStore } from "./vfs/memory-block-store.js";
 export { createChunkedVfs } from "./vfs/chunked-vfs.js";
 export type { ChunkedVfsOptions } from "./vfs/chunked-vfs.js";
 
+// VFS conformance test suite.
+export { defineVfsConformanceTests } from "./test/vfs-conformance.js";
+export type {
+	VfsConformanceConfig,
+	VfsConformanceCapabilities,
+} from "./test/vfs-conformance.js";
+
 // Filesystem helpers.
 export type { DirEntry, StatInfo } from "./fs-helpers.js";
 export { exists, stat, rename, readDirWithTypes, mkdir } from "./fs-helpers.js";

@@ -79,6 +79,11 @@
       "types": "./dist/shared/*.d.ts",
       "import": "./dist/shared/*.js",
       "default": "./dist/shared/*.js"
+    },
+    "./test/vfs-conformance": {
+      "types": "./dist/test/vfs-conformance.d.ts",
+      "import": "./dist/test/vfs-conformance.js",
+      "default": "./dist/test/vfs-conformance.js"
     }
   },
   "scripts": {
