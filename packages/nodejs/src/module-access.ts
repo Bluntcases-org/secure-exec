@@ -771,4 +771,23 @@ export class ModuleAccessFileSystem implements VirtualFileSystem {
 		if (!this.baseFileSystem) throw createEnoentError("open", virtualPath);
 		return this.baseFileSystem.pread(virtualPath, offset, length);
 	}
+
+	async pwrite(pathValue: string, offset: number, data: Uint8Array): Promise<void> {
+		const virtualPath = normalizeOverlayPath(pathValue);
+		const hostPath = await this.resolveOverlayHostPath(virtualPath, "write");
+		if (hostPath) {
+			const handle = await fs.open(hostPath, "r+");
+			try {
+				await handle.write(data, 0, data.length, offset);
+			} finally {
+				await handle.close();
+			}
+			return;
+		}
+		if (startsWithPath(virtualPath, SANDBOX_NODE_MODULES_ROOT)) {
+			throw createEnoentError("open", virtualPath);
+		}
+		if (!this.baseFileSystem) throw createEnoentError("open", virtualPath);
+		return this.baseFileSystem.pwrite(virtualPath, offset, data);
+	}
 }

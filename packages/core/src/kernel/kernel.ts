@@ -969,14 +969,8 @@ class KernelImpl implements Kernel {
 					throw new KernelError("ESPIPE", "illegal seek");
 				}
 
-				// Write at offset without moving cursor.
-				const content = await this.readDescriptionFile(entry.description);
-				const pos = Number(offset);
-				const endPos = pos + data.length;
-				const newContent = new Uint8Array(Math.max(content.length, endPos));
-				newContent.set(content);
-				newContent.set(data, pos);
-				await this.writeDescriptionFile(entry.description, newContent);
+				// Delegate positional write to VFS.
+				await this.pwriteDescription(entry.description, Number(offset), data);
 				return data.length;
 			},
 			fdDup: (pid, fd) => {
@@ -1579,6 +1573,19 @@ class KernelImpl implements Kernel {
 			return this.rawInMemoryFs.preadByInode(description.inode, offset, length);
 		}
 		return this.vfs.pread(description.path, offset, length);
+	}
+
+	private async pwriteDescription(
+		description: import("./types.js").FileDescription,
+		offset: number,
+		data: Uint8Array,
+	): Promise<void> {
+		if (description.inode !== undefined && this.rawInMemoryFs) {
+			this.rawInMemoryFs.pwriteByInode(description.inode, offset, data);
+			return;
+		}
+		await this.vfs.pwrite(description.path, offset, data);
+		this.trackDescriptionInode(description);
 	}
 
 	private async getDescriptionSize(

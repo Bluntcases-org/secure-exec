@@ -197,6 +197,7 @@ export function createProcessScopedFileSystem(vfs: VirtualFileSystem, pid: numbe
 		utimes: (path, atime, mtime) => vfs.utimes(resolveProcSelfPath(path, pid), atime, mtime),
 		truncate: (path, length) => vfs.truncate(resolveProcSelfPath(path, pid), length),
 		pread: (path, offset, length) => vfs.pread(resolveProcSelfPath(path, pid), offset, length),
+		pwrite: (path, offset, data) => vfs.pwrite(resolveProcSelfPath(path, pid), offset, data),
 	};
 }
 
@@ -511,6 +512,12 @@ export function createProcLayer(vfs: VirtualFileSystem, options: ProcLayerOption
 			const normalized = normalizePath(path);
 			rejectMutation(normalized);
 			return vfs.truncate(clonePathArg(path, normalized), length);
+		},
+
+		async pwrite(path, offset, data) {
+			const normalized = normalizePath(path);
+			rejectMutation(normalized);
+			return vfs.pwrite(clonePathArg(path, normalized), offset, data);
 		},
 	};
 

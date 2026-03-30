@@ -167,6 +167,14 @@ export function createDeviceLayer(vfs: VirtualFileSystem): VirtualFileSystem {
 			return vfs.writeFile(path, content);
 		},
 
+		async pwrite(path, offset, data) {
+			if (path === "/dev/full") throw new KernelError("ENOSPC", "No space left on device");
+			if (path === "/dev/null" || path === "/dev/zero" || path === "/dev/urandom"
+				|| path === "/dev/random" || path === "/dev/tty" || path === "/dev/console"
+				|| path === "/dev/ptmx") return;
+			return vfs.pwrite(path, offset, data);
+		},
+
 		async createDir(path) {
 			if (isDeviceDir(path)) return;
 			return vfs.createDir(path);

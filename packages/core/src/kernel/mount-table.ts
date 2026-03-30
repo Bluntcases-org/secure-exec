@@ -267,6 +267,16 @@ export class MountTable implements VirtualFileSystem {
 		return mount.fs.pread(relativePath, offset, length);
 	}
 
+	async pwrite(
+		path: string,
+		offset: number,
+		data: Uint8Array,
+	): Promise<void> {
+		const { mount, relativePath } = this.resolve(path);
+		this.assertWritable(mount, path);
+		return mount.fs.pwrite(relativePath, offset, data);
+	}
+
 	// -----------------------------------------------------------------------
 	// Write operations (check readOnly before forwarding)
 	// -----------------------------------------------------------------------

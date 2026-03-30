@@ -178,6 +178,19 @@ export function createDeviceBackend(): VirtualFileSystem {
 			notFound(path);
 		},
 
+		async pwrite(path, _offset, _data) {
+			if (path === "full")
+				throw new KernelError("ENOSPC", "No space left on device");
+			if (
+				DEVICE_NAMES.has(path) ||
+				path.startsWith("fd/") ||
+				path.startsWith("pts/")
+			) {
+				return;
+			}
+			notFound(path);
+		},
+
 		async createDir(path) {
 			if (isDeviceDir(path)) return;
 			throw new KernelError("EPERM", "cannot create directory in /dev");

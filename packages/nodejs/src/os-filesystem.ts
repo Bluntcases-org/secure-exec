@@ -176,6 +176,15 @@ export class HostNodeFileSystem implements VirtualFileSystem {
 			await handle.close();
 		}
 	}
+
+	async pwrite(p: string, offset: number, data: Uint8Array): Promise<void> {
+		const handle = await fs.open(this.resolve(p), "r+");
+		try {
+			await handle.write(data, 0, data.length, offset);
+		} finally {
+			await handle.close();
+		}
+	}
 }
 
 function toVirtualStat(s: import("node:fs").Stats): VirtualStat {

@@ -112,6 +112,7 @@ export function wrapFileSystem(
 		utimes: async (path, atime, mtime) => { check("utimes", path); return fs.utimes(path, atime, mtime); },
 		truncate: async (path, length) => { check("truncate", path); return fs.truncate(path, length); },
 		pread: async (path, offset, length) => { check("read", path); return fs.pread(path, offset, length); },
+		pwrite: async (path, offset, data) => { check("write", path); return fs.pwrite(path, offset, data); },
 	};
 	return wrapped;
 }

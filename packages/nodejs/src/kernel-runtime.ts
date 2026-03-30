@@ -278,6 +278,7 @@ export function createKernelVfsAdapter(kernelVfs: KernelInterface['vfs']): Virtu
     truncate: (path, length) => kernelVfs.truncate(path, length),
     realpath: (path) => kernelVfs.realpath(path),
     pread: (path, offset, length) => kernelVfs.pread(path, offset, length),
+    pwrite: (path, offset, data) => kernelVfs.pwrite(path, offset, data),
   };
 }
 
@@ -365,6 +366,17 @@ export function createHostFallbackVfs(base: VirtualFileSystem): VirtualFileSyste
           const buf = new Uint8Array(length);
           const { bytesRead } = await handle.read(buf, 0, length, offset);
           return buf.slice(0, bytesRead);
+        } finally {
+          await handle.close();
+        }
+      }
+    },
+    pwrite: async (path, offset, data) => {
+      try { return await base.pwrite(path, offset, data); }
+      catch {
+        const handle = await fsPromises.open(path, 'r+');
+        try {
+          await handle.write(data, 0, data.length, offset);
         } finally {
           await handle.close();
         }

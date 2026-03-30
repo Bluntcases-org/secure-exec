@@ -257,6 +257,17 @@ export class TestFileSystem implements VirtualFileSystem {
 		if (offset >= f.data.length) return new Uint8Array(0);
 		return f.data.slice(offset, Math.min(offset + length, f.data.length));
 	}
+
+	async pwrite(path: string, offset: number, data: Uint8Array): Promise<void> {
+		const n = normalizePath(path);
+		const f = this.files.get(n);
+		if (!f) throw new Error(`ENOENT: no such file or directory, open '${n}'`);
+		const endPos = offset + data.length;
+		const newData = new Uint8Array(Math.max(f.data.length, endPos));
+		newData.set(f.data);
+		newData.set(data, offset);
+		f.data = newData;
+	}
 }
 
 // ---------------------------------------------------------------------------

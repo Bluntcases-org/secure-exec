@@ -210,6 +210,17 @@ export function createHybridVfs(workDir: string): VirtualFileSystem {
         }
       }
     },
+    pwrite: async (targetPath, offset, data) => {
+      try { await memfs.pwrite(targetPath, offset, data); }
+      catch {
+        const fd = await fsPromises.open(targetPath, 'r+');
+        try {
+          await fd.write(data, 0, data.length, offset);
+        } finally {
+          await fd.close();
+        }
+      }
+    },
     writeFile: (targetPath, content) =>
       isHostPath(targetPath)
         ? fsPromises.writeFile(targetPath, content)

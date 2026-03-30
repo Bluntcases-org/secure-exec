@@ -216,6 +216,15 @@ export class NodeFileSystem implements VirtualFileSystem {
 			await handle.close();
 		}
 	}
+
+	async pwrite(path: string, offset: number, data: Uint8Array): Promise<void> {
+		const handle = await fs.open(path, "r+");
+		try {
+			await handle.write(data, 0, data.length, offset);
+		} finally {
+			await handle.close();
+		}
+	}
 }
 
 /**

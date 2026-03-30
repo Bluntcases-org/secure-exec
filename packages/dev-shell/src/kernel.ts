@@ -210,6 +210,19 @@ function createHybridVfs(hostRoots: string[]): VirtualFileSystem {
 				}
 			}
 		},
+		pwrite: async (targetPath, offset, data) => {
+			try {
+				return await withHostFallback(targetPath, () => memfs.pwrite(targetPath, offset, data));
+			} catch (error) {
+				if ((error as Error).message !== "__HOST_FALLBACK__") throw error;
+				const handle = await fsPromises.open(targetPath, "r+");
+				try {
+					await handle.write(data, 0, data.length, offset);
+				} finally {
+					await handle.close();
+				}
+			}
+		},
 		writeFile: (targetPath, content) =>
 			isWithinHostRoots(targetPath, normalizedRoots)
 				? fsPromises.writeFile(targetPath, content)

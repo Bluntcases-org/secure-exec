@@ -229,6 +229,10 @@ export function wrapFileSystem(
 			checkFs("read", path);
 			return fs.pread(path, offset, length);
 		},
+		pwrite: async (path, offset, data) => {
+			checkFs("write", path);
+			return fs.pwrite(path, offset, data);
+		},
 	};
 }
 
@@ -334,6 +338,7 @@ export function createFsStub(): VirtualFileSystem {
 		truncate: async (path) => stub("open", path),
 		realpath: async (path) => stub("realpath", path),
 		pread: async (path) => stub("open", path),
+		pwrite: async (path) => stub("open", path),
 	};
 }
 

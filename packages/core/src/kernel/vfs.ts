@@ -62,8 +62,11 @@ export interface VirtualFileSystem {
 	utimes(path: string, atime: number, mtime: number): Promise<void>;
 	truncate(path: string, length: number): Promise<void>;
 
-	// --- Positional read ---
+	// --- Positional I/O ---
 
 	/** Read a range from a file without loading the entire file into memory. */
 	pread(path: string, offset: number, length: number): Promise<Uint8Array>;
+
+	/** Write data at a specific offset without replacing the entire file. */
+	pwrite(path: string, offset: number, data: Uint8Array): Promise<void>;
 }

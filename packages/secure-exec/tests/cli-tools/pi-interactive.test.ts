@@ -148,6 +148,14 @@ function createOverlayVfs(): VirtualFileSystem {
         } finally { await fd.close(); }
       }
     },
+    pwrite: async (p, offset, data) => {
+      try { await memfs.pwrite(p, offset, data); }
+      catch {
+        const fd = await fsPromises.open(p, 'r+');
+        try { await fd.write(data, 0, data.length, offset); }
+        finally { await fd.close(); }
+      }
+    },
     writeFile: (p, content) => memfs.writeFile(p, content),
     createDir: (p) => memfs.createDir(p),
     mkdir: (p, opts) => memfs.mkdir(p, opts),

@@ -39,6 +39,8 @@ const baseFs: VirtualFileSystem = {
 	removeFile: async () => undefined,
 	removeDir: async () => undefined,
 	rename: async () => undefined,
+	pread: async () => new Uint8Array(0),
+	pwrite: async () => undefined,
 };
 
 const baseNetwork: NetworkAdapter = {

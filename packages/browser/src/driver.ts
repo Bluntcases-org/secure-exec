@@ -285,6 +285,15 @@ export class OpfsFileSystem implements VirtualFileSystem {
 		const data = await this.readFile(path);
 		return data.slice(offset, offset + length);
 	}
+
+	async pwrite(path: string, offset: number, data: Uint8Array): Promise<void> {
+		const content = await this.readFile(path);
+		const endPos = offset + data.length;
+		const newContent = new Uint8Array(Math.max(content.length, endPos));
+		newContent.set(content);
+		newContent.set(data, offset);
+		await this.writeFile(path, newContent);
+	}
 }
 
 export interface BrowserDriverOptions {

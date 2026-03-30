@@ -106,6 +106,7 @@ describe("wrapFileSystem traversal defense", () => {
 			truncate: async () => {},
 			realpath: async (p: string) => p,
 			pread: async () => new Uint8Array(0),
+			pwrite: async () => {},
 		};
 
 		const wrapped = wrapFileSystem(baseFs, permissions);

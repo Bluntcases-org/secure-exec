@@ -83,6 +83,15 @@ export class InMemoryFileSystem implements VirtualFileSystem {
 		return data.slice(offset, offset + length);
 	}
 
+	pwriteByInode(ino: number, offset: number, data: Uint8Array): void {
+		const content = this.readFileByInode(ino);
+		const endPos = offset + data.length;
+		const newContent = new Uint8Array(Math.max(content.length, endPos));
+		newContent.set(content);
+		newContent.set(data, offset);
+		this.writeFileByInode(ino, newContent);
+	}
+
 	statByInode(ino: number): VirtualStat {
 		return this.statForInode(this.requireInode(ino));
 	}
@@ -607,6 +616,16 @@ export class InMemoryFileSystem implements VirtualFileSystem {
 			throw new Error(`ENOENT: no such file or directory, open '${normalized}'`);
 		}
 		return this.preadByInode(ino, offset, length);
+	}
+
+	async pwrite(path: string, offset: number, data: Uint8Array): Promise<void> {
+		const normalized = normalizePath(path);
+		const resolved = this.resolveSymlink(normalized);
+		const ino = this.files.get(resolved);
+		if (ino === undefined) {
+			throw new Error(`ENOENT: no such file or directory, open '${normalized}'`);
+		}
+		this.pwriteByInode(ino, offset, data);
 	}
 
 	async truncate(path: string, length: number): Promise<void> {

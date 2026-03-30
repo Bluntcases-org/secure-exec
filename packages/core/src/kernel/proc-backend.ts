@@ -510,6 +510,10 @@ export function createProcBackend(
 		async truncate(path, _length) {
 			rejectWrite(path);
 		},
+
+		async pwrite(path, _offset, _data) {
+			rejectWrite(path);
+		},
 	};
 
 	return backend;
