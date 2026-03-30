@@ -3086,6 +3086,7 @@ export function buildModuleResolutionBridgeHandlers(
 		}
 
 		// Try require.resolve first
+		if (req === "undici") console.error(`[DEBUG resolve undici] hostDir=${hostDir} sandboxDir=${sandboxDir} referrer=${referrer}`);
 		try {
 			const resolved = hostRequire.resolve(req, { paths: [hostDir] });
 			return deps.hostToSandboxPath(resolved);

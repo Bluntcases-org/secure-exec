@@ -4046,32 +4046,44 @@
               resume: function() { return rl; },
               write: function() {},
               [Symbol.asyncIterator]: function() {
-                var lines = [];
-                var resolve = null;
-                var done = false;
-                if (input) {
-                  input.on('data', function(chunk) {
-                    var text = typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk);
-                    var parts = text.split('\n');
-                    for (var i = 0; i < parts.length - 1; i++) {
-                      lines.push(parts[i]);
-                      if (resolve) { resolve(); resolve = null; }
-                    }
-                  });
-                  input.on('end', function() { done = true; if (resolve) { resolve(); resolve = null; } });
-                }
-                return {
-                  next: function() {
-                    if (lines.length > 0) return Promise.resolve({ value: lines.shift(), done: false });
-                    if (done) return Promise.resolve({ value: undefined, done: true });
-                    return new Promise(function(r) { resolve = r; }).then(function() {
-                      if (lines.length > 0) return { value: lines.shift(), done: false };
-                      return { value: undefined, done: true };
-                    });
-                  }
-                };
+                return rl._iterState;
               }
             };
+            // Shared line parsing state for both "line" event and async iterator.
+            var _lineBuf = '';
+            var _iterLines = [];
+            var _iterResolve = null;
+            var _iterDone = false;
+            rl._iterState = {
+              next: function() {
+                if (_iterLines.length > 0) return Promise.resolve({ value: _iterLines.shift(), done: false });
+                if (_iterDone) return Promise.resolve({ value: undefined, done: true });
+                return new Promise(function(r) { _iterResolve = r; }).then(function() {
+                  if (_iterLines.length > 0) return { value: _iterLines.shift(), done: false };
+                  return { value: undefined, done: true };
+                });
+              }
+            };
+            // Wire up input data handler to emit "line" events and feed the iterator.
+            if (input && input.on) {
+              input.on('data', function(chunk) {
+                _lineBuf += (typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk));
+                var idx;
+                while ((idx = _lineBuf.indexOf('\n')) !== -1) {
+                  var line = _lineBuf.slice(0, idx);
+                  _lineBuf = _lineBuf.slice(idx + 1);
+                  rl.emit('line', line);
+                  _iterLines.push(line);
+                  if (_iterResolve) { _iterResolve(); _iterResolve = null; }
+                }
+              });
+              input.on('end', function() {
+                rl.emit('close');
+                _iterDone = true;
+                if (_iterResolve) { _iterResolve(); _iterResolve = null; }
+              });
+              if (input.resume) input.resume();
+            }
             return rl;
           },
           promises: {
