@@ -125,7 +125,6 @@ export interface Kernel {
 	// Socket table
 	readonly socketTable: import("./socket-table.js").SocketTable;
 	readonly timerTable: import("./timer-table.js").TimerTable;
-	readonly inodeTable: import("./inode-table.js").InodeTable;
 
 	// Introspection
 	readonly commands: ReadonlyMap<string, string>;
@@ -426,8 +425,6 @@ export interface FDStat {
 export interface FileDescription {
 	id: number;
 	path: string;
-	/** Stable inode identity for FD I/O after the pathname is unlinked. */
-	inode?: number;
 	cursor: bigint;
 	flags: number;
 	refCount: number;

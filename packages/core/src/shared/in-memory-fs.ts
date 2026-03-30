@@ -1,4 +1,94 @@
-import { InodeTable, type Inode } from "../kernel/inode-table.js";
+interface Inode {
+	readonly ino: number;
+	nlink: number;
+	openRefCount: number;
+	mode: number;
+	uid: number;
+	gid: number;
+	size: number;
+	atime: Date;
+	mtime: Date;
+	ctime: Date;
+	birthtime: Date;
+}
+
+class InodeTable {
+	private inodes: Map<number, Inode> = new Map();
+	private nextIno = 1;
+
+	allocate(mode: number, uid: number, gid: number): Inode {
+		const now = new Date();
+		const inode: Inode = {
+			ino: this.nextIno++,
+			nlink: 1,
+			openRefCount: 0,
+			mode,
+			uid,
+			gid,
+			size: 0,
+			atime: now,
+			mtime: now,
+			ctime: now,
+			birthtime: now,
+		};
+		this.inodes.set(inode.ino, inode);
+		return inode;
+	}
+
+	get(ino: number): Inode | null {
+		return this.inodes.get(ino) ?? null;
+	}
+
+	incrementLinks(ino: number): void {
+		const inode = this.requireInode(ino);
+		inode.nlink++;
+		inode.ctime = new Date();
+	}
+
+	decrementLinks(ino: number): void {
+		const inode = this.requireInode(ino);
+		if (inode.nlink <= 0) {
+			throw new KernelError("EINVAL", `inode ${ino} nlink already 0`);
+		}
+		inode.nlink--;
+		inode.ctime = new Date();
+	}
+
+	incrementOpenRefs(ino: number): void {
+		const inode = this.requireInode(ino);
+		inode.openRefCount++;
+	}
+
+	decrementOpenRefs(ino: number): void {
+		const inode = this.requireInode(ino);
+		if (inode.openRefCount <= 0) {
+			throw new KernelError("EINVAL", `inode ${ino} openRefCount already 0`);
+		}
+		inode.openRefCount--;
+	}
+
+	shouldDelete(ino: number): boolean {
+		const inode = this.inodes.get(ino);
+		if (!inode) return false;
+		return inode.nlink === 0 && inode.openRefCount === 0;
+	}
+
+	delete(ino: number): void {
+		this.inodes.delete(ino);
+	}
+
+	get size(): number {
+		return this.inodes.size;
+	}
+
+	private requireInode(ino: number): Inode {
+		const inode = this.inodes.get(ino);
+		if (!inode) {
+			throw new KernelError("ENOENT", `inode ${ino} not found`);
+		}
+		return inode;
+	}
+}
 import type {
 	VirtualDirEntry,
 	VirtualFileSystem,

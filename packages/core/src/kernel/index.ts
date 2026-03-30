@@ -74,8 +74,6 @@ export type { LineDisciplineConfig } from "./pty.js";
 export { CommandRegistry } from "./command-registry.js";
 export { FileLockManager, LOCK_SH, LOCK_EX, LOCK_UN, LOCK_NB } from "./file-lock.js";
 export { WaitHandle, WaitQueue } from "./wait.js";
-export { InodeTable } from "./inode-table.js";
-export type { Inode } from "./inode-table.js";
 export { TimerTable } from "./timer-table.js";
 export type { KernelTimer, TimerTableOptions } from "./timer-table.js";
 export { DnsCache } from "./dns-cache.js";

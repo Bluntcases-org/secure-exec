@@ -38,8 +38,6 @@ import { wrapFileSystem, checkChildProcess } from "./permissions.js";
 import { UserManager } from "./user.js";
 import { SocketTable } from "./socket-table.js";
 import { TimerTable } from "./timer-table.js";
-import { InodeTable } from "./inode-table.js";
-import { InMemoryFileSystem } from "../shared/in-memory-fs.js";
 import {
 	FILETYPE_REGULAR_FILE,
 	FILETYPE_DIRECTORY,
@@ -72,7 +70,6 @@ export function createKernel(options: KernelOptions): Kernel {
 class KernelImpl implements Kernel {
 	private vfs: VirtualFileSystem;
 	private mountTable: MountTable;
-	private rawInMemoryFs?: InMemoryFileSystem;
 	private fdTableManager = new FDTableManager();
 	private processTable!: ProcessTable;
 	private pipeManager = new PipeManager();
@@ -81,7 +78,6 @@ class KernelImpl implements Kernel {
 	private commandRegistry = new CommandRegistry();
 	readonly socketTable: SocketTable;
 	readonly timerTable: TimerTable;
-	readonly inodeTable: InodeTable;
 	private userManager: UserManager;
 	private drivers: RuntimeDriver[] = [];
 	private driverPids = new Map<string, Set<number>>();
@@ -109,12 +105,6 @@ class KernelImpl implements Kernel {
 			},
 			this.log.child({ component: "pty" }),
 		);
-		this.inodeTable = new InodeTable();
-		if (options.filesystem instanceof InMemoryFileSystem) {
-			options.filesystem.setInodeTable(this.inodeTable);
-			this.rawInMemoryFs = options.filesystem;
-		}
-
 		// Build mount table: root FS → /dev → /proc → user mounts.
 		const mt = new MountTable(options.filesystem);
 		mt.mount("/dev", createDeviceBackend());
@@ -834,9 +824,6 @@ class KernelImpl implements Kernel {
 				const filetype = FILETYPE_REGULAR_FILE;
 				const fd = table.open(path, flags, filetype);
 				const fdEntry = table.get(fd);
-				if (fdEntry) {
-					this.trackDescriptionInode(fdEntry.description);
-				}
 
 				// Stash the effective mode for the first write that materializes a new file.
 				if (created && (flags & O_CREAT)) {
@@ -1471,7 +1458,7 @@ class KernelImpl implements Kernel {
 		// Close all FDs and remove the table
 		this.fdTableManager.remove(pid);
 
-		// Release inode-backed file data after the last shared reference closes.
+		// Flush buffered writes when the last shared reference closes.
 		for (const description of descriptions.values()) {
 			if (description.refCount <= 0) {
 				this.releaseDescriptionInode(description);
@@ -1516,35 +1503,16 @@ class KernelImpl implements Kernel {
 		return data.length;
 	}
 
-	private trackDescriptionInode(description: import("./types.js").FileDescription): void {
-		if (!this.rawInMemoryFs || description.inode !== undefined) return;
-		const ino = this.rawInMemoryFs.getInodeForPath(description.path);
-		if (ino === null) return;
-		description.inode = ino;
-		this.inodeTable.incrementOpenRefs(ino);
-	}
-
 	private releaseDescriptionInode(
 		description: import("./types.js").FileDescription,
 	): void {
 		// Flush buffered writes to durable storage when the last FD is closed.
 		void this.vfs.fsync?.(description.path);
-
-		if (description.inode === undefined) return;
-		this.inodeTable.decrementOpenRefs(description.inode);
-		if (this.inodeTable.shouldDelete(description.inode)) {
-			this.rawInMemoryFs?.deleteInodeData(description.inode);
-			this.inodeTable.delete(description.inode);
-		}
-		description.inode = undefined;
 	}
 
 	private async readDescriptionFile(
 		description: import("./types.js").FileDescription,
 	): Promise<Uint8Array> {
-		if (description.inode !== undefined && this.rawInMemoryFs) {
-			return this.rawInMemoryFs.readFileByInode(description.inode);
-		}
 		return this.vfs.readFile(description.path);
 	}
 
@@ -1552,12 +1520,7 @@ class KernelImpl implements Kernel {
 		description: import("./types.js").FileDescription,
 		content: Uint8Array,
 	): Promise<void> {
-		if (description.inode !== undefined && this.rawInMemoryFs) {
-			this.rawInMemoryFs.writeFileByInode(description.inode, content);
-			return;
-		}
 		await this.vfs.writeFile(description.path, content);
-		this.trackDescriptionInode(description);
 	}
 
 	private prepareOpenSync(path: string, flags: number): boolean {
@@ -1572,9 +1535,6 @@ class KernelImpl implements Kernel {
 		offset: number,
 		length: number,
 	): Promise<Uint8Array> {
-		if (description.inode !== undefined && this.rawInMemoryFs) {
-			return this.rawInMemoryFs.preadByInode(description.inode, offset, length);
-		}
 		return this.vfs.pread(description.path, offset, length);
 	}
 
@@ -1583,12 +1543,7 @@ class KernelImpl implements Kernel {
 		offset: number,
 		data: Uint8Array,
 	): Promise<void> {
-		if (description.inode !== undefined && this.rawInMemoryFs) {
-			this.rawInMemoryFs.pwriteByInode(description.inode, offset, data);
-			return;
-		}
 		await this.vfs.pwrite(description.path, offset, data);
-		this.trackDescriptionInode(description);
 	}
 
 	private async getDescriptionSize(
@@ -1600,9 +1555,6 @@ class KernelImpl implements Kernel {
 	private async statDescription(
 		description: import("./types.js").FileDescription,
 	): Promise<VirtualStat> {
-		if (description.inode !== undefined && this.rawInMemoryFs) {
-			return this.rawInMemoryFs.statByInode(description.inode);
-		}
 		return this.vfs.stat(description.path);
 	}
 
