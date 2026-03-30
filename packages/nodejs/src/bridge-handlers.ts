@@ -3281,8 +3281,13 @@ export function buildModuleLoadingBridgeHandlers(
 	// The V8 runtime binary only registers a fixed set of bridge globals.
 	// Newer handlers (crypto, net sockets, etc.) are dispatched through
 	// _loadPolyfill with a "__bd:" prefix.
+	let _loadPolyfillCount = 0;
 	handlers[K.loadPolyfill] = async (moduleName: unknown): Promise<string | null> => {
 		const nameStr = String(moduleName);
+		_loadPolyfillCount++;
+		if (_loadPolyfillCount <= 20 || _loadPolyfillCount % 500 === 0) {
+			console.error(`[loadPolyfill] #${_loadPolyfillCount}: ${nameStr.slice(0, 80)}`);
+		}
 
 		// Bridge dispatch: "__bd:methodName:base64args"
 		if (nameStr.startsWith("__bd:") && dispatchHandlers) {
