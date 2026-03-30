@@ -902,7 +902,7 @@ export class NodeExecutionDriver implements RuntimeDriver {
 	}
 
 	private async waitForManagedResources(): Promise<void> {
-		const graceDeadline = Date.now() + 100;
+		const graceDeadline = Date.now() + 5000;
 
 		// Give async bridge callbacks a moment to register their host-side handles.
 		while (!this.disposed && !this.hasManagedResources() && Date.now() < graceDeadline) {
@@ -1330,7 +1330,7 @@ export class NodeExecutionDriver implements RuntimeDriver {
 				},
 			});
 
-			if (options.mode === "exec" && !result.error) {
+			if (!result.error) {
 				await this.waitForManagedResources();
 			}
 

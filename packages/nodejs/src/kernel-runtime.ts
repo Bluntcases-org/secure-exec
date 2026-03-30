@@ -905,14 +905,24 @@ class NodeRuntimeDriver implements RuntimeDriver {
               // where the CJS transform succeeds, return transformed CJS code instead.
               if (this._isOverlayEsmEntry(hostPath)) {
                 const transformed = transformSourceForRequireSync(content, scriptPath);
-                // Check if the transform actually converted ESM to CJS (not just stripped shebang).
-                // The require-setup marker indicates a successful ESM→CJS conversion.
                 const REQUIRE_ESM_MARKER = "/*__secure_exec_require_esm__*/";
                 if (transformed.startsWith(REQUIRE_ESM_MARKER)) {
                   console.error(`[_resolveEntry] ESM→CJS transform OK: ${scriptPath} (${content.length}→${transformed.length})`);
                   return { code: transformed, filePath: scriptPath };
                 }
-                console.error(`[_resolveEntry] ESM→CJS transform skipped: ${scriptPath} (${content.length} bytes, no marker), using V8 ESM`);
+                // CJS transform failed (e.g., top-level await). Wrap in a CJS
+                // async launcher that imports the module and then waits for active
+                // handles (event loop pump). This runs in exec mode with full
+                // event loop support via _waitForActiveHandles.
+                console.error(`[_resolveEntry] ESM async launcher: ${scriptPath} (${content.length} bytes)`);
+                const launcher = [
+                  `/*__secure_exec_require_esm__*/`,
+                  `(async function() {`,
+                  `  try { await __dynamicImport(${JSON.stringify(scriptPath)}, ${JSON.stringify(scriptPath)}); }`,
+                  `  catch(e) { process.stderr.write(String(e.stack || e.message) + "\\n"); process.exit(1); }`,
+                  `})();`,
+                ].join("\n");
+                return { code: launcher, filePath: scriptPath };
               }
               return { code: content, filePath: scriptPath };
             } catch {

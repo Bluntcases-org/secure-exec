@@ -138,6 +138,10 @@ const KNOWN_BUILTIN_MODULES = new Set([
  * `import { readFile } from 'fs'` works inside the isolate.
  */
 export const BUILTIN_NAMED_EXPORTS: Record<string, string[]> = {
+	readline: [
+		"createInterface",
+		"promises",
+	],
 	fs: [
 		"promises",
 		"readFileSync",
