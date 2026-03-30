@@ -1,6 +1,5 @@
 import net from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
-import { InMemoryFileSystem } from "../../../browser/src/os-filesystem.ts";
 import {
 	allowAllFs,
 	allowAllNetwork,
@@ -10,6 +9,7 @@ import {
 	type DriverProcess,
 	type VirtualFileSystem,
 } from "../../../core/src/index.ts";
+import { createInMemoryFileSystem } from '../../../core/src/shared/in-memory-fs.ts';
 import {
 	AF_INET,
 	AF_UNIX,
@@ -112,7 +112,7 @@ async function createSocketKernel(
 	vfs: VirtualFileSystem;
 	dispose: () => Promise<void>;
 }> {
-	const vfs = new InMemoryFileSystem();
+	const vfs = createInMemoryFileSystem();
 	const kernel = createKernel({
 		filesystem: vfs,
 		hostNetworkAdapter,

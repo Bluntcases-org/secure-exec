@@ -41,7 +41,7 @@ import type {
   RuntimeDriver,
 } from '../../../core/src/index.ts';
 import type { VirtualFileSystem } from '../../../core/src/kernel/vfs.ts';
-import { InMemoryFileSystem } from '../../../browser/src/os-filesystem.ts';
+import { createInMemoryFileSystem } from '../../../core/src/shared/in-memory-fs.ts';
 import {
   createNodeHostNetworkAdapter,
   createNodeRuntime,
@@ -244,11 +244,11 @@ class HostBinaryDriver implements RuntimeDriver {
 }
 
 // ---------------------------------------------------------------------------
-// Overlay VFS — writes to InMemoryFileSystem, reads fall back to host
+// Overlay VFS — writes to in-memory ChunkedVFS, reads fall back to host
 // ---------------------------------------------------------------------------
 
 function createOverlayVfs(workDir: string): VirtualFileSystem {
-  const memfs = new InMemoryFileSystem();
+  const memfs = createInMemoryFileSystem();
   const hostRoots = [PACKAGE_ROOT, path.resolve(PACKAGE_ROOT, '../..'), workDir, '/tmp'];
 
   const isHostPath = (p: string): boolean =>

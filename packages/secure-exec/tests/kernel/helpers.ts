@@ -1,7 +1,7 @@
 /**
  * Cross-runtime integration test helpers.
  *
- * Creates a real kernel with InMemoryFileSystem and mounts actual runtime
+ * Creates a real kernel with an in-memory ChunkedVFS and mounts actual runtime
  * drivers (WasmVM, Node, Python). Used by all kernel/ integration tests.
  *
  * Uses relative imports to avoid cyclic package dependencies
@@ -14,7 +14,7 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createKernel } from '../../../core/src/kernel/index.ts';
 import type { Kernel, VirtualFileSystem } from '../../../core/src/kernel/index.ts';
-import { InMemoryFileSystem } from '../../../browser/src/os-filesystem.ts';
+import { createInMemoryFileSystem } from '../../../core/src/shared/in-memory-fs.ts';
 import { createWasmVmRuntime } from '../../../wasmvm/src/index.ts';
 import { createNodeRuntime } from '../../../nodejs/src/kernel-runtime.ts';
 import { createPythonRuntime } from '../../../python/src/kernel-runtime.ts';
@@ -49,7 +49,7 @@ export async function createIntegrationKernel(
   options?: IntegrationKernelOptions,
 ): Promise<IntegrationKernelResult> {
   const runtimes = options?.runtimes ?? ['wasmvm'];
-  const vfs = new InMemoryFileSystem();
+  const vfs = createInMemoryFileSystem();
   const kernel = createKernel({ filesystem: vfs });
 
   // Mount in fixed order: WasmVM → Node → Python

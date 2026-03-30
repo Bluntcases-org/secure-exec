@@ -8,11 +8,10 @@
 
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createKernel } from "../packages/kernel/src/index.ts";
-import { InMemoryFileSystem } from "../packages/os/browser/src/index.ts";
-import { createWasmVmRuntime } from "../packages/runtime/wasmvm/src/index.ts";
-import { createNodeRuntime } from "../packages/runtime/node/src/index.ts";
-import { createPythonRuntime } from "../packages/runtime/python/src/index.ts";
+import { createKernel, createInMemoryFileSystem } from "../packages/core/src/index.ts";
+import { createWasmVmRuntime } from "../packages/wasmvm/src/index.ts";
+import { createNodeRuntime } from "../packages/nodejs/src/kernel-runtime.ts";
+import { createPythonRuntime } from "../packages/python/src/kernel-runtime.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -33,7 +32,7 @@ for (let i = 0; i < args.length; i++) {
 }
 
 // Set up kernel with VFS and drivers
-const vfs = new InMemoryFileSystem();
+const vfs = createInMemoryFileSystem();
 const kernel = createKernel({ filesystem: vfs });
 
 await kernel.mount(createWasmVmRuntime({ commandDirs: [commandsDir] }));

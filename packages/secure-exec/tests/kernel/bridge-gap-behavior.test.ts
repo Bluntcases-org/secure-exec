@@ -10,13 +10,13 @@ import { describe, it, expect, afterEach } from 'vitest';
 import http from 'node:http';
 import { allowAllFs, allowAllNetwork, createKernel } from '../../../core/src/index.ts';
 import type { Kernel } from '../../../core/src/kernel/index.ts';
-import { InMemoryFileSystem } from '../../../browser/src/os-filesystem.ts';
+import { createInMemoryFileSystem } from '../../../core/src/shared/in-memory-fs.ts';
 import { createNodeHostNetworkAdapter, createNodeRuntime } from '../../../nodejs/src/index.ts';
 
 async function createNodeKernel(options?: {
   hostNetwork?: boolean;
 }): Promise<{ kernel: Kernel; dispose: () => Promise<void> }> {
-  const vfs = new InMemoryFileSystem();
+  const vfs = createInMemoryFileSystem();
   const networked = options?.hostNetwork === true;
   const kernel = createKernel({
     filesystem: vfs,

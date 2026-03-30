@@ -27,7 +27,7 @@ import type {
   RuntimeDriver,
 } from '../../../core/src/kernel/index.ts';
 import type { VirtualFileSystem } from '../../../core/src/kernel/vfs.ts';
-import { InMemoryFileSystem } from '../../../browser/src/os-filesystem.ts';
+import { createInMemoryFileSystem } from '../../../core/src/shared/in-memory-fs.ts';
 import { createNodeRuntime } from '../../../nodejs/src/kernel-runtime.ts';
 import { loadRealProviderEnv } from './real-provider-env.ts';
 
@@ -126,7 +126,7 @@ class HostBinaryDriver implements RuntimeDriver {
 }
 
 function createOverlayVfs(): VirtualFileSystem {
-  const memfs = new InMemoryFileSystem();
+  const memfs = createInMemoryFileSystem();
   return {
     readFile: async (filePath) => {
       try {

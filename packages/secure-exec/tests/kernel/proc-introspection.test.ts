@@ -8,16 +8,16 @@
 
 import { describe, it, expect, afterEach } from 'vitest';
 import { createKernel } from '../../../core/src/kernel/index.ts';
-import type { Kernel } from '../../../core/src/kernel/index.ts';
-import { InMemoryFileSystem } from '../../../browser/src/os-filesystem.ts';
+import type { Kernel, VirtualFileSystem } from '../../../core/src/kernel/index.ts';
+import { createInMemoryFileSystem } from '../../../core/src/shared/in-memory-fs.ts';
 import { createNodeRuntime } from '../../../nodejs/src/kernel-runtime.ts';
 
 async function createNodeKernel(): Promise<{
   kernel: Kernel;
-  vfs: InMemoryFileSystem;
+  vfs: VirtualFileSystem;
   dispose: () => Promise<void>;
 }> {
-  const vfs = new InMemoryFileSystem();
+  const vfs = createInMemoryFileSystem();
   const kernel = createKernel({ filesystem: vfs });
   await kernel.mount(createNodeRuntime());
   return { kernel, vfs, dispose: () => kernel.dispose() };

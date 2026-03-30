@@ -11,7 +11,7 @@ import type {
 	Kernel,
 	VirtualFileSystem,
 } from "../../../core/src/kernel/index.ts";
-import { InMemoryFileSystem } from "../../../browser/src/os-filesystem.ts";
+import { createInMemoryFileSystem } from '../../../core/src/shared/in-memory-fs.ts';
 
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
@@ -49,7 +49,7 @@ async function createUnixKernel(): Promise<{
 	vfs: VirtualFileSystem;
 	dispose: () => Promise<void>;
 }> {
-	const vfs = new InMemoryFileSystem();
+	const vfs = createInMemoryFileSystem();
 	const kernel = createKernel({ filesystem: vfs });
 	await (kernel as Kernel & KernelTestInternals).posixDirsReady;
 

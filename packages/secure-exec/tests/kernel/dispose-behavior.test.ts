@@ -12,7 +12,7 @@ import type { Kernel } from '../../../kernel/src/index.ts';
 import { MockRuntimeDriver } from '../../../kernel/test/helpers.ts';
 import { createNodeRuntime } from '../../../runtime/node/src/index.ts';
 import { createPythonRuntime } from '../../../runtime/python/src/index.ts';
-import { InMemoryFileSystem } from '../../../os/browser/src/index.ts';
+import { createInMemoryFileSystem } from '../../../core/src/shared/in-memory-fs.ts';
 import {
   createIntegrationKernel,
   skipUnlessWasmBuilt,
@@ -132,7 +132,7 @@ describe('process cleanup and timer disposal', () => {
   });
 
   it('crashed process has its worker/isolate cleaned up (no leaked drivers)', async () => {
-    const vfs = new InMemoryFileSystem();
+    const vfs = createInMemoryFileSystem();
     kernel = createKernel({ filesystem: vfs });
     const driver = createNodeRuntime();
     await kernel.mount(driver);
@@ -150,7 +150,7 @@ describe('process cleanup and timer disposal', () => {
   });
 
   it('setInterval does not keep process alive after runtime dispose', async () => {
-    const vfs = new InMemoryFileSystem();
+    const vfs = createInMemoryFileSystem();
     kernel = createKernel({ filesystem: vfs });
     const driver = createNodeRuntime();
     await kernel.mount(driver);
@@ -174,7 +174,7 @@ describe('process cleanup and timer disposal', () => {
       writer: { neverExit: true },
       reader: { neverExit: true },
     });
-    const vfs = new InMemoryFileSystem();
+    const vfs = createInMemoryFileSystem();
     kernel = createKernel({ filesystem: vfs });
     await kernel.mount(driver);
     const ki = driver.kernelInterface!;
@@ -206,7 +206,7 @@ describe('process cleanup and timer disposal', () => {
   });
 
   it('double-dispose on NodeRuntime does not throw', async () => {
-    const vfs = new InMemoryFileSystem();
+    const vfs = createInMemoryFileSystem();
     kernel = createKernel({ filesystem: vfs });
     const driver = createNodeRuntime();
     await kernel.mount(driver);
@@ -219,7 +219,7 @@ describe('process cleanup and timer disposal', () => {
   });
 
   it.skipIf(skipUnlessPyodide())('double-dispose on PythonRuntime does not throw', async () => {
-    const vfs = new InMemoryFileSystem();
+    const vfs = createInMemoryFileSystem();
     kernel = createKernel({ filesystem: vfs });
     const driver = createPythonRuntime();
     await kernel.mount(driver);

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { VirtualFileSystem } from '../../../core/src/index.ts';
-import { InMemoryFileSystem } from '../../../browser/src/os-filesystem.ts';
+import { createInMemoryFileSystem } from '../../../core/src/shared/in-memory-fs.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -111,7 +111,7 @@ export async function seedPiManagedTools(workDir: string): Promise<string> {
 }
 
 export function createHybridVfs(workDir: string): VirtualFileSystem {
-  const memfs = new InMemoryFileSystem();
+  const memfs = createInMemoryFileSystem();
   const hostRoots = [WORKSPACE_ROOT, SECURE_EXEC_ROOT, workDir, '/tmp'];
 
   const isHostPath = (targetPath: string): boolean =>

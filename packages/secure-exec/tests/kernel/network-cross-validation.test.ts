@@ -8,7 +8,8 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { describe, expect, it } from 'vitest';
 import { allowAllFs, allowAllNetwork, createKernel } from '../../../core/src/index.ts';
-import { InMemoryFileSystem } from '../../../browser/src/os-filesystem.ts';
+import type { VirtualFileSystem } from '../../../core/src/kernel/index.ts';
+import { createInMemoryFileSystem } from '../../../core/src/shared/in-memory-fs.ts';
 import {
 	HostNodeFileSystem,
 	createNodeHostNetworkAdapter,
@@ -249,7 +250,7 @@ async function captureKernelServerResponse(): Promise<{ code: number; stdout: st
 }
 
 async function createNetworkedKernel(
-	filesystem: InMemoryFileSystem | HostNodeFileSystem = new InMemoryFileSystem(),
+	filesystem: VirtualFileSystem = createInMemoryFileSystem(),
 ): Promise<{
 	kernel: ReturnType<typeof createKernel>;
 	dispose: () => Promise<void>;

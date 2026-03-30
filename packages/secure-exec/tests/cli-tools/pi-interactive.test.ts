@@ -25,7 +25,7 @@ import { createKernel } from '../../../core/src/kernel/index.ts';
 import type { Kernel } from '../../../core/src/kernel/index.ts';
 import type { VirtualFileSystem } from '../../../core/src/kernel/index.ts';
 import { TerminalHarness } from '../../../core/test/kernel/terminal-harness.ts';
-import { InMemoryFileSystem } from '../../../browser/src/os-filesystem.ts';
+import { createInMemoryFileSystem } from '../../../core/src/shared/in-memory-fs.ts';
 import { createNodeRuntime } from '../../../nodejs/src/kernel-runtime.ts';
 import {
   createMockLlmServer,
@@ -71,7 +71,7 @@ const PI_BASE_FLAGS = [
 ];
 
 // ---------------------------------------------------------------------------
-// Overlay VFS — writes to InMemoryFileSystem, reads fall back to host
+// Overlay VFS — writes to in-memory ChunkedVFS, reads fall back to host
 // ---------------------------------------------------------------------------
 
 /**
@@ -80,7 +80,7 @@ const PI_BASE_FLAGS = [
  * the host filesystem (for Pi's module resolution).
  */
 function createOverlayVfs(): VirtualFileSystem {
-  const memfs = new InMemoryFileSystem();
+  const memfs = createInMemoryFileSystem();
   return {
     readFile: async (p) => {
       try { return await memfs.readFile(p); }

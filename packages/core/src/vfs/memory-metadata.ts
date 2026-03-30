@@ -197,8 +197,7 @@ export class InMemoryMetadataStore implements FsMetadataStore {
 	// -- Path resolution --
 
 	async resolvePath(path: string): Promise<number> {
-		const components = splitPathComponents(path);
-		return this.resolveComponents(components, 0);
+		return this.resolvePathSync(path);
 	}
 
 	async resolveParentPath(
@@ -210,7 +209,7 @@ export class InMemoryMetadataStore implements FsMetadataStore {
 		}
 		const name = components[components.length - 1]!;
 		const parentComponents = components.slice(0, -1);
-		const parentIno = await this.resolveComponents(parentComponents, 0);
+		const parentIno = this.resolveComponentsCore(parentComponents, 0);
 		return { parentIno, name };
 	}
 
@@ -279,12 +278,98 @@ export class InMemoryMetadataStore implements FsMetadataStore {
 		return deleted;
 	}
 
+	// -- Synchronous accessors (for prepareOpenSync in kernel) --
+
+	resolvePathSync(path: string): number {
+		const components = splitPathComponents(path);
+		return this.resolveComponentsCore(components, 0);
+	}
+
+	lookupSync(parentIno: number, name: string): number | null {
+		const dir = this.dentries.get(parentIno);
+		if (!dir) return null;
+		const entry = dir.get(name);
+		return entry ? entry.childIno : null;
+	}
+
+	getInodeSync(ino: number): InodeMeta | null {
+		return this.inodes.get(ino) ?? null;
+	}
+
+	createInodeSync(attrs: CreateInodeAttrs): number {
+		const ino = this.nextIno++;
+		const now = Date.now();
+
+		let mode = attrs.mode;
+		if (attrs.type === "file") mode |= S_IFREG;
+		else if (attrs.type === "directory") mode |= S_IFDIR;
+		else if (attrs.type === "symlink") mode |= S_IFLNK;
+
+		const meta: InodeMeta = {
+			ino,
+			type: attrs.type,
+			mode,
+			uid: attrs.uid,
+			gid: attrs.gid,
+			size: 0,
+			nlink: 0,
+			atimeMs: now,
+			mtimeMs: now,
+			ctimeMs: now,
+			birthtimeMs: now,
+			storageMode: "inline",
+			inlineContent: null,
+		};
+		this.inodes.set(ino, meta);
+
+		if (attrs.type === "directory") {
+			this.dentries.set(ino, new Map());
+		}
+
+		if (attrs.type === "symlink" && attrs.symlinkTarget !== undefined) {
+			this.symlinkTargets.set(ino, attrs.symlinkTarget);
+		}
+
+		return ino;
+	}
+
+	updateInodeSync(ino: number, updates: Partial<InodeMeta>): void {
+		const meta = this.inodes.get(ino);
+		if (!meta) return;
+		Object.assign(meta, updates);
+	}
+
+	createDentrySync(
+		parentIno: number,
+		name: string,
+		childIno: number,
+		type: InodeType,
+	): void {
+		let dir = this.dentries.get(parentIno);
+		if (!dir) {
+			dir = new Map();
+			this.dentries.set(parentIno, dir);
+		}
+		if (dir.has(name)) {
+			throw new KernelError("EEXIST", `'${name}' already exists in directory`);
+		}
+		dir.set(name, { childIno, type });
+	}
+
+	deleteAllChunksSync(ino: number): string[] {
+		const map = this.chunks.get(ino);
+		if (!map) return [];
+		const keys = Array.from(map.values());
+		this.chunks.delete(ino);
+		return keys;
+	}
+
 	// -- Internal helpers --
 
-	private async resolveComponents(
+	private resolveComponentsCore(
 		components: string[],
 		symlinkDepth: number,
-	): Promise<number> {
+	): number {
 		let currentIno = 1; // root
 
 		for (let i = 0; i < components.length; i++) {
@@ -337,7 +422,7 @@ export class InMemoryMetadataStore implements FsMetadataStore {
 							...remaining,
 						];
 
-				return this.resolveComponents(fullComponents, symlinkDepth + 1);
+				return this.resolveComponentsCore(fullComponents, symlinkDepth + 1);
 			}
 		}
 

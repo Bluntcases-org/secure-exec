@@ -13,7 +13,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { createKernel, AF_INET, SOCK_STREAM } from '../../../core/src/kernel/index.ts';
 import type { Kernel } from '../../../core/src/kernel/index.ts';
-import { InMemoryFileSystem } from '../../../browser/src/os-filesystem.ts';
+import { createInMemoryFileSystem } from '../../../core/src/shared/in-memory-fs.ts';
 import { createWasmVmRuntime } from '../../../wasmvm/src/index.ts';
 import { createNodeRuntime } from '../../../nodejs/src/kernel-runtime.ts';
 import { existsSync } from 'node:fs';
@@ -54,7 +54,7 @@ describe.skipIf(skipReason())('cross-runtime network integration', { timeout: 30
 	});
 
 	it('WasmVM tcp_server ↔ Node.js net.connect: data exchange via kernel loopback', async () => {
-		const vfs = new InMemoryFileSystem();
+		const vfs = createInMemoryFileSystem();
 		kernel = createKernel({ filesystem: vfs });
 		// Mount WasmVM first (provides shell + C programs), then Node
 		await kernel.mount(createWasmVmRuntime({ commandDirs: [C_BUILD_DIR, COMMANDS_DIR] }));
@@ -98,7 +98,7 @@ client.on("error", (err) => {
 	});
 
 	it('Node.js http.createServer ↔ WasmVM http_get: HTTP via kernel loopback', async () => {
-		const vfs = new InMemoryFileSystem();
+		const vfs = createInMemoryFileSystem();
 		kernel = createKernel({ filesystem: vfs });
 		await kernel.mount(createWasmVmRuntime({ commandDirs: [C_BUILD_DIR, COMMANDS_DIR] }));
 		await kernel.mount(createNodeRuntime());
@@ -135,7 +135,7 @@ server.listen(${PORT}, "0.0.0.0", () => {
 	});
 
 	it('loopback: neither test touches the host network stack', async () => {
-		const vfs = new InMemoryFileSystem();
+		const vfs = createInMemoryFileSystem();
 		kernel = createKernel({ filesystem: vfs });
 		await kernel.mount(createWasmVmRuntime({ commandDirs: [C_BUILD_DIR, COMMANDS_DIR] }));
 		await kernel.mount(createNodeRuntime());

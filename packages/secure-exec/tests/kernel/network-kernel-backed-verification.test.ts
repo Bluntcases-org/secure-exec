@@ -1,7 +1,7 @@
 import http from 'node:http';
 import { afterEach, describe, expect, it } from 'vitest';
 import { allowAllFs, allowAllNetwork, createKernel } from '../../../core/src/index.ts';
-import { InMemoryFileSystem } from '../../../browser/src/os-filesystem.ts';
+import { createInMemoryFileSystem } from '../../../core/src/shared/in-memory-fs.ts';
 import { createNodeHostNetworkAdapter, createNodeRuntime } from '../../../nodejs/src/index.ts';
 
 const textDecoder = new TextDecoder();
@@ -58,7 +58,7 @@ function createTrackedHostAdapter(): {
 async function createNetworkedKernel() {
 	const { adapter, counts } = createTrackedHostAdapter();
 	const kernel = createKernel({
-		filesystem: new InMemoryFileSystem(),
+		filesystem: createInMemoryFileSystem(),
 		hostNetworkAdapter: adapter,
 		permissions: { ...allowAllFs, ...allowAllNetwork },
 	});

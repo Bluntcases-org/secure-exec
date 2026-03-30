@@ -97,7 +97,7 @@ function runNative(
 }
 
 // ── VFS population from native build ──────────────────────────────────
-// Mirror the native build directory structure into the InMemoryFileSystem
+// Mirror the native build directory structure into the in-memory VFS
 // so that os-test binaries that use opendir/readdir/scandir/nftw see the
 // expected directory layout at the VFS root.
 //

@@ -8,14 +8,14 @@ import {
 	KernelError,
 	type UnixAddr,
 } from "../../src/kernel/index.js";
-import { InMemoryFileSystem } from "../../src/shared/in-memory-fs.js";
+import { createInMemoryFileSystem } from "../../src/shared/in-memory-fs.js";
 
 /**
  * Helper: create a SocketTable with VFS and a listening Unix stream socket.
  * Returns { table, vfs, listenId, addr }.
  */
 async function setupUnixListener(path: string) {
-	const vfs = new InMemoryFileSystem();
+	const vfs = createInMemoryFileSystem();
 	// Ensure parent directory exists
 	await vfs.mkdir("/tmp", { recursive: true });
 	const table = new SocketTable({ vfs });
@@ -86,7 +86,7 @@ describe("Unix domain sockets", () => {
 	});
 
 	it("socket file exists in VFS after bind", async () => {
-		const vfs = new InMemoryFileSystem();
+		const vfs = createInMemoryFileSystem();
 		await vfs.mkdir("/tmp", { recursive: true });
 		const table = new SocketTable({ vfs });
 		const id = table.create(AF_UNIX, SOCK_STREAM, 0, 1);
@@ -108,7 +108,7 @@ describe("Unix domain sockets", () => {
 	});
 
 	it("bind to path where a regular file exists returns EADDRINUSE", async () => {
-		const vfs = new InMemoryFileSystem();
+		const vfs = createInMemoryFileSystem();
 		await vfs.mkdir("/tmp", { recursive: true });
 		await vfs.writeFile("/tmp/regular.file", "data");
 		const table = new SocketTable({ vfs });
@@ -141,7 +141,7 @@ describe("Unix domain sockets", () => {
 	// -------------------------------------------------------------------
 
 	it("Unix SOCK_DGRAM: bind and sendTo/recvFrom with message boundaries", async () => {
-		const vfs = new InMemoryFileSystem();
+		const vfs = createInMemoryFileSystem();
 		await vfs.mkdir("/tmp", { recursive: true });
 		const table = new SocketTable({ vfs });
 
@@ -173,7 +173,7 @@ describe("Unix domain sockets", () => {
 	});
 
 	it("Unix SOCK_DGRAM: socket file exists in VFS", async () => {
-		const vfs = new InMemoryFileSystem();
+		const vfs = createInMemoryFileSystem();
 		await vfs.mkdir("/tmp", { recursive: true });
 		const table = new SocketTable({ vfs });
 
@@ -186,7 +186,7 @@ describe("Unix domain sockets", () => {
 	});
 
 	it("Unix SOCK_DGRAM: sendTo to unbound path is silently dropped", async () => {
-		const vfs = new InMemoryFileSystem();
+		const vfs = createInMemoryFileSystem();
 		await vfs.mkdir("/tmp", { recursive: true });
 		const table = new SocketTable({ vfs });
 
@@ -208,7 +208,7 @@ describe("Unix domain sockets", () => {
 	// -------------------------------------------------------------------
 
 	it("Unix connect is always in-kernel (no host adapter needed)", async () => {
-		const vfs = new InMemoryFileSystem();
+		const vfs = createInMemoryFileSystem();
 		await vfs.mkdir("/tmp", { recursive: true });
 		// No host adapter configured — Unix sockets route in-kernel
 		const table = new SocketTable({ vfs });
@@ -255,7 +255,7 @@ describe("Unix domain sockets", () => {
 	// -------------------------------------------------------------------
 
 	it("close listener frees Unix path for reuse", async () => {
-		const vfs = new InMemoryFileSystem();
+		const vfs = createInMemoryFileSystem();
 		await vfs.mkdir("/tmp", { recursive: true });
 		const table = new SocketTable({ vfs });
 

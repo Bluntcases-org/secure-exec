@@ -150,10 +150,7 @@ export {
 } from "./shared/constants.js";
 
 // Shared utilities.
-export {
-	createInMemoryFileSystem,
-	InMemoryFileSystem,
-} from "./shared/in-memory-fs.js";
+export { createInMemoryFileSystem } from "./shared/in-memory-fs.js";
 
 export {
 	allowAll,

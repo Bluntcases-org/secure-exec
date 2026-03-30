@@ -1,6 +1,5 @@
 import dgram from "node:dgram";
 import { afterEach, describe, expect, it } from "vitest";
-import { InMemoryFileSystem } from "../../../browser/src/os-filesystem.ts";
 import {
 	AF_INET,
 	allowAllFs,
@@ -8,6 +7,7 @@ import {
 	createKernel,
 	SOCK_DGRAM,
 } from "../../../core/src/index.ts";
+import { createInMemoryFileSystem } from '../../../core/src/shared/in-memory-fs.ts';
 import type {
 	DriverProcess,
 	Kernel,
@@ -93,7 +93,7 @@ async function createUdpKernel(options?: { hostNetwork?: boolean }): Promise<{
 	vfs: VirtualFileSystem;
 	dispose: () => Promise<void>;
 }> {
-	const vfs = new InMemoryFileSystem();
+	const vfs = createInMemoryFileSystem();
 	const kernel = createKernel({
 		filesystem: vfs,
 		hostNetworkAdapter: options?.hostNetwork
