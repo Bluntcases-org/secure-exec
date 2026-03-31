@@ -12,26 +12,25 @@ use v8::ValueSerializerHelper;
 
 use crate::host_call::BridgeCallContext;
 
-// JSON codec flag: when true, use JSON.stringify/JSON.parse instead of V8
+// CBOR codec flag: when true, use CBOR (via ciborium) instead of V8
 // ValueSerializer/ValueDeserializer for IPC payloads. Activated by
-// SECURE_EXEC_V8_CODEC=json for runtimes whose node:v8 module doesn't
+// SECURE_EXEC_V8_CODEC=cbor for runtimes whose node:v8 module doesn't
 // produce real V8 serialization format (e.g. Bun).
-static USE_JSON_CODEC: AtomicBool = AtomicBool::new(false);
+static USE_CBOR_CODEC: AtomicBool = AtomicBool::new(false);
 
 /// Initialize the codec from the SECURE_EXEC_V8_CODEC environment variable.
 /// Call once at process startup before any sessions are created.
 pub fn init_codec() {
     if let Ok(val) = std::env::var("SECURE_EXEC_V8_CODEC") {
-        if val == "json" {
-            USE_JSON_CODEC.store(true, Ordering::Relaxed);
-            eprintln!("secure-exec-v8: using JSON codec for IPC payloads");
+        if val == "cbor" {
+            USE_CBOR_CODEC.store(true, Ordering::Relaxed);
         }
     }
 }
 
-/// Returns true if the JSON codec is active.
-pub fn is_json_codec() -> bool {
-    USE_JSON_CODEC.load(Ordering::Relaxed)
+/// Returns true if the CBOR codec is active.
+pub fn is_cbor_codec() -> bool {
+    USE_CBOR_CODEC.load(Ordering::Relaxed)
 }
 
 /// External references for V8 snapshot serialization.
@@ -73,13 +72,13 @@ impl v8::ValueDeserializerImpl for DefaultDeserializerDelegate {}
 /// Serialize a V8 value to bytes using V8's built-in ValueSerializer.
 /// Handles all V8 types natively: primitives, strings, arrays, objects,
 /// Uint8Array, Date, Map, Set, RegExp, Error, and circular references.
-/// When JSON codec is active, uses JSON.stringify instead.
+/// When CBOR codec is active, uses ciborium instead.
 pub fn serialize_v8_value(
     scope: &mut v8::HandleScope,
     value: v8::Local<v8::Value>,
 ) -> Result<Vec<u8>, String> {
-    if is_json_codec() {
-        return serialize_json_value(scope, value);
+    if is_cbor_codec() {
+        return serialize_cbor_value(scope, value);
     }
     let context = scope.get_current_context();
     let serializer = v8::ValueSerializer::new(scope, Box::new(DefaultSerializerDelegate));
@@ -112,9 +111,8 @@ pub fn deserialize_v8_value<'s>(
     scope: &mut v8::HandleScope<'s>,
     data: &[u8],
 ) -> Result<v8::Local<'s, v8::Value>, String> {
-    // When JSON codec is active, incoming payloads are JSON, not V8 binary
-    if is_json_codec() {
-        return deserialize_json_value(scope, data);
+    if is_cbor_codec() {
+        return deserialize_cbor_value(scope, data);
     }
     let context = scope.get_current_context();
     let deserializer =
@@ -127,30 +125,141 @@ pub fn deserialize_v8_value<'s>(
         .ok_or_else(|| "V8 ValueDeserializer: failed to deserialize value".to_string())
 }
 
-/// Serialize a V8 value to JSON bytes using V8's built-in JSON.stringify.
-/// Used when SECURE_EXEC_V8_CODEC=json for runtimes like Bun.
-pub fn serialize_json_value(
+// ── CBOR codec ──
+
+/// Convert a V8 value to a ciborium::Value for CBOR serialization.
+fn v8_to_cbor(scope: &mut v8::HandleScope, value: v8::Local<v8::Value>) -> ciborium::Value {
+    if value.is_null_or_undefined() {
+        return ciborium::Value::Null;
+    }
+    if value.is_boolean() {
+        return ciborium::Value::Bool(value.boolean_value(scope));
+    }
+    if value.is_int32() {
+        return ciborium::Value::Integer(value.int32_value(scope).unwrap_or(0).into());
+    }
+    if value.is_number() {
+        return ciborium::Value::Float(value.number_value(scope).unwrap_or(0.0));
+    }
+    if value.is_string() {
+        let s = value.to_rust_string_lossy(scope);
+        return ciborium::Value::Text(s);
+    }
+    if value.is_array_buffer_view() {
+        let view = v8::Local::<v8::ArrayBufferView>::try_from(value).unwrap();
+        let len = view.byte_length();
+        let mut buf = vec![0u8; len];
+        view.copy_contents(&mut buf);
+        return ciborium::Value::Bytes(buf);
+    }
+    if value.is_array() {
+        let arr = v8::Local::<v8::Array>::try_from(value).unwrap();
+        let len = arr.length();
+        let mut items = Vec::with_capacity(len as usize);
+        for i in 0..len {
+            if let Some(elem) = arr.get_index(scope, i) {
+                items.push(v8_to_cbor(scope, elem));
+            } else {
+                items.push(ciborium::Value::Null);
+            }
+        }
+        return ciborium::Value::Array(items);
+    }
+    if value.is_object() {
+        let obj = value.to_object(scope).unwrap();
+        let names = obj
+            .get_own_property_names(scope, v8::GetPropertyNamesArgs::default())
+            .unwrap_or_else(|| v8::Array::new(scope, 0));
+        let len = names.length();
+        let mut entries = Vec::with_capacity(len as usize);
+        for i in 0..len {
+            let key = names.get_index(scope, i).unwrap();
+            let key_str = key.to_rust_string_lossy(scope);
+            let val = obj.get(scope, key).unwrap_or_else(|| v8::undefined(scope).into());
+            entries.push((ciborium::Value::Text(key_str), v8_to_cbor(scope, val)));
+        }
+        return ciborium::Value::Map(entries);
+    }
+    ciborium::Value::Null
+}
+
+/// Convert a ciborium::Value to a V8 value.
+fn cbor_to_v8<'s>(
+    scope: &mut v8::HandleScope<'s>,
+    value: &ciborium::Value,
+) -> v8::Local<'s, v8::Value> {
+    match value {
+        ciborium::Value::Null => v8::null(scope).into(),
+        ciborium::Value::Bool(b) => v8::Boolean::new(scope, *b).into(),
+        ciborium::Value::Integer(n) => {
+            let n: i128 = (*n).into();
+            if n >= i32::MIN as i128 && n <= i32::MAX as i128 {
+                v8::Integer::new(scope, n as i32).into()
+            } else {
+                v8::Number::new(scope, n as f64).into()
+            }
+        }
+        ciborium::Value::Float(f) => v8::Number::new(scope, *f).into(),
+        ciborium::Value::Text(s) => {
+            v8::String::new(scope, s).unwrap().into()
+        }
+        ciborium::Value::Bytes(b) => {
+            let len = b.len();
+            let ab = v8::ArrayBuffer::new(scope, len);
+            if len > 0 {
+                let bs = ab.get_backing_store();
+                unsafe {
+                    std::ptr::copy_nonoverlapping(
+                        b.as_ptr(),
+                        bs.data().unwrap().as_ptr() as *mut u8,
+                        len,
+                    );
+                }
+            }
+            v8::Uint8Array::new(scope, ab, 0, len).unwrap().into()
+        }
+        ciborium::Value::Array(items) => {
+            let arr = v8::Array::new(scope, items.len() as i32);
+            for (i, item) in items.iter().enumerate() {
+                let val = cbor_to_v8(scope, item);
+                arr.set_index(scope, i as u32, val);
+            }
+            arr.into()
+        }
+        ciborium::Value::Map(entries) => {
+            let obj = v8::Object::new(scope);
+            for (k, v) in entries {
+                let key = cbor_to_v8(scope, k);
+                let val = cbor_to_v8(scope, v);
+                obj.set(scope, key, val);
+            }
+            obj.into()
+        }
+        ciborium::Value::Tag(_, inner) => cbor_to_v8(scope, inner),
+        _ => v8::undefined(scope).into(),
+    }
+}
+
+/// Serialize a V8 value to CBOR bytes.
+pub fn serialize_cbor_value(
     scope: &mut v8::HandleScope,
     value: v8::Local<v8::Value>,
 ) -> Result<Vec<u8>, String> {
-    let context = scope.get_current_context();
-    let json_str = v8::json::stringify(scope, value)
-        .ok_or_else(|| "JSON.stringify failed".to_string())?;
-    let _ = context; // context used implicitly by stringify
-    Ok(json_str.to_rust_string_lossy(scope).into_bytes())
+    let cbor_val = v8_to_cbor(scope, value);
+    let mut buf = Vec::new();
+    ciborium::into_writer(&cbor_val, &mut buf)
+        .map_err(|e| format!("CBOR encode failed: {}", e))?;
+    Ok(buf)
 }
 
-/// Deserialize JSON bytes to a V8 value using V8's built-in JSON.parse.
-pub fn deserialize_json_value<'s>(
+/// Deserialize CBOR bytes to a V8 value.
+pub fn deserialize_cbor_value<'s>(
     scope: &mut v8::HandleScope<'s>,
     data: &[u8],
 ) -> Result<v8::Local<'s, v8::Value>, String> {
-    let json_str = std::str::from_utf8(data)
-        .map_err(|e| format!("JSON codec: invalid UTF-8: {}", e))?;
-    let v8_str = v8::String::new(scope, json_str)
-        .ok_or_else(|| "JSON codec: failed to create V8 string".to_string())?;
-    v8::json::parse(scope, v8_str)
-        .ok_or_else(|| "JSON codec: JSON.parse failed".to_string())
+    let cbor_val: ciborium::Value = ciborium::from_reader(data)
+        .map_err(|e| format!("CBOR decode failed: {}", e))?;
+    Ok(cbor_to_v8(scope, &cbor_val))
 }
 
 /// Pre-allocated serialization buffers reused across bridge calls within a session.

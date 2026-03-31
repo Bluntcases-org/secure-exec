@@ -1415,8 +1415,10 @@ export class NodeExecutionDriver implements RuntimeDriver {
 			if (options.mode === "run" && result.exports) {
 				try {
 					if (typeof (globalThis as Record<string, unknown>).Bun !== "undefined") {
-						// Bun: JSON codec — payload is JSON bytes
-						exports = JSON.parse(Buffer.from(result.exports).toString("utf-8")) as T;
+						// Bun: CBOR codec — payload is CBOR bytes
+						// eslint-disable-next-line @typescript-eslint/no-require-imports
+						const cbor = require("cbor-x") as typeof import("cbor-x");
+						exports = cbor.decode(Buffer.from(result.exports)) as T;
 					} else {
 						const { deserialize } = await import("node:v8");
 						exports = deserialize(result.exports) as T;

@@ -14,21 +14,31 @@ import type { BinaryFrame } from "./ipc-binary.js";
 import type { V8Session, V8SessionOptions } from "./session.js";
 
 // Bun's node:v8 module doesn't produce real V8 serialization format.
-// Detect Bun and use JSON codec instead.
+// Detect Bun and use CBOR codec instead (faster than JSON, binary-native).
 const isBun = typeof (globalThis as Record<string, unknown>).Bun !== "undefined";
 
-/** Serialize a value for IPC — JSON when running under Bun, V8 otherwise. */
+// Lazy-load cbor-x only when needed (Bun path)
+let _cbor: typeof import("cbor-x") | null = null;
+function getCbor(): typeof import("cbor-x") {
+	if (!_cbor) {
+		// eslint-disable-next-line @typescript-eslint/no-require-imports
+		_cbor = require("cbor-x") as typeof import("cbor-x");
+	}
+	return _cbor;
+}
+
+/** Serialize a value for IPC — CBOR when running under Bun, V8 otherwise. */
 function ipcSerialize(value: unknown): Buffer {
 	if (isBun) {
-		return Buffer.from(JSON.stringify(value), "utf-8");
+		return Buffer.from(getCbor().encode(value));
 	}
 	return Buffer.from(v8.serialize(value));
 }
 
-/** Deserialize an IPC payload — JSON when running under Bun, V8 otherwise. */
+/** Deserialize an IPC payload — CBOR when running under Bun, V8 otherwise. */
 function ipcDeserialize(buf: Buffer | Uint8Array): unknown {
 	if (isBun) {
-		return JSON.parse(Buffer.from(buf).toString("utf-8"));
+		return getCbor().decode(Buffer.from(buf));
 	}
 	return v8.deserialize(buf);
 }
@@ -125,7 +135,7 @@ export async function createV8Runtime(
 		SECURE_EXEC_V8_TOKEN: authToken,
 	};
 	if (isBun) {
-		childEnv.SECURE_EXEC_V8_CODEC = "json";
+		childEnv.SECURE_EXEC_V8_CODEC = "cbor";
 	}
 	if (options?.maxSessions != null) {
 		childEnv.SECURE_EXEC_V8_MAX_SESSIONS = String(options.maxSessions);

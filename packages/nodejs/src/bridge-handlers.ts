@@ -18,8 +18,16 @@ import v8Mod from "node:v8";
 
 // Bun's node:v8 module doesn't produce real V8 serialization format
 const _isBun = typeof (globalThis as Record<string, unknown>).Bun !== "undefined";
+let _cbor: typeof import("cbor-x") | null = null;
+function _getCbor(): typeof import("cbor-x") {
+	if (!_cbor) {
+		// eslint-disable-next-line @typescript-eslint/no-require-imports
+		_cbor = require("cbor-x") as typeof import("cbor-x");
+	}
+	return _cbor;
+}
 function ipcSerialize(value: unknown): Buffer {
-	if (_isBun) return Buffer.from(JSON.stringify(value), "utf-8");
+	if (_isBun) return Buffer.from(_getCbor().encode(value));
 	return Buffer.from(v8Mod.serialize(value));
 }
 import {

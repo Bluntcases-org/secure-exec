@@ -109,6 +109,7 @@
   "dependencies": {
     "@secure-exec/core": "workspace:*",
     "@secure-exec/v8": "workspace:*",
+    "cbor-x": "^1.6.4",
     "cjs-module-lexer": "^2.1.0",
     "es-module-lexer": "^1.7.0",
     "esbuild": "^0.27.1",

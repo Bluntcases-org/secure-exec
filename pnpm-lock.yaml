@@ -266,6 +266,9 @@ importers:
       '@secure-exec/v8':
         specifier: workspace:*
         version: link:../v8
+      cbor-x:
+        specifier: ^1.6.4
+        version: 1.6.4
       cjs-module-lexer:
         specifier: ^2.1.0
         version: 2.2.0
@@ -373,19 +376,23 @@ importers:
         version: 2.1.9(@types/node@22.19.3)(@vitest/browser@2.1.9)
 
   packages/v8:
+    dependencies:
+      cbor-x:
+        specifier: ^1.6.4
+        version: 1.6.4
     optionalDependencies:
       '@secure-exec/v8-darwin-arm64':
-        specifier: 0.2.0-rc.2
-        version: 0.2.0-rc.2
+        specifier: 0.2.0
+        version: 0.2.0
       '@secure-exec/v8-darwin-x64':
-        specifier: 0.2.0-rc.2
-        version: 0.2.0-rc.2
+        specifier: 0.2.0
+        version: 0.2.0
       '@secure-exec/v8-linux-arm64-gnu':
-        specifier: 0.2.0-rc.2
-        version: 0.2.0-rc.2
+        specifier: 0.2.0
+        version: 0.2.0
       '@secure-exec/v8-linux-x64-gnu':
-        specifier: 0.2.0-rc.2
-        version: 0.2.0-rc.2
+        specifier: 0.2.0
+        version: 0.2.0
     devDependencies:
       '@types/node':
         specifier: ^22.10.2
@@ -1824,6 +1831,54 @@ packages:
     dependencies:
       fontkitten: 1.0.3
     dev: false
+
+  /@cbor-extract/cbor-extract-darwin-arm64@2.2.2:
+    resolution: {integrity: sha512-ZKZ/F8US7JR92J4DMct6cLW/Y66o2K576+zjlEN/MevH70bFIsB10wkZEQPLzl2oNh2SMGy55xpJ9JoBRl5DOA==}
+    cpu: [arm64]
+    os: [darwin]
+    requiresBuild: true
+    dev: false
+    optional: true
+
+  /@cbor-extract/cbor-extract-darwin-x64@2.2.2:
+    resolution: {integrity: sha512-32b1mgc+P61Js+KW9VZv/c+xRw5EfmOcPx990JbCBSkYJFY0l25VinvyyWfl+3KjibQmAcYwmyzKF9J4DyKP/Q==}
+    cpu: [x64]
+    os: [darwin]
+    requiresBuild: true
+    dev: false
+    optional: true
+
+  /@cbor-extract/cbor-extract-linux-arm64@2.2.2:
+    resolution: {integrity: sha512-wfqgzqCAy/Vn8i6WVIh7qZd0DdBFaWBjPdB6ma+Wihcjv0gHqD/mw3ouVv7kbbUNrab6dKEx/w3xQZEdeXIlzg==}
+    cpu: [arm64]
+    os: [linux]
+    requiresBuild: true
+    dev: false
+    optional: true
+
+  /@cbor-extract/cbor-extract-linux-arm@2.2.2:
+    resolution: {integrity: sha512-tNg0za41TpQfkhWjptD+0gSD2fggMiDCSacuIeELyb2xZhr7PrhPe5h66Jc67B/5dmpIhI2QOUtv4SBsricyYQ==}
+    cpu: [arm]
+    os: [linux]
+    requiresBuild: true
+    dev: false
+    optional: true
+
+  /@cbor-extract/cbor-extract-linux-x64@2.2.2:
+    resolution: {integrity: sha512-rpiLnVEsqtPJ+mXTdx1rfz4RtUGYIUg2rUAZgd1KjiC1SehYUSkJN7Yh+aVfSjvCGtVP0/bfkQkXpPXKbmSUaA==}
+    cpu: [x64]
+    os: [linux]
+    requiresBuild: true
+    dev: false
+    optional: true
+
+  /@cbor-extract/cbor-extract-win32-x64@2.2.2:
+    resolution: {integrity: sha512-dI+9P7cfWxkTQ+oE+7Aa6onEn92PHgfWXZivjNheCRmTBDBf2fx6RyTi0cmgpYLnD1KLZK9ZYrMxaPZ4oiXhGA==}
+    cpu: [x64]
+    os: [win32]
+    requiresBuild: true
+    dev: false
+    optional: true
 
   /@emnapi/runtime@1.9.0:
     resolution: {integrity: sha512-QN75eB0IH2ywSpRpNddCRfQIhmJYBCJ1x5Lb3IscKAL8bMnVAKnRg8dCoXbHzVLLH7P38N2Z3mtulB7W0J0FKw==}
@@ -3546,32 +3601,32 @@ packages:
     requiresBuild: true
     optional: true
 
-  /@secure-exec/v8-darwin-arm64@0.2.0-rc.2:
-    resolution: {integrity: sha512-251Hxptkm8kfoTXUpopHBS9jZ1bMca1oMsxHbWLKFz6zJ18RLVSV/XaugDm+u8Np1UFvKmPiBq05HLg3GE3C/A==}
+  /@secure-exec/v8-darwin-arm64@0.2.0:
+    resolution: {integrity: sha512-78g4QN8NFr2P54fu0U1el/rmrR+KSZM7ZCKwJY9D1+cAahY6IEUj53kT3VOTdTNkA7hV/kLDHo+fGEIg+bKRPQ==}
     cpu: [arm64]
     os: [darwin]
     requiresBuild: true
     dev: false
     optional: true
 
-  /@secure-exec/v8-darwin-x64@0.2.0-rc.2:
-    resolution: {integrity: sha512-QV/Q0fE6P3I/QpviS5UFieBj/6f1LoGfRTtFTAmQs67bVGc0k0wYYL50s4ke7tE60ljfUdUJLL2JbzuIV+m36g==}
+  /@secure-exec/v8-darwin-x64@0.2.0:
+    resolution: {integrity: sha512-W/FKOYrkAyTQu9Q6hr8oRrzNfUm1gxguVlxHUIXvLbI6er/E1lKUAl+TnfkixliWreDC8y8f8hg1MqZK1xkL3w==}
     cpu: [x64]
     os: [darwin]
     requiresBuild: true
     dev: false
     optional: true
 
-  /@secure-exec/v8-linux-arm64-gnu@0.2.0-rc.2:
-    resolution: {integrity: sha512-/KEKSHBZ70Frz/8So35YTnDcqGrb3chtsFrJTTuTDKHuTDSvgWNT6fKpafqKOrto37tkORm2NmzWrhb1zGC6ug==}
+  /@secure-exec/v8-linux-arm64-gnu@0.2.0:
+    resolution: {integrity: sha512-ZT9nmtf0tM9uoJX1taH55dFb9hpfi6iStJgjTktF/OgpjV1bTpwy1OYPCsn9q0ojEdSiVOI8e6NV0cdwsJCe3w==}
     cpu: [arm64]
     os: [linux]
     requiresBuild: true
     dev: false
     optional: true
 
-  /@secure-exec/v8-linux-x64-gnu@0.2.0-rc.2:
-    resolution: {integrity: sha512-fEnAbKa1iscGq7L2L5dZQpJu+gTxANeybqX11P1ZnAyoap/Xiu3hHMDphNIjT2qQ1CfQhliPR+i7AZmAF+WQlA==}
+  /@secure-exec/v8-linux-x64-gnu@0.2.0:
+    resolution: {integrity: sha512-vyyXcJE3LueYymBdxSsqkKYd2FTOSsCGDKP+s71V9Wx7rLNQ2m/4CjkpvWwmR+KIGjCD8qvFpWQfuUEqQWfMOQ==}
     cpu: [x64]
     os: [linux]
     requiresBuild: true
@@ -5017,6 +5072,28 @@ packages:
 
   /caniuse-lite@1.0.30001779:
     resolution: {integrity: sha512-U5og2PN7V4DMgF50YPNtnZJGWVLFjjsN3zb6uMT5VGYIewieDj1upwfuVNXf4Kor+89c3iCRJnSzMD5LmTvsfA==}
+    dev: false
+
+  /cbor-extract@2.2.2:
+    resolution: {integrity: sha512-hlSxxI9XO2yQfe9g6msd3g4xCfDqK5T5P0fRMLuaLHhxn4ViPrm+a+MUfhrvH2W962RGxcBwEGzLQyjbDG1gng==}
+    hasBin: true
+    requiresBuild: true
+    dependencies:
+      node-gyp-build-optional-packages: 5.1.1
+    optionalDependencies:
+      '@cbor-extract/cbor-extract-darwin-arm64': 2.2.2
+      '@cbor-extract/cbor-extract-darwin-x64': 2.2.2
+      '@cbor-extract/cbor-extract-linux-arm': 2.2.2
+      '@cbor-extract/cbor-extract-linux-arm64': 2.2.2
+      '@cbor-extract/cbor-extract-linux-x64': 2.2.2
+      '@cbor-extract/cbor-extract-win32-x64': 2.2.2
+    dev: false
+    optional: true
+
+  /cbor-x@1.6.4:
+    resolution: {integrity: sha512-UGKHjp6RHC6QuZ2yy5LCKm7MojM4716DwoSaqwQpaH4DvZvbBTGcoDNTiG9Y2lByXZYFEs9WRkS5tLl96IrF1Q==}
+    optionalDependencies:
+      cbor-extract: 2.2.2
     dev: false
 
   /ccount@2.0.1:
@@ -7351,6 +7428,15 @@ packages:
       fetch-blob: 3.2.0
       formdata-polyfill: 4.0.10
     dev: true
+
+  /node-gyp-build-optional-packages@5.1.1:
+    resolution: {integrity: sha512-+P72GAjVAbTxjjwUmwjVrqrdZROD4nf8KgpBoDxqXXTiYZZt/ud60dE5yvCSr9lRO8e8yv6kgJIC0K0PfZFVQw==}
+    hasBin: true
+    requiresBuild: true
+    dependencies:
+      detect-libc: 2.1.2
+    dev: false
+    optional: true
 
   /node-gyp-build@4.8.4:
     resolution: {integrity: sha512-LA4ZjwlnUblHVgq0oBF3Jl/6h/Nvs5fzBLwdEF4nuxnFdsfajde4WfxtJr3CaiH+F6ewcIB/q4jQ4UzPyid+CQ==}
